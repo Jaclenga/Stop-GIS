@@ -21,8 +21,8 @@ pre-release phase while the reusable platform stabilizes.
 ### Changed
 - Redesigned the terminology and taxonomy workspace as a centered, research-oriented card layout
   with lighter tables, roomier wrapped definitions, sentence-case headings, and compact inline actions.
-- Moved terminology and taxonomy editing from Data Overview to a dedicated Taxonomy page under
-  the Data menu.
+- Moved terminology and taxonomy editing from Data Overview to a dedicated Taxonomy page in
+  Dataset's second-level navigation.
 - Deploy is now a nontechnical publishing wizard with automatic repository and branch detection,
   one-click packaging and repository updates, four plain-language stages, website verification,
   success/update/unpublish actions, and the former ZIP/PowerShell workflow retained as an advanced fallback.

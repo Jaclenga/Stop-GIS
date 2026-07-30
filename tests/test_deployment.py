@@ -212,6 +212,25 @@ def test_readiness_returns_one_outcome_level_blocker():
     assert "low-level" not in result.message
 
 
+def test_readiness_sends_quality_failures_to_the_dashboard():
+    target = DeploymentTarget(
+        repository="owner/study",
+        repository_url="https://github.com/owner/study.git",
+    )
+
+    result = deployment_readiness(
+        stops_empty=False,
+        target=target,
+        data_quality_issues=3,
+    )
+
+    assert result.ready is False
+    assert result.title == "Resolve data quality issues before publishing"
+    assert result.message.startswith("Data Quality found 3 publication-blocking")
+    assert result.action_label == "Open Data Quality"
+    assert result.action == "data_quality"
+
+
 def test_publish_and_unpublish_existing_repository_automatically(deployment_tmp, monkeypatch):
     target = DeploymentTarget(
         repository="owner/study",

@@ -257,6 +257,7 @@ def deployment_readiness(
     stops_empty: bool,
     target: DeploymentTarget,
     bundle_error: str = "",
+    data_quality_issues: int = 0,
 ) -> ReadinessResult:
     if stops_empty:
         return ReadinessResult(
@@ -265,6 +266,16 @@ def deployment_readiness(
             "Import a stop dataset, then return here to publish the website.",
             "Open Data",
             "data",
+        )
+    if data_quality_issues:
+        return ReadinessResult(
+            False,
+            "Resolve data quality issues before publishing",
+            f"Data Quality found {data_quality_issues:,} publication-blocking issue "
+            f"occurrence{'s' if data_quality_issues != 1 else ''}. Review the affected records, "
+            "correct the source data, and run the checks again.",
+            "Open Data Quality",
+            "data_quality",
         )
     if bundle_error:
         return ReadinessResult(

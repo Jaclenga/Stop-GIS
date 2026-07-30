@@ -163,6 +163,7 @@ from shade_gis.deploy import (
 from shade_gis.deployment import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
 )
+from shade_gis.data_quality import evaluate_data_quality
 from shade_gis.shade_dimensions import (
     DEFAULT_TERMINOLOGY as CORE_DEFAULT_TERMINOLOGY,
     DEFAULT_COVERAGE_TAXONOMY,
@@ -684,12 +685,23 @@ def build_github_deploy_bundle(
     deploy_mode: str = "existing",
     commit_message: str = DEFAULT_DEPLOY_COMMIT_MESSAGE,
 ) -> bytes:
+    stops = st.session_state["stops"]
+    if not stops.empty:
+        project_id = str(st.session_state.get("active_project_id") or "")
+        images = list_images(project_id) if project_id else pd.DataFrame()
+        quality_report = evaluate_data_quality(stops, images)
+        if not quality_report.publication_ready:
+            raise ValueError(
+                f"Data Quality found {quality_report.total_issues:,} publication-blocking "
+                "issue occurrence(s). Open Dataset > Quality, review the affected records, "
+                "and resolve them before publishing."
+            )
     return build_deployment_bundle(
         DeploymentBundleSpec(
             repository=repo_name,
             project=st.session_state["project"],
             study_id=str(st.session_state.get("active_project_id") or ""),
-            stops=st.session_state["stops"],
+            stops=stops,
             raw_labels=active_raw_labels(),
             config_json=study_config_json(),
             priority_weights=st.session_state["visualization"]["priority_weights"],
@@ -1340,92 +1352,154 @@ def render_home_page() -> None:
 
 
 def render_header() -> str:
-    data_pages = [
-        ("Overview", "Data"),
-        ("Taxonomy", "Taxonomy"),
-        ("Labels", "Labels"),
-        ("Voting", "Voting"),
-    ]
-    build_pages = [
-        ("Visuals", "Visuals"),
-        ("Docs", "Docs"),
+    primary_navigation = [
+        ("Dataset", "Data"),
+        ("Annotate", "Labels"),
         ("Preview", "Preview"),
-        ("Deploy", "Deploy"),
+        ("Export", "Deploy"),
     ]
-    pages = ["Home", *(page for _, page in data_pages), *(page for _, page in build_pages)]
+    secondary_navigation = {
+        "Dataset": [
+            ("Overview", "Data"),
+            ("Quality", "Data Quality"),
+            ("Taxonomy", "Taxonomy"),
+        ],
+        "Annotate": [("Labels", "Labels"), ("Voting", "Voting")],
+        "Preview": [("Visuals", "Visuals"), ("Docs", "Docs"), ("Preview", "Preview")],
+    }
+    page_sections = {
+        "Data": "Dataset",
+        "Data Quality": "Dataset",
+        "Taxonomy": "Dataset",
+        "Labels": "Annotate",
+        "Voting": "Annotate",
+        "Visuals": "Preview",
+        "Docs": "Preview",
+        "Preview": "Preview",
+        "Deploy": "Export",
+    }
+    pages = ["Home", *page_sections]
     if st.session_state.get("page") not in pages:
         st.session_state["page"] = "Home"
     st.markdown(
         """
         <style>
-        div[data-testid="stHorizontalBlock"]:has(.st-key-nav_home) {
-            border-bottom: 1px solid #e5e7eb;
-            margin-bottom: 1.2rem;
-            padding: 0.9rem 0 1.1rem;
+        :root {
+            --shade-brand: #17603a;
+            --shade-brand-hover: #124b2e;
+            --shade-brand-soft: #eaf4ee;
+            --shade-text: #17211b;
+            --shade-muted: #66706a;
+            --shade-border: #e4e8e5;
         }
-        div[data-testid="stHorizontalBlock"]:has(.st-key-nav_home) [data-testid="stPopover"] > button {
-            border-radius: 999px;
-            font-size: 1.2rem;
-            min-height: 3.05rem;
-            font-weight: 680;
-            padding: 0.5rem 1rem;
-            white-space: nowrap;
-            width: 100%;
+        [data-testid="stMainBlockContainer"] {
+            max-width: 1440px;
+            padding-top: 0.75rem;
         }
-        div[data-testid="stHorizontalBlock"]:has(.st-key-nav_home) button p {
-            white-space: nowrap;
+        header[data-testid="stHeader"] {
+            background: transparent;
+            height: 0;
+            min-height: 0;
+        }
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"] {
+            display: none;
+        }
+        .st-key-app_header {
+            align-items: center;
+            border-bottom: 1px solid var(--shade-border);
+            min-height: 68px;
+            padding: 0.45rem 0;
+        }
+        .st-key-app_header [data-testid="stHorizontalBlock"] {
+            align-items: center;
         }
         .st-key-nav_home button {
             background: transparent;
-            border: 2px solid transparent;
-            border-radius: 0.8rem;
-            color: #14532d;
-            display: inline-flex;
-            font-size: 2.85rem;
-            font-weight: 800;
+            border: 0;
+            border-radius: 8px;
+            box-shadow: none;
+            color: var(--shade-brand);
+            font-size: 30px;
+            font-weight: 750;
             justify-content: flex-start;
-            letter-spacing: 0;
-            line-height: 1.08;
-            padding: 0.35rem 0.65rem;
-            transform: translateY(0);
-            transition: background-color 140ms ease, border-color 140ms ease,
-                box-shadow 140ms ease, color 140ms ease, transform 100ms ease;
-            width: auto;
-        }
-        .st-key-nav_home button:hover {
-            background: #dcfce7;
-            border-color: #86efac;
-            box-shadow: 0 0.35rem 0.9rem rgba(20, 83, 45, 0.18);
-            color: #0f6b35;
-            transform: translateY(-2px);
-        }
-        .st-key-nav_home button:active {
-            background: #bbf7d0;
-            border-color: #22c55e;
-            box-shadow: 0 0.12rem 0.3rem rgba(20, 83, 45, 0.24);
-            color: #14532d;
-            transform: translateY(1px) scale(0.98);
-        }
-        .st-key-nav_home button:focus-visible {
-            border-color: #16a34a;
-            box-shadow: 0 0 0 0.25rem rgba(34, 197, 94, 0.28);
-            outline: none;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            min-height: 44px;
+            padding: 0.3rem 0.45rem;
+            white-space: nowrap;
         }
         .st-key-nav_home button p {
-            font-size: 2.85rem;
-            font-weight: 800;
-            line-height: 1.08;
+            font-size: 30px;
+            font-weight: 750;
+            line-height: 1;
         }
-        h1 {
-            font-size: 1.85rem;
-            line-height: 1.15;
+        .st-key-nav_home button:hover {
+            background: var(--shade-brand-soft);
+            color: var(--shade-brand-hover);
         }
-        div[data-testid="stPopoverBody"]:has(.header-menu-marker) [data-testid="stVerticalBlock"] {
+        .st-key-nav_home button:active {
+            background: #dceee3;
+            color: var(--shade-brand-hover);
+        }
+        .st-key-nav_home button:focus-visible {
+            box-shadow: 0 0 0 3px rgba(23, 96, 58, 0.16);
+            outline: none;
+        }
+        div[class*="st-key-primary_nav_"] button,
+        .st-key-header_subnav button {
+            background: transparent;
+            border: 0;
+            border-radius: 8px;
+            box-shadow: none;
+            color: #4f5953;
+            font-size: 15px;
+            font-weight: 500;
+            min-height: 40px;
+            padding: 0.55rem 0.8rem;
+        }
+        div[class*="st-key-primary_nav_"] button:hover,
+        .st-key-header_subnav button:hover {
+            background: #f2f5f3;
+            color: var(--shade-text);
+        }
+        div[class*="st-key-primary_nav_"] button[kind="primary"],
+        .st-key-header_subnav button[kind="primary"] {
+            background: var(--shade-brand-soft);
+            color: var(--shade-brand);
+            font-weight: 650;
+        }
+        .st-key-header_project [data-testid="stPopover"] > button {
+            background: #ffffff;
+            border: 1px solid #dce2de;
+            border-radius: 8px;
+            box-shadow: none;
+            color: #303833;
+            font-size: 14px;
+            min-height: 40px;
+            padding: 0.5rem 0.75rem;
+            white-space: nowrap;
+            width: 100%;
+        }
+        .st-key-header_project [data-testid="stPopover"] > button:hover {
+            background: #f7f9f7;
+            border-color: #c8d1cb;
+        }
+        .st-key-header_subnav {
+            border-bottom: 1px solid var(--shade-border);
+            margin-bottom: 1rem;
+            min-height: 44px;
+            padding: 0.25rem 0 0.45rem;
+        }
+        .st-key-header_subnav [data-testid="stHorizontalBlock"] {
             gap: 0.25rem;
+            justify-content: flex-start;
+            width: fit-content;
         }
-        div[data-testid="stPopoverBody"]:has(.header-menu-marker) [data-testid="stButton"] button {
-            min-height: 2.25rem;
-            padding: 0.3rem 0.75rem;
+        .st-key-header_subnav [data-testid="stColumn"] {
+            flex: 0 0 auto;
+            min-width: 100px;
+            width: auto;
         }
         div[data-testid="stDialog"]:has(.main-menu-dialog-marker) button[kind="primary"] {
             background: #166534;
@@ -1436,31 +1510,90 @@ def render_header() -> str:
             background: #14532d;
             border-color: #14532d;
         }
+        @media (max-width: 900px) {
+            [data-testid="stMainBlockContainer"] { padding-left: 1rem; padding-right: 1rem; }
+            .st-key-nav_home button, .st-key-nav_home button p { font-size: 25px; }
+            div[class*="st-key-primary_nav_"] button { font-size: 14px; padding: 0.5rem; }
+            .st-key-header_project [data-testid="stPopover"] > button { min-width: 44px; }
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
     on_home_page = st.session_state["page"] == "Home"
-    cols = st.columns([1] if on_home_page else [5, 1, 1], gap="small", vertical_alignment="center")
-    with cols[0]:
+    if on_home_page:
         st.button("Shade-GIS", key="nav_home", on_click=request_main_menu)
-    if not on_home_page:
-        for column, label, menu_pages in [
-            (cols[1], "Data", data_pages),
-            (cols[2], "Build", build_pages),
-        ]:
-            with column:
-                with st.popover(label, width="stretch"):
-                    st.markdown("<span class='header-menu-marker'></span>", unsafe_allow_html=True)
-                    for button_label, page in menu_pages:
-                        st.button(
-                            button_label,
-                            key=f"nav_{page}",
-                            type="primary" if st.session_state["page"] == page else "secondary",
-                            width="stretch",
+    else:
+        active_section = page_sections[st.session_state["page"]]
+        with st.container(key="app_header"):
+            brand, navigation, project_selector = st.columns(
+                [1.55, 4.75, 1.7],
+                gap="medium",
+                vertical_alignment="center",
+            )
+            with brand:
+                st.button("Shade-GIS", key="nav_home", on_click=request_main_menu)
+            nav_columns = navigation.columns(len(primary_navigation), gap="small")
+            for column, (label, destination) in zip(nav_columns, primary_navigation):
+                with column:
+                    st.button(
+                        label,
+                        key=f"primary_nav_{label.lower()}",
+                        type="primary" if active_section == label else "secondary",
+                        width="stretch",
                         on_click=set_page,
-                        args=(page,),
+                        args=(destination,),
                     )
+            with project_selector:
+                project_name = str(st.session_state.get("project", {}).get("name") or "Project")
+                selector_label = (
+                    project_name
+                    if len(project_name) <= 24
+                    else f"{project_name[:21].rstrip()}..."
+                )
+                with st.popover(
+                    f"{selector_label} ▾",
+                    key="header_project",
+                    width="stretch",
+                ):
+                    st.caption("Projects")
+                    active_project_id = st.session_state.get("active_project_id")
+                    for project in list_projects():
+                        project_id = project["id"]
+                        st.button(
+                            project.get("name") or "Untitled Shade Study",
+                            key=f"header_project_{project_id}",
+                            type="primary" if project_id == active_project_id else "secondary",
+                            disabled=project_id == active_project_id,
+                            width="stretch",
+                            on_click=request_open_project,
+                            args=(project_id, project.get("name") or "Untitled Shade Study"),
+                        )
+                    st.divider()
+                    st.button(
+                        "All projects",
+                        key="header_all_projects",
+                        width="stretch",
+                        on_click=request_main_menu,
+                    )
+
+        section_pages = secondary_navigation.get(active_section, [])
+        if section_pages:
+            with st.container(key="header_subnav"):
+                subnav_columns = st.columns(len(section_pages), gap="small")
+                for column, (label, destination) in zip(subnav_columns, section_pages):
+                    with column:
+                        st.button(
+                            label,
+                            key=f"secondary_nav_{destination.lower()}",
+                            type=(
+                                "primary"
+                                if st.session_state["page"] == destination
+                                else "secondary"
+                            ),
+                            on_click=set_page,
+                            args=(destination,),
+                        )
     if st.session_state.get("pending_main_menu"):
         render_main_menu_confirmation()
     return st.session_state["page"]
@@ -1468,6 +1601,7 @@ def render_header() -> str:
 
 def main() -> None:
     from shade_gis.pages.data_page import render_data_page
+    from shade_gis.pages.data_quality_page import render_data_quality_page
     from shade_gis.pages.deploy_page import render_deploy_page
     from shade_gis.pages.docs_page import render_methodology_page
     from shade_gis.pages.labels_page import render_labels_page
@@ -1483,6 +1617,8 @@ def main() -> None:
     page = render_header()
     if page == "Home":
         render_home_page()
+    elif page == "Data Quality":
+        render_data_quality_page()
     elif page == "Labels":
         render_labels_page()
     elif page == "Taxonomy":

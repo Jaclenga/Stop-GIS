@@ -164,6 +164,29 @@ def test_deployment_bundle_requires_imported_project_data(
         build_github_deploy_bundle("owner/empty-project")
 
 
+def test_deployment_bundle_rejects_data_quality_failures(project, visualization):
+    builder_app.st.session_state.clear()
+    builder_app.st.session_state["active_project_id"] = "invalid-project"
+    builder_app.st.session_state["project"] = project
+    builder_app.st.session_state["taxonomy"] = []
+    builder_app.st.session_state["methodology"] = {}
+    builder_app.st.session_state["visualization"] = visualization
+    builder_app.st.session_state["stops"] = pd.DataFrame(
+        [
+            {
+                "stop_id": "bad-geometry",
+                "stop_name": "Outside coordinate bounds",
+                "stop_lat": 95,
+                "stop_lon": -82.4,
+            }
+        ]
+    )
+    builder_app.st.session_state["import_log"] = []
+
+    with pytest.raises(ValueError, match="Data Quality found 1 publication-blocking"):
+        build_github_deploy_bundle("owner/invalid-project")
+
+
 def test_deployment_blocks_a_stale_browser_session(
     db_path,
     project,

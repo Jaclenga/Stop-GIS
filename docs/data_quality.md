@@ -1,7 +1,8 @@
 # Data quality workflow
 
-The Data page is the final validation surface for the active project dataset. Use the **Data Quality**
-section after importing or replacing stops and after registering project images. The dashboard runs
+The dedicated **Data Quality** page under **Dataset → Quality** is the final validation surface for the
+active project dataset. Open it after importing or replacing stops and after registering project
+images. The dashboard runs
 the same report whenever Streamlit reruns, so its counts, affected-record viewer, and publication
 readiness banner always describe the current project state.
 
@@ -21,7 +22,7 @@ record occurrences, while each validation row shows the count for that specific 
 
 ## Review affected records
 
-1. Open **Data** and scroll to **Data Quality**.
+1. Select **Dataset**, then **Quality** in the second-level navigation.
 2. Select **View affected records** beside a failing check. This sets the validation filter and opens
    the corresponding stop or image rows in the affected-record table below the summary.
 3. Alternatively, choose a rule from **Filter dataset by validation issue**. Choose **All validation
@@ -37,6 +38,11 @@ The banner reports **Publication-ready** only when:
 
 - the active dataset contains at least one stop; and
 - all five validation checks have zero affected records.
+
+The Deploy page and deployment bundle builder enforce this result. A dataset with any blocking
+finding cannot be packaged or published; **Open Data Quality** returns to the affected-record review
+workflow so the source records can be corrected first. This guard is evaluated again for updates to
+an already-published study, so an earlier successful deployment does not bypass current data checks.
 
 This summary covers structural data readiness. Label completion, disagreement resolution, methodology,
 source licensing, and release decisions remain visible in their respective builder workflows and may

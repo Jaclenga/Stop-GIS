@@ -68,13 +68,15 @@ streamlit run app.py
 `builder_app.py` coordinates Streamlit state, navigation, and page rendering. Domain logic lives under
 `shade_gis/`; deployment bundle assembly and generated scripts are grouped under `shade_gis/deploy/`.
 
-Data Overview includes a centralized `Data Quality` dashboard before the workflow sections. The
-separate Taxonomy page is available from the same Data menu. Data Quality reports duplicate stop
+The compact task header organizes the builder into `Dataset`, `Annotate`, `Preview`, and `Export`.
+Dataset and other multi-page tasks expose a consistent second-level navigation row, while the
+project selector stays at the right side of the header. Dataset's `Quality` page reports duplicate stop
 IDs, missing coordinates, missing required fields, invalid point
 geometries, and images that do not reference a stop in the active dataset. Each check shows an
 affected-record count and a direct action that filters the paginated record viewer to the relevant
 stop or image rows. The publication-readiness banner passes only when the dataset contains at least
-one stop and every blocking check has zero findings. See [Data quality workflow](docs/data_quality.md)
+one stop and every blocking check has zero findings. The Deploy workflow enforces the same report
+before creating or publishing a website bundle. See [Data quality workflow](docs/data_quality.md)
 for check definitions and remediation guidance.
 
 `Dataset Status` separately summarizes total, labeled, reviewed, and needs-review stops. Label
@@ -255,7 +257,7 @@ Terminology:
 | --- | --- |
 | `Waiting Area` | The designated location where passengers would reasonably stand or sit while waiting to board the bus, including any bus stop pad, sidewalk immediately adjacent to the bus stop sign, or seating within a bus shelter. Grass, landscaping, roadway, bicycle lanes, and areas not reasonably intended for waiting are excluded. |
 
-The Taxonomy page under the Data menu provides compact inline editors for Terminology and both
+The Taxonomy page in Dataset's second-level navigation provides compact inline editors for Terminology and both
 columns in the Shade Source and Shade Coverage taxonomies. Project-facing labels and operational definitions are editable;
 hidden canonical codes remain stable so renamed labels do not orphan existing labels, filters,
 votes, or exports. Each source and coverage editor also provides a **Reset definitions** action

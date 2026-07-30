@@ -139,7 +139,7 @@ Terminology rows are stored with the project's methodology settings and exported
 `terminology` list in `shade_study_config.json`. Generated apps still accept the retired
 `data_taxonomy` key when loading an older configuration, but new exports use `terminology` only.
 
-The Taxonomy page under the Data menu lets project editors revise Shade Source and Shade Coverage
+The Taxonomy page in Dataset's second-level navigation lets project editors revise Shade Source and Shade Coverage
 display labels and operational definitions inline. Each editable row retains a hidden canonical `code` because stored
 labels, voting records, filters, and analytics depend on stable values. Project-facing coverage and
 source labels persist with methodology settings and export through `shade_coverage_taxonomy` and

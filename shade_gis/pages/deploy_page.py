@@ -17,6 +17,8 @@ from builder_app import (
     load_project_into_session,
     set_page,
 )
+from platform_store import list_images
+from shade_gis.data_quality import evaluate_data_quality
 from shade_gis.deploy import deploy_launcher_script, github_new_repo_url, slugify_repo_name
 from shade_gis.deployment import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
@@ -566,7 +568,10 @@ def render_deploy_page() -> None:
     bundle_data = b""
     bundle_error = ""
     freshness_issue = ""
-    if not stops.empty and target.repository:
+    project_id = str(st.session_state.get("active_project_id") or "")
+    images = list_images(project_id) if project_id else pd.DataFrame()
+    quality_report = evaluate_data_quality(stops, images)
+    if quality_report.publication_ready and target.repository:
         freshness_issue = deployment_session_freshness_issue()
         if freshness_issue:
             bundle_error = freshness_issue
@@ -579,7 +584,12 @@ def render_deploy_page() -> None:
                 )
             except Exception as exc:  # Builder validation errors are converted into one actionable readiness issue.
                 bundle_error = str(exc).splitlines()[0] or "The project could not be prepared for publishing."
-    readiness = deployment_readiness(stops.empty, target, bundle_error)
+    readiness = deployment_readiness(
+        stops.empty,
+        target,
+        bundle_error,
+        data_quality_issues=quality_report.total_issues,
+    )
     if freshness_issue:
         readiness = replace(
             readiness,
@@ -599,7 +609,10 @@ def render_deploy_page() -> None:
     if bundle_data:
         manifest = deployment_bundle_manifest(bundle_data)
         bundle_name = f"{bundle_stem}-{manifest['bundle_id'][:12]}.zip"
-    result = _stored_result(target)
+    # A previous successful deployment must not bypass checks after the active
+    # dataset changes. Keep its result for a later clean rerun, but surface the
+    # current blocker until the dashboard passes again.
+    result = _stored_result(target) if readiness.ready else None
     if result is None and readiness.ready and target.public_url:
         verified, verification_message = cached_website_check(target.public_url)
         if verified:
@@ -697,6 +710,14 @@ def render_deploy_page() -> None:
     if not readiness.ready:
         if readiness.action == "data":
             st.button(readiness.action_label, type="primary", width="stretch", on_click=set_page, args=("Data",))
+        elif readiness.action == "data_quality":
+            st.button(
+                readiness.action_label,
+                type="primary",
+                width="stretch",
+                on_click=set_page,
+                args=("Data Quality",),
+            )
         elif readiness.action == "reload":
             if st.button(readiness.action_label, type="primary", width="stretch"):
                 load_project_into_session(st.session_state["active_project_id"])

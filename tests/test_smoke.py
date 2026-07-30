@@ -17,6 +17,7 @@ def test_core_modules_compile_without_bytecode_writes():
         "shade_gis/deploy/artifacts.py",
         "shade_gis/deploy/bundle.py",
         "shade_gis/pages/preview_page.py",
+        "shade_gis/pages/data_quality_page.py",
         "shade_gis/pages/agreement_page.py",
         "shade_gis/pages/voting_page.py",
         "shade_gis/pages/deploy_page.py",
@@ -159,11 +160,15 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
     builder_source = Path("builder_app.py").read_text(encoding="utf-8")
     preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
-    assert '("Overview", "Data")' in builder_source
-    assert '("Taxonomy", "Taxonomy")' in builder_source
-    assert '("Labels", "Labels")' in builder_source
-    assert '("Voting", "Voting")' in builder_source
-    assert '(cols[2], "Build", build_pages)' in builder_source
+    assert '("Dataset", "Data")' in builder_source
+    assert '("Annotate", "Labels")' in builder_source
+    assert '("Preview", "Preview")' in builder_source
+    assert '("Export", "Deploy")' in builder_source
+    assert '"Dataset": [' in builder_source
+    assert '("Quality", "Data Quality")' in builder_source
+    assert '"Annotate": [("Labels", "Labels"), ("Voting", "Voting")]' in builder_source
+    assert 'key=f"primary_nav_{label.lower()}"' in builder_source
+    assert 'key="header_project"' in builder_source
     assert 'elif page == "Agreement"' not in builder_source
     assert 'agreement_enabled = "Agreement metrics" in selected_sections' in preview_source
     assert "render_agreement_analytics_section(" in preview_source
@@ -207,6 +212,15 @@ def test_data_page_uses_progress_dashboard_and_collapsed_dataset_preview():
     assert "render_dataframe_table(visible_stops)" in source
     assert "st.dataframe(" not in source
     assert 'st.subheader("Dataset Health")' not in source
+    assert 'render_data_quality_dashboard(st.session_state["stops"]' not in source
+
+
+def test_data_quality_has_a_dedicated_data_menu_page():
+    source = Path("shade_gis/pages/data_quality_page.py").read_text(encoding="utf-8")
+
+    assert 'st.title("Data Quality")' in source
+    assert "render_data_quality_dashboard(" in source
+    assert "show_heading=False" in source
 
 
 def test_manual_entry_form_does_not_use_arrow_backed_dataframe_widget():

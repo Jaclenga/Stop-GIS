@@ -402,10 +402,16 @@ def dataset_preview_page(
     return stops.iloc[start : start + page_size].copy(), safe_page, page_count
 
 
-def render_data_quality_dashboard(stops: pd.DataFrame, images: pd.DataFrame) -> None:
+def render_data_quality_dashboard(
+    stops: pd.DataFrame,
+    images: pd.DataFrame,
+    *,
+    show_heading: bool = True,
+) -> None:
     """Render the unified validation and publication-readiness workflow."""
     report = evaluate_data_quality(stops, images)
-    st.subheader("Data Quality")
+    if show_heading:
+        st.subheader("Data Quality")
     st.caption(
         "Resolve publication-blocking stop and image issues here before previewing or deploying the study."
     )
@@ -429,7 +435,7 @@ def render_data_quality_dashboard(stops: pd.DataFrame, images: pd.DataFrame) -> 
         check[0].markdown(f"**{issue.label}**  \n{issue.description}")
         check[1].metric("Affected", f"{count:,}")
         if check[2].button(
-            "View affected records ↓",
+            "View affected records",
             key=f"data_quality_view_{issue.key}",
             disabled=count == 0,
             width="stretch",
@@ -480,7 +486,7 @@ def render_data_quality_dashboard(stops: pd.DataFrame, images: pd.DataFrame) -> 
     )
     visible, page, page_count = dataset_preview_page(affected, int(requested_page), int(page_size))
     paging[2].caption(
-        f"{len(affected):,} {display_label} · Page {page:,} of {page_count:,}"
+        f"{len(affected):,} {display_label} | Page {page:,} of {page_count:,}"
     )
     render_dataframe_table(visible)
 
@@ -871,8 +877,6 @@ def render_data_page() -> None:
         project["source_url"] = st.text_input("Source URL", project["source_url"])
 
     project_id = st.session_state.get("active_project_id")
-    images = list_images(project_id) if project_id else pd.DataFrame()
-    render_data_quality_dashboard(st.session_state["stops"], images)
 
     st.markdown(
         """
