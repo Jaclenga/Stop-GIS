@@ -86,27 +86,19 @@ for check definitions and remediation guidance.
 
 `Dataset Status` separately summarizes total, labeled, reviewed, and needs-review stops. Label
 coverage and review-completion progress bars make project completeness visible without scanning the
-underlying table. A filtered, paginated work queue defaults to stops that need review or remain
-unlabeled and shows only stop ID, workflow status, raw-label count, final label, and agreement. The
-collapsed `Dataset Preview` renders only the selected 25-, 50-, or 100-row page while retaining
-paginated access to every record.
+underlying table. A single status message and `Open Dataset Review` action hand operational work to the
+labeling workspace instead of duplicating its queue. The collapsed `Dataset Preview` renders only
+the selected 25-, 50-, or 100-row page while retaining paginated access to every record.
 
-The Preview's `Analytics` tab includes an Agreement section when `Agreement metrics` is selected in
-the Visuals dashboard controls. Its compact overview shows labeled stops, unresolved disagreements,
-mean agreement, Krippendorff's alpha, and Fleiss' kappa. The primary action opens a
-disagreement-only queue sorted by lowest agreement, with minimum-label, agreement-threshold, and
-label-category filters plus pagination. A reviewer can open one stop, compare every submitted label
-and reviewer ID, inspect embedded Street View, the project map, and registered photos, then save a
-canonical coverage/source decision. That decision marks the stop `Accepted` and appends an auditable
-`Resolve disagreement` event to `review_history`; a newer raw label automatically reopens the stop.
-Generated public apps show the compact summary and filtered disagreement queue without admin write
-controls.
+The Preview's `Analytics` tab includes read-only agreement summaries when `Agreement metrics` is
+selected in the Visuals controls. Moderator decisions, disagreement resolution, evidence review,
+and audit history live exclusively in `Dataset Review`; Preview never writes project data.
 
-The Labelling task follows a clear `Labels` → `Independent Review` → `Consensus` pipeline.
-`Labels` is the moderation workspace: its default review queue resolves conflicts and verifies final
+The Labelling task follows a clear `Dataset Review` → `Intercoder Review` → `Community Voting` pipeline.
+`Dataset Review` is the moderation workspace: its default review queue resolves conflicts and verifies final
 dataset decisions, while audit history remains read-only. Direct raw entry is retained as the
 primary `Submit Label` action so creating a label stays distinct from moderation.
-The private `Independent Review` workspace supports formal reliability studies. A protocol can use
+The private `Intercoder Review` workspace supports formal reliability studies. A protocol can use
 either standardized images or transit stops as its assessment unit. Image mode assigns every image
 under a random `IMG-######` alias and withholds stop and geographic context. Stop mode assigns one
 rating per stop under a `STOP-######` alias—even when several evidence images are attached—and can
@@ -162,7 +154,7 @@ The `Preview` page renders the public-facing study experience for the active pro
 - `shade_study_config.json`: project metadata, editable terminology, shade taxonomy, methodology, visualization settings, and import log.
 - `requirements.txt`, `.streamlit/config.toml`, generated `README.md`, and `deploy_to_github.ps1`.
 
-The dedicated `Consensus` page places grouped visitor-voting configuration beside a responsive live
+The dedicated `Community Voting` page places grouped visitor-voting configuration beside a responsive live
 preview. An admin can enable or hide contributions, choose the
 coverage categories visitors may submit, edit all visible voting copy including the separate shade-source
 checkbox prompt, control whether a visitor may change an existing vote, show or hide totals, and set the minimum vote count

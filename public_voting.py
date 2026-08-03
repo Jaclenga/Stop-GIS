@@ -638,15 +638,18 @@ def render_voting_panel(
     voting: dict[str, Any] | None,
     *,
     app_dir: Path | None = None,
+    preview: bool = False,
 ) -> None:
     config = normalize_voting_config(voting, taxonomy)
-    if not config["enabled"] or selected_stop is None:
+    if (not config["enabled"] and not preview) or selected_stop is None:
         return
 
     stop_id = str(selected_stop.get("stop_id", "")).strip()
-    if not stop_id:
+    if not stop_id and not preview:
         st.warning("This stop has no ID, so voting is unavailable.")
         return
+    if not stop_id:
+        stop_id = "preview"
     options = config["options"]
     if not options:
         st.warning("Voting is enabled, but the project has no public coverage options.")
@@ -656,22 +659,29 @@ def render_voting_panel(
     if config.get("description"):
         st.markdown(str(config["description"]))
 
-    key_token = hashlib.sha256(f"{study_id}:{stop_id}".encode("utf-8")).hexdigest()[:16]
-    database_url = configured_vote_database_url()
-    sqlite_path = configured_vote_db_path(app_dir)
+    key_token = hashlib.sha256(
+        f"{study_id}:{stop_id}:{'preview' if preview else 'live'}".encode("utf-8")
+    ).hexdigest()[:16]
     try:
-        voter_id = (
-            _request_voter_id(database_url=database_url, sqlite_path=sqlite_path)
-            if config["abuse_protection_enabled"]
-            else _browser_voter_id()
-        )
-        existing_vote = get_existing_vote_details(
-            study_id,
-            stop_id,
-            voter_id,
-            database_url=database_url,
-            sqlite_path=sqlite_path,
-        )
+        database_url = None
+        sqlite_path = None
+        voter_id = ""
+        existing_vote = None
+        if not preview:
+            database_url = configured_vote_database_url()
+            sqlite_path = configured_vote_db_path(app_dir)
+            voter_id = (
+                _request_voter_id(database_url=database_url, sqlite_path=sqlite_path)
+                if config["abuse_protection_enabled"]
+                else _browser_voter_id()
+            )
+            existing_vote = get_existing_vote_details(
+                study_id,
+                stop_id,
+                voter_id,
+                database_url=database_url,
+                sqlite_path=sqlite_path,
+            )
         existing_coverage = str(existing_vote["coverage_status"]) if existing_vote else ""
         existing_sources = existing_vote["shade_sources"] if existing_vote else []
         default_index = options.index(existing_coverage) if existing_coverage in options else 0
@@ -684,16 +694,17 @@ def render_voting_panel(
             options,
             index=default_index,
             key=f"public_vote_choice_{key_token}",
+            disabled=preview,
             label_visibility="collapsed",
             format_func=lambda option: coverage_display_labels(
                 config.get("shade_coverage_taxonomy")
             ).get(option, option),
         )
-        changes_disabled = bool(existing_vote and not config["allow_vote_changes"])
+        changes_disabled = preview or bool(existing_vote and not config["allow_vote_changes"])
         source_keys = {
             source: f"public_vote_source_{key_token}_{source.lower()}" for source in PUBLIC_SOURCE_OPTIONS
         }
-        if selected_status == "No Shade":
+        if selected_status == "No Shade" and not preview:
             for source_key in source_keys.values():
                 st.session_state[source_key] = False
         st.divider()
@@ -717,13 +728,14 @@ def render_voting_panel(
                     **checkbox_args,
                 ):
                     selected_sources.append(source)
-        if st.button(
+        submitted = st.button(
             str(config["submit_label"]),
             key=f"public_vote_submit_{key_token}",
             type="primary",
             disabled=changes_disabled,
             width="stretch",
-        ):
+        )
+        if submitted and not preview:
             saved = save_vote(
                 study_id,
                 stop_id,
@@ -744,23 +756,27 @@ def render_voting_panel(
                 st.success(str(config["success_message"]))
             else:
                 st.info("A vote from this browser session has already been recorded for this stop.")
-        elif changes_disabled:
+        elif changes_disabled and not preview:
             st.caption("A vote from this browser session has already been recorded for this stop.")
 
         if config["show_results"]:
-            counts = get_vote_counts(
-                study_id,
-                stop_id,
-                options,
-                database_url=database_url,
-                sqlite_path=sqlite_path,
-            )
-            result = community_result(counts, config["minimum_votes_for_result"])
-            st.markdown(f"**{config['results_label']}: {result['label']}**")
-            st.caption(" | ".join(f"{label}: {counts[label]}" for label in options))
-            if result["status"] == "pending":
-                remaining = config["minimum_votes_for_result"] - result["total"]
-                st.caption(f"{remaining} more vote{'s' if remaining != 1 else ''} needed before a result is reported.")
+            if preview:
+                st.markdown(f"**{config['results_label']}: More votes needed**")
+                st.caption("Vote totals appear here in the deployed app.")
+            else:
+                counts = get_vote_counts(
+                    study_id,
+                    stop_id,
+                    options,
+                    database_url=database_url,
+                    sqlite_path=sqlite_path,
+                )
+                result = community_result(counts, config["minimum_votes_for_result"])
+                st.markdown(f"**{config['results_label']}: {result['label']}**")
+                st.caption(" | ".join(f"{label}: {counts[label]}" for label in options))
+                if result["status"] == "pending":
+                    remaining = config["minimum_votes_for_result"] - result["total"]
+                    st.caption(f"{remaining} more vote{'s' if remaining != 1 else ''} needed before a result is reported.")
     except VoteRateLimitError as exc:
         st.warning(str(exc))
     except (VoteStorageError, OSError, sqlite3.Error) as exc:

@@ -130,15 +130,15 @@ A stop counts as labeled when it has at least one raw label or a canonical cover
 stops are labeled records whose `review_status` is crowd reviewed, expert reviewed, accepted, or
 archived. Needs-review records include `Needs Review`, `Disputed`, unresolved raw-label conflicts,
 and labeled records without a completed review state. The dashboard shows label coverage against
-all stops and review completion against labeled stops. Its paginated work queue can filter Reviewed,
-Needs Review, and Unlabeled records or search by stop ID. Stop data remains accessible in the
-collapsed `Dataset Preview` expander, but only the selected 25-, 50-, or 100-row page is rendered;
-the full dataset is never mounted as one browser table.
+all stops and review completion against labeled stops. A compact status message links directly to
+`Dataset Review` for operational work instead of maintaining a second queue. Stop data remains accessible
+in the collapsed `Dataset Preview` expander, but only the selected 25-, 50-, or 100-row page is
+rendered; the full dataset is never mounted as one browser table.
 
 ## Shade Taxonomies
 
 The default terminology defines the unit used when assessing shade. Project editors can revise,
-add, or remove these terms directly from the Data page:
+add, or remove these terms from the Taxonomy page:
 
 | Term | Operational Definition |
 | --- | --- |
@@ -178,7 +178,7 @@ coverage are independently queryable and never appear in the same choice list.
 
 ## Raw Shade Labels
 
-The `Labels` page writes every submitted assessment to `shade_labels` instead of replacing earlier
+The `Dataset Review` page writes every submitted assessment to `shade_labels` instead of replacing earlier
 labels. Each label records the stop ID, optional image reference, reviewer or contributor ID,
 reviewer role, source type, derived coverage category, coverage, shade sources, confidence, notes, and
 timestamp. A reviewer can optionally apply a submitted label to the current stop fields used by the
@@ -231,20 +231,14 @@ it. Visual clues inside imagery can also defeat geographic blinding, so
 teams should crop signs and addresses, strip EXIF/coordinate metadata, standardize framing, and use
 neutral filenames before registering an image.
 
-The Agreement overview replaces the former metrics table and shows those reliability measures
-alongside the unresolved-disagreement count. Its primary action opens a queue containing only
-unresolved disagreements, sorted by lowest agreement. The queue supports minimum-label,
-agreement-threshold, and majority-category filters and paginates before rendering row actions. A
-single-stop review shows all submitted labels and reviewer IDs, embedded Street View, the project
-map, and all `images` rows associated with the stop. Saving a canonical coverage/source decision
-updates the stop to `Accepted` and appends a `Resolve disagreement` event to `review_history`.
+Agreement analytics in Preview are read-only. The moderator queue, submitted-label comparison,
+reference map, final coverage/source decision, and audit trail live exclusively in `Dataset Review`.
 Resolution timestamps are compared with raw-label timestamps so a label submitted after the latest
-decision reopens the stop automatically. Generated public apps render the compact overview and
-filtered disagreement queue without canonical-decision controls.
+decision reopens the stop automatically.
 
 ## Review Workflow
 
-The `Labels` page is for moderation and dataset curation. It includes a role-neutral review queue
+The `Dataset Review` page is for moderation and dataset curation. It includes a role-neutral review queue
 built from current stop statuses, raw-label counts,
 agreement percentages, disagreement flags, and priority scores. Project teams can filter the queue
 to stops that are unlabeled, disputed, or need review; search by stop ID/name/route; and isolate
@@ -252,7 +246,7 @@ stops with conflicting raw labels.
 
 Broad label-coverage metrics remain on Dataset Status rather than being duplicated here. Direct raw
 entry remains available as `Submit Label`, making label creation distinct from the
-structured Independent Review study.
+structured Intercoder Review study.
 
 For each queued stop, an admin can accept the current label, enter an expert override, mark a stop
 as disputed, resolve a dispute, or archive the stop. The decision form writes the final shade
@@ -273,7 +267,7 @@ active stop table and remain project data, not schema-level platform fields.
 heading/instructions/coverage-question/source-question/button/confirmation/result copy, allowed canonical coverage choices,
 result visibility, minimum votes required before reporting a unique leader, and whether a browser
 session may revise its vote. These controls and their deployed-interface preview live on the
-builder's dedicated `Consensus` page. Public contributions are hidden by default. Community consensus remains a separate signal
+builder's dedicated `Community Voting` page. Public contributions are hidden by default. Community consensus remains a separate signal
 and does not overwrite the reviewed stop classification.
 
 The generated app writes public observations to a `shade_votes` table keyed by `study_id`, `stop_id`,
@@ -353,4 +347,4 @@ select a stop, inspect a stop-detail panel, and show or hide stops whose shade l
 
 `images` and `releases` remain durable schema foundations for richer evidence and publication
 workflows. Raw label submission, admin review decisions, dispute resolution, expert overrides, and
-review audit trails are exposed through the `Labels` page.
+review audit trails are exposed through the `Dataset Review` page.

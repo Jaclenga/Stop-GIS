@@ -1,5 +1,12 @@
-from builder_app import *
-from shade_gis.pages.agreement_page import render_agreement_analytics_section
+import streamlit as st
+
+import published_app
+from builder_app import active_raw_labels, study_config_payload
+from shade_gis.builder_imports import calculate_priority_scores
+from shade_gis.shade_dimensions import (
+    normalize_coverage_display_taxonomy,
+    normalize_source_taxonomy,
+)
 
 
 def render_preview_page() -> None:
@@ -95,33 +102,13 @@ def render_preview_page() -> None:
                 published_app.render_taxonomy_legend(taxonomy)
     elif tabs[1].open:
         with tabs[1]:
-            selected_sections = published_app.selected_dashboard_sections(
-                visible_stops, visualization
+            published_app.render_issue_analytics_dashboard(
+                visible_stops,
+                visualization,
+                raw_labels,
+                include_agreement=True,
             )
-            agreement_enabled = "Agreement metrics" in selected_sections
-            agreement_view = str(st.session_state.get("agreement_view", "overview"))
-            if agreement_enabled and agreement_view in {"queue", "review"}:
-                render_agreement_analytics_section(
-                    st.session_state.get("active_project_id"),
-                    stops,
-                    raw_labels,
-                    taxonomy,
-                )
-            else:
-                published_app.render_issue_analytics_dashboard(
-                    visible_stops,
-                    visualization,
-                    raw_labels,
-                    include_agreement=False,
-                )
-                if agreement_enabled:
-                    render_agreement_analytics_section(
-                        st.session_state.get("active_project_id"),
-                        stops,
-                        raw_labels,
-                        taxonomy,
-                    )
-                published_app.render_custom_charts(visible_stops, visualization)
+            published_app.render_custom_charts(visible_stops, visualization)
     elif tabs[2].open:
         with tabs[2]:
             published_app.render_methodology(config)

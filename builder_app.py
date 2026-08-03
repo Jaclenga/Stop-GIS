@@ -16,7 +16,6 @@ import streamlit as st
 pd.options.future.infer_string = False
 
 import published_app
-from builder_about_page import render_builder_about_page
 from public_voting import normalize_voting_config
 from platform_store import (
     add_review_event,
@@ -109,7 +108,6 @@ from shade_gis.builder_visuals import (
     METRIC_REQUIREMENTS,
     NUMERIC_MAP_FILTERS,
     OVERLAY_REQUIREMENTS,
-    PRIORITY_FACTOR_DETAILS,
     RECORD_COUNT_FIELD,
     SHADE_PALETTES,
     add_marker_icons,
@@ -140,8 +138,6 @@ from shade_gis.builder_visuals import (
     has_column_data,
     marker_icon_data_uri,
     migrate_legacy_analytics_config,
-    priority_formula_for_about,
-    priority_score_used_in_visualization,
     render_custom_chart,
     render_custom_charts,
     rgba_from_hex,
@@ -183,7 +179,6 @@ DATA_PATH = APP_DIR / "stops.txt"
 SHADE_DATA_PATH = APP_DIR / "shading_data.csv"
 APP_TITLE = "Shade Study Builder"
 VISUAL_MAP_HEIGHT = 500
-METHODS_PREVIEW_HEIGHT = 1220
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 DEFAULT_MAX_API_BYTES = 15 * 1024 * 1024
 DEFAULT_MAX_ZIP_MEMBERS = 256
@@ -312,15 +307,6 @@ REVIEW_ACTION_STATUS_DEFAULTS = {
     "Resolve dispute": "Accepted",
     "Archive": "Archived",
 }
-
-MANUAL_ENTRY_COLUMNS = REQUIRED_STOP_FIELDS + [
-    "agency",
-    "routes",
-    "municipality",
-    "shading",
-    "review_status",
-    "confidence",
-]
 
 LABEL_SOURCE_OPTIONS = [
     "Expert review",
@@ -1355,7 +1341,7 @@ def render_header() -> str:
     primary_navigation = [
         ("Dataset", "Data"),
         ("Labelling", "Labels"),
-        ("Preview", "Preview"),
+        ("Build", "Preview"),
         ("Export", "Deploy"),
     ]
     secondary_navigation = {
@@ -1365,11 +1351,11 @@ def render_header() -> str:
             ("Taxonomy", "Taxonomy"),
         ],
         "Labelling": [
-            ("Labels", "Labels"),
-            ("Independent Review", "Blind Coding"),
-            ("Consensus", "Voting"),
+            ("Dataset Review", "Labels"),
+            ("Intercoder Review", "Blind Coding"),
+            ("Community Voting", "Voting"),
         ],
-        "Preview": [("Visuals", "Visuals"), ("Docs", "Docs"), ("Preview", "Preview")],
+        "Build": [("Visuals", "Visuals"), ("Docs", "Docs"), ("Preview", "Preview")],
     }
     page_sections = {
         "Data": "Dataset",
@@ -1378,9 +1364,9 @@ def render_header() -> str:
         "Labels": "Labelling",
         "Blind Coding": "Labelling",
         "Voting": "Labelling",
-        "Visuals": "Preview",
-        "Docs": "Preview",
-        "Preview": "Preview",
+        "Visuals": "Build",
+        "Docs": "Build",
+        "Preview": "Build",
         "Deploy": "Export",
     }
     pages = ["Home", *page_sections]

@@ -174,12 +174,12 @@ def choose_streamlit_selectbox_option(
 def navigate_workspace_page(page, page_name: str, heading: str) -> None:
     """Navigate through the task tab and optional second-level tab."""
     sections = {
-        "Labels": ("Labelling", "Labels", "Labels"),
-        "Independent Review": ("Labelling", "Labels", "Labels"),
-        "Consensus": ("Labelling", "Labels", "Labels"),
-        "Visuals": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
-        "Docs": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
-        "Preview": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
+        "Dataset Review": ("Labelling", "Dataset Review", "Dataset Review"),
+        "Intercoder Review": ("Labelling", "Dataset Review", "Dataset Review"),
+        "Community Voting": ("Labelling", "Dataset Review", "Dataset Review"),
+        "Visuals": ("Build", "Preview", "Tampa Bus Stop Shade Study"),
+        "Docs": ("Build", "Preview", "Tampa Bus Stop Shade Study"),
+        "Preview": ("Build", "Preview", "Tampa Bus Stop Shade Study"),
         "Data Quality": ("Dataset", "Data", "Project Data"),
         "Deploy": ("Export", "Deploy", "Publish website"),
     }
@@ -293,7 +293,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             page.get_by_role("button", name="Shade-GIS", exact=True).wait_for(timeout=30_000)
             page.get_by_role("heading", name="Your Projects", exact=True).wait_for(timeout=30_000)
             playwright_api.expect(page.get_by_role("button", name="Dataset", exact=True)).to_have_count(0)
-            playwright_api.expect(page.get_by_role("button", name="Preview", exact=True)).to_have_count(0)
+            playwright_api.expect(page.get_by_role("button", name="Build", exact=True)).to_have_count(0)
             project_card = page.locator('div[class*="st-key-project_card_"]').first
             project_card.hover()
             playwright_api.expect(project_card).to_have_css("border-color", "rgb(74, 222, 128)")
@@ -338,7 +338,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             ).to_be_visible(timeout=30_000)
 
             page.get_by_role("button", name="Labelling", exact=True).click(timeout=30_000)
-            page.get_by_role("heading", name="Labels", exact=True).wait_for(timeout=30_000)
+            page.get_by_role("heading", name="Dataset Review", exact=True).wait_for(timeout=30_000)
 
             page.get_by_role("button", name="Dataset", exact=True).click(timeout=30_000)
             page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
@@ -356,7 +356,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             confirm_main_menu_return(page)
             page.get_by_role("heading", name="Your Projects", exact=True).wait_for(timeout=30_000)
             playwright_api.expect(page.get_by_role("button", name="Dataset", exact=True)).to_have_count(0)
-            playwright_api.expect(page.get_by_role("button", name="Preview", exact=True)).to_have_count(0)
+            playwright_api.expect(page.get_by_role("button", name="Build", exact=True)).to_have_count(0)
         finally:
             browser.close()
 
@@ -470,10 +470,10 @@ def test_project_settings_can_edit_and_delete_a_project(
 
 def test_builder_navigation_pages_render(playwright_api, streamlit_server: StreamlitServer):
     expected_pages = {
-        "Labels": "Labels",
-        "Independent Review": "Independent Review",
+        "Dataset Review": "Dataset Review",
+        "Intercoder Review": "Intercoder Review",
         "Visuals": "Metrics And Visualizations",
-        "Consensus": "Consensus",
+        "Community Voting": "Community Voting",
         "Docs": "Project Documentation",
         "Preview": "Tampa Bus Stop Shade Study",
         "Deploy": "Publish website",
@@ -574,7 +574,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
             playwright_api.expect(page.get_by_test_id("stDataFrame")).to_have_count(1, timeout=30_000)
             playwright_api.expect(page.get_by_role("button", name="Dataset", exact=True)).to_be_enabled(timeout=30_000)
-            playwright_api.expect(page.get_by_role("button", name="Preview", exact=True)).to_be_enabled(timeout=30_000)
+            playwright_api.expect(page.get_by_role("button", name="Build", exact=True)).to_be_enabled(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
             for nav_label, heading in expected_pages.items():
@@ -604,7 +604,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                if nav_label == "Labels":
+                if nav_label == "Dataset Review":
                     page.get_by_role(
                         "button", name="+ Submit Label", exact=True
                     ).click(timeout=30_000)
@@ -634,7 +634,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                         has_text="Natural"
                     ).get_by_role("checkbox")
                     playwright_api.expect(natural_source).to_be_enabled(timeout=30_000)
-                elif nav_label == "Independent Review":
+                elif nav_label == "Intercoder Review":
                     for section_heading in ["Study Setup", "Review Materials", "Study Progress"]:
                         playwright_api.expect(
                             page.get_by_role("heading", name=section_heading, exact=True)
@@ -645,7 +645,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                             exact=True,
                         )
                     ).to_be_visible(timeout=30_000)
-                elif nav_label == "Consensus":
+                elif nav_label == "Community Voting":
                     playwright_api.expect(
                         page.get_by_role("heading", name="Configuration", exact=True)
                     ).to_be_visible(timeout=30_000)
@@ -664,7 +664,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     playwright_api.expect(voting_toggle).to_be_checked(timeout=30_000)
                     playwright_api.expect(
                         page.get_by_text(
-                            "Voting is currently hidden in the deployed app. Enable it to publish this interface.",
+                            "Community voting is currently hidden in the deployed app. Enable it to publish this interface.",
                             exact=True,
                         )
                     ).to_have_count(0, timeout=60_000)
@@ -675,7 +675,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     )
                     marker_shape = marker_shape_control.get_by_role("combobox")
                     marker_shape.click()
-                    page.get_by_role("option", name="Pin", exact=True).click()
+                    page.get_by_role("option", name="Square", exact=True).click()
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                     marker_shape = marker_shape_control.get_by_role("combobox")
                     selected_value = marker_shape.input_value().strip()
@@ -684,8 +684,16 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     # 1.x range: React Aria exposes the selection as the input
                     # value, while BaseWeb included it in the accessible label.
                     assert (
-                        selected_value == "Pin"
-                        or selected_label == "Selected Pin. Marker shape"
+                        selected_value == "Square"
+                        or selected_label == "Selected Square. Marker shape"
+                    )
+
+                    marker_size = page.get_by_role("slider", name="Marker size")
+                    marker_size.press("ArrowRight")
+                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+                    marker_size = page.get_by_role("slider", name="Marker size")
+                    playwright_api.expect(marker_size).to_have_attribute(
+                        "aria-valuenow", "8", timeout=30_000
                     )
 
                     map_chart = page.get_by_test_id("stDeckGlJsonChart").first

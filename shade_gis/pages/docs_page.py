@@ -1,10 +1,11 @@
-from builder_app import *
+import streamlit as st
 
 def render_methodology_page() -> None:
     st.title("Project Documentation")
     methodology = st.session_state["methodology"]
 
-    edit, preview = st.columns([1, 1])
+    st.caption("Edit the published methodology here. Use Preview → Methodology for the authoritative public rendering.")
+    edit = st.container()
     with edit:
         methodology["title"] = st.text_input("About page title", methodology["title"])
         methodology["summary"] = st.text_area("Summary", methodology["summary"], height=85)
@@ -23,7 +24,7 @@ def render_methodology_page() -> None:
         )
         methodology["contributors"] = st.text_area("Contributors", methodology["contributors"], height=85)
         methodology["limitations"] = st.text_area("Known limitations", methodology["limitations"], height=110)
-        methodology.setdefault("bibliography", DEFAULT_METHODOLOGY["bibliography"])
+        methodology.setdefault("bibliography", "")
         methodology["bibliography"] = st.text_area(
             "Bibliography",
             methodology["bibliography"],
@@ -59,15 +60,3 @@ def render_methodology_page() -> None:
                 "    Author or Organization. (Year). Title of report. Publisher. URL"
             ),
         )
-    with preview:
-        with st.container(height=METHODS_PREVIEW_HEIGHT, border=False):
-            render_builder_about_page(
-                project=st.session_state["project"],
-                methodology=methodology,
-                taxonomy=st.session_state["taxonomy"],
-                import_log=st.session_state["import_log"],
-                priority_formula=priority_formula_for_about(st.session_state["visualization"]),
-            )
-
-
-

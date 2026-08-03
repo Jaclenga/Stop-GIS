@@ -8,7 +8,7 @@ import pyarrow as pa
 import pytest
 
 from shade_gis.data_quality import evaluate_data_quality
-from shade_gis.pages.data_page import dataframe_html
+from shade_gis.ui_tables import dataframe_html
 
 
 def exact_data_quality_summary() -> pd.DataFrame:

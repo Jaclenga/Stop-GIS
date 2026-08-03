@@ -51,6 +51,20 @@ def test_session_backed_color_picker_uses_only_session_state_for_default(monkeyp
     ]
 
 
+def test_visual_map_render_key_changes_with_marker_controls():
+    taxonomy = [{"name": "No Shade", "color": "#dc143c", "sort_order": 1}]
+    visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
+    initial_key = visuals_page.visual_map_render_key(visualization, taxonomy)
+
+    visualization["marker_shape"] = "Square"
+    square_key = visuals_page.visual_map_render_key(visualization, taxonomy)
+    visualization["marker_size"] = 22
+    resized_key = visuals_page.visual_map_render_key(visualization, taxonomy)
+
+    assert initial_key.startswith("visual_map_")
+    assert len({initial_key, square_key, resized_key}) == 3
+
+
 def test_public_voting_is_off_by_default_but_fully_configured():
     voting = DEFAULT_VISUALIZATION["voting"]
 

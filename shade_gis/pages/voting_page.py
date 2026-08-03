@@ -1,12 +1,15 @@
-from builder_app import *
+from typing import Any
+
+import streamlit as st
+
 from public_voting import (
     PUBLIC_COVERAGE_OPTIONS,
-    PUBLIC_SOURCE_OPTIONS,
-    coverage_display_labels,
-    coverage_taxonomy_help,
     normalize_voting_config,
-    source_taxonomy_help,
-    source_display_labels,
+    render_voting_panel,
+)
+from shade_gis.shade_dimensions import (
+    normalize_coverage_display_taxonomy,
+    normalize_source_taxonomy,
 )
 
 
@@ -146,55 +149,18 @@ def render_voting_controls(
     return voting
 
 
-def render_voting_preview(
-    voting: dict[str, Any],
-    taxonomy: list[dict[str, Any]] | None = None,
-) -> None:
+def render_voting_preview(voting: dict[str, Any], taxonomy: list[dict[str, Any]]) -> None:
     st.subheader("Live Preview")
     if not voting.get("enabled", False):
-        st.info("Voting is currently hidden in the deployed app. Enable it to publish this interface.")
+        st.info("Community voting is currently hidden in the deployed app. Enable it to publish this interface.")
     with st.container(border=True):
-        st.markdown(f"#### {voting['title']}")
-        if voting.get("description"):
-            st.markdown(str(voting["description"]))
-        options = voting.get("options", [])
-        if options:
-            st.markdown(
-                f"**{voting['question']}**",
-                help=coverage_taxonomy_help(options, taxonomy),
-            )
-            st.radio(
-                str(voting["question"]),
-                options,
-                disabled=True,
-                key="voting_interface_preview_choice",
-                label_visibility="collapsed",
-                format_func=lambda option: coverage_display_labels(
-                    voting.get("shade_coverage_taxonomy")
-                ).get(option, option),
-            )
-            st.divider()
-            st.markdown(
-                f"**{voting['source_question']}**",
-                help=source_taxonomy_help(voting.get("shade_source_taxonomy")),
-            )
-            for source in PUBLIC_SOURCE_OPTIONS:
-                st.checkbox(
-                    source_display_labels(voting.get("shade_source_taxonomy")).get(source, source),
-                    disabled=True,
-                    key=f"voting_interface_preview_source_{source.lower()}",
-                )
-            st.button(
-                str(voting["submit_label"]),
-                disabled=True,
-                key="voting_interface_preview_submit",
-                width="stretch",
-            )
-        else:
-            st.warning("Choose at least one coverage option to complete the interface.")
-        if voting.get("show_results", True):
-            st.markdown(f"**{voting['results_label']}: More votes needed**")
-            st.caption("Vote totals appear here in the deployed app.")
+        render_voting_panel(
+            {"stop_id": "preview", "stop_name": "Preview stop"},
+            "builder-preview",
+            taxonomy,
+            voting,
+            preview=True,
+        )
 
 
 def render_advanced_deployment_guidance() -> None:
@@ -211,7 +177,7 @@ def render_advanced_deployment_guidance() -> None:
 
 
 def render_voting_page() -> None:
-    st.title("Consensus")
+    st.title("Community Voting")
     st.markdown(
         "Configure how community input contributes to consensus and public result reporting."
     )

@@ -14,12 +14,14 @@ def test_core_modules_compile_without_bytecode_writes():
         "streamlit_app.py",
         "published_app.py",
         "public_voting.py",
+        "shade_gis/ui_tables.py",
+        "shade_gis/taxonomy_components.py",
+        "shade_gis/data_quality_components.py",
         "shade_gis/shade_dimensions.py",
         "shade_gis/deploy/artifacts.py",
         "shade_gis/deploy/bundle.py",
         "shade_gis/pages/preview_page.py",
         "shade_gis/pages/data_quality_page.py",
-        "shade_gis/pages/agreement_page.py",
         "shade_gis/pages/voting_page.py",
         "shade_gis/pages/deploy_page.py",
     ]:
@@ -162,13 +164,6 @@ def test_public_taxonomy_table_does_not_expose_sort_order():
     assert 'drop(columns=["sort_order"]' in source
 
 
-def test_builder_docs_taxonomy_table_does_not_expose_sort_order():
-    source = Path("builder_about_page.py").read_text(encoding="utf-8")
-
-    assert "st.dataframe(builder_taxonomy_display_table(taxonomy)" in source
-    assert '["sort_order", "name", "description", "color"]' not in source
-
-
 def test_preview_uses_the_shared_stop_and_voting_panel():
     preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
@@ -181,22 +176,21 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
 
     assert '("Dataset", "Data")' in builder_source
     assert '("Labelling", "Labels")' in builder_source
-    assert '("Preview", "Preview")' in builder_source
+    assert '("Build", "Preview")' in builder_source
     assert '("Export", "Deploy")' in builder_source
     assert '"Dataset": [' in builder_source
     assert '("Quality", "Data Quality")' in builder_source
-    assert '("Labels", "Labels")' in builder_source
-    assert '("Independent Review", "Blind Coding")' in builder_source
-    assert '("Consensus", "Voting")' in builder_source
+    assert '("Dataset Review", "Labels")' in builder_source
+    assert '("Intercoder Review", "Blind Coding")' in builder_source
+    assert '("Community Voting", "Voting")' in builder_source
     assert 'key=f"primary_nav_{label.lower()}"' in builder_source
     assert 'key="header_project"' in builder_source
     assert 'f"{selector_label} ▾"' not in builder_source
     assert "gap: 0.5rem !important" in builder_source
     assert "flex: 0 0 auto !important" in builder_source
     assert 'elif page == "Agreement"' not in builder_source
-    assert 'agreement_enabled = "Agreement metrics" in selected_sections' in preview_source
-    assert "render_agreement_analytics_section(" in preview_source
-    assert "include_agreement=False" in preview_source
+    assert "render_agreement_analytics_section(" not in preview_source
+    assert "include_agreement=True" in preview_source
 
 
 def test_builder_has_project_home_and_clickable_brand_navigation():
@@ -227,7 +221,7 @@ def test_builder_has_project_home_and_clickable_brand_navigation():
 def test_labelling_workflow_uses_action_oriented_navigation():
     source = Path("shade_gis/pages/labels_page.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Labels")' in source
+    assert 'st.title("Dataset Review")' in source
     assert '"+ Submit Label"' in source
     assert '"Review Queue"' in source
     assert '"Audit History"' in source
@@ -240,10 +234,10 @@ def test_labelling_workflow_uses_action_oriented_navigation():
     assert '"Submit raw label"' not in source
 
 
-def test_independent_review_uses_research_workflow_hierarchy():
+def test_blind_coding_uses_research_workflow_hierarchy():
     source = Path("shade_gis/pages/blind_coding_page.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Independent Review")' in source
+    assert 'st.title("Intercoder Review")' in source
     assert 'st.subheader("Study Setup")' in source
     assert 'st.subheader("Review Materials")' in source
     assert 'st.subheader("Study Progress")' in source
@@ -251,39 +245,67 @@ def test_independent_review_uses_research_workflow_hierarchy():
     assert '"Agreement threshold"' in source
     assert "Items below this agreement level are flagged for adjudication." in source
     assert '"Add Review Image"' in source
-    assert '"Start Independent Review"' in source
+    assert '"Start Intercoder Review"' in source
     assert 'st.expander("Advanced versioning", expanded=False)' in source
     assert 'st.expander("Admin preview", expanded=False)' in source
     assert '"Workspace role"' not in source
     assert '"Open blind coding"' not in source
 
 
-def test_consensus_groups_configuration_and_hides_deployment_details():
+def test_voting_groups_configuration_and_hides_deployment_details():
     source = Path("shade_gis/pages/voting_page.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Consensus")' in source
+    assert 'st.title("Community Voting")' in source
     assert 'st.subheader("Configuration")' in source
     assert 'st.subheader("Live Preview")' in source
     for group in ["Visitor Experience", "Voting Options", "Abuse Prevention", "Result Display"]:
         assert f'st.expander("{group}"' in source
     assert 'st.expander("Advanced Deployment", expanded=False)' in source
     assert "SHADE_GIS_VOTE_DATABASE_URL" in source
+    assert "render_voting_panel(" in source
+    assert "preview=True" in source
     assert 'st.subheader("Deployment Storage")' not in source
+
+
+def test_preview_configuration_pages_do_not_duplicate_full_public_renderers():
+    visuals = Path("shade_gis/pages/visuals_page.py").read_text(encoding="utf-8")
+    docs = Path("shade_gis/pages/docs_page.py").read_text(encoding="utf-8")
+
+    assert '"Open full preview →"' in visuals
+    assert 'st.subheader("Custom Chart Preview")' not in visuals
+    assert 'st.subheader("Data Table Preview")' not in visuals
+    assert 'st.subheader("Available Fields")' not in visuals
+    assert "render_builder_about_page" not in docs
+    assert "authoritative public rendering" in docs
+
+
+def test_page_modules_use_explicit_dependencies_and_shared_components():
+    page_sources = [
+        path.read_text(encoding="utf-8")
+        for path in Path("shade_gis/pages").glob("*.py")
+    ]
+
+    assert all("from builder_app import *" not in source for source in page_sources)
+    assert "shade_gis.data_quality_components" in Path(
+        "shade_gis/pages/data_quality_page.py"
+    ).read_text(encoding="utf-8")
+    assert "shade_gis.taxonomy_components" in Path(
+        "shade_gis/pages/taxonomy_page.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_data_page_uses_progress_dashboard_and_collapsed_dataset_preview():
     source = Path("shade_gis/pages/data_page.py").read_text(encoding="utf-8")
 
     assert 'st.subheader("Dataset Status")' in source
-    assert 'st.markdown("#### Work Queue")' in source
-    assert "with st.expander(queue_label, expanded=False)" in source
-    assert '"Show stops"' in source
-    assert '"Open labeling workspace →"' in source
+    assert '"Open Dataset Review →"' in source
+    assert '"Show stops"' not in source
+    assert '"Work Queue"' not in source
     assert 'st.expander("Dataset Preview", expanded=False)' in source
     assert "render_dataframe_table(visible_stops)" in source
     assert "st.dataframe(" not in source
     assert 'st.subheader("Dataset Health")' not in source
-    assert 'render_data_quality_dashboard(st.session_state["stops"]' not in source
+    assert "render_data_quality_dashboard" not in source
 
 
 def test_data_quality_has_a_dedicated_data_menu_page():
@@ -311,7 +333,7 @@ def test_taxonomy_has_a_dedicated_data_menu_page():
     assert "render_terminology_editor(methodology)" in source
     assert "render_shade_source_taxonomy_editor(methodology)" in source
     assert "render_shade_coverage_taxonomy_editor(methodology, taxonomy)" in source
-    assert '"Reset definitions"' in Path("shade_gis/pages/data_page.py").read_text(encoding="utf-8")
+    assert '"Reset definitions"' in Path("shade_gis/taxonomy_components.py").read_text(encoding="utf-8")
     assert 'with st.container(key="terminology_table")' in source
     assert 'with st.container(key="taxonomy_workspace")' in source
     assert 'with st.container(key="taxonomy_card_terminology")' in source

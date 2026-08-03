@@ -1,7 +1,7 @@
-from builder_app import *
-from shade_gis.pages.data_page import (
+import streamlit as st
+
+from shade_gis.taxonomy_components import (
     coverage_taxonomy_table_frame,
-    render_dataframe_table,
     render_shade_coverage_taxonomy_editor,
     render_shade_source_taxonomy_editor,
     render_taxonomy_section_header,
@@ -11,6 +11,7 @@ from shade_gis.pages.data_page import (
     source_taxonomy_table_frame,
     terminology_table_frame,
 )
+from shade_gis.ui_tables import render_dataframe_table
 
 
 def render_taxonomy_page() -> None:
@@ -219,4 +220,3 @@ def render_taxonomy_page() -> None:
                         coverage_taxonomy_table_frame(methodology, taxonomy).drop(columns=["code"]),
                         {"shade_coverage": "Shade coverage", "operational_definition": "Operational definition"},
                     )
-

@@ -27,7 +27,7 @@ from builder_app import (
     review_queue_label,
     review_queue_table,
 )
-from shade_gis.pages import agreement_page, labels_page
+from shade_gis.pages import labels_page
 
 
 def disagreement_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -85,46 +85,6 @@ def test_agreement_overview_counts_only_unresolved_disagreements():
     assert metrics["stops_labeled"] == 3
     assert metrics["stops_needing_review"] == 1
     assert metrics["mean_agreement"] == 72.23333333333333
-
-
-def test_agreement_overview_markup_groups_cards_and_reliability():
-    markup = agreement_page.agreement_overview_markup(
-        {
-            "stops_labeled": 3,
-            "stops_needing_review": 0,
-            "mean_agreement": 100.0,
-            "krippendorff_alpha": 1.0,
-            "fleiss_kappa": 1.0,
-        }
-    )
-
-    assert "📍 Labeled" in markup
-    assert "⚠️ Review" in markup
-    assert "🤝 Agreement" in markup
-    assert "100.0%" in markup
-    assert "Reliability" in markup
-    assert "Krippendorff α" in markup
-    assert "Fleiss κ" in markup
-
-
-def test_disagreement_queue_filters_and_paginates():
-    stops, labels = disagreement_fixture()
-    queue = disagreement_queue_table(stops, labels)
-
-    filtered = agreement_page.filter_disagreement_queue_records(
-        queue,
-        minimum_labels=3,
-        maximum_agreement=70,
-        label_categories=["Significant Shade"],
-    )
-    page, page_number, page_count = agreement_page.paginate_records(queue, page=99, page_size=1)
-    display = agreement_page.disagreement_queue_display_table(filtered)
-
-    assert filtered["stop_id"].tolist() == ["4254"]
-    assert display.loc[0, "Votes"] == "2 / 3"
-    assert display.loc[0, "Agreement"] == "66.7%"
-    assert page["stop_id"].tolist() == ["4254"]
-    assert (page_number, page_count) == (2, 2)
 
 
 def test_stop_images_roundtrip_for_review(db_path, project, taxonomy, methodology, visualization, minimal_stops):

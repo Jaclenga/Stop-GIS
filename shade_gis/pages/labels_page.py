@@ -1,8 +1,45 @@
-from builder_app import *
+import re
+from typing import Any
+
+import pandas as pd
+import pydeck as pdk
+import streamlit as st
+
+import published_app
+from builder_app import (
+    DEFAULT_TAXONOMY,
+    LABELER_ROLE_OPTIONS,
+    LABEL_SOURCE_OPTIONS,
+    REVIEW_ACTION_OPTIONS,
+    REVIEW_ACTION_STATUS_DEFAULTS,
+    REVIEW_QUEUE_DEFAULT_STATUSES,
+    REVIEW_STATUS_COLORS,
+    SHADE_COVERAGE_OPTIONS,
+    SHADE_SOURCE_OPTIONS,
+    save_active_project_to_store,
+)
+from platform_store import (
+    add_review_event,
+    add_shade_label,
+    list_review_history,
+    list_shade_labels,
+)
+from shade_gis.builder_labels import (
+    label_source_code,
+    review_queue_label,
+    review_queue_table,
+    stop_picker_label,
+    stop_review_snapshot,
+    taxonomy_names,
+)
+from shade_gis.builder_visuals import build_deck_chart
 from shade_gis.shade_dimensions import (
     infer_sources_from_legacy_category,
+    normalize_coverage_display_taxonomy,
     normalize_shade_coverage,
     normalize_shade_source as normalize_source_dimension,
+    normalize_source_taxonomy,
+    normalize_terminology,
     split_shade_sources as split_source_dimension,
 )
 
@@ -842,7 +879,7 @@ def render_raw_label_collection(
 ) -> None:
     st.subheader("Submit Label")
     st.caption(
-        "Add a direct curator-supplied label outside the structured Independent Review study. "
+        "Add a direct curator-supplied label outside the structured Intercoder Review study. "
         "The submission remains auditable and does not replace earlier raw labels."
     )
     stop_options = stops.reset_index(drop=True)
@@ -1040,7 +1077,7 @@ def render_review_label_section(
 
 
 def render_labels_page() -> None:
-    st.title("Labels")
+    st.title("Dataset Review")
     st.markdown(
         "Create labels, resolve conflicts, and inspect the dataset's labelling history."
     )

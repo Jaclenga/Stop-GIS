@@ -3,12 +3,11 @@ from __future__ import annotations
 import pandas as pd
 
 from shade_gis.pages.data_page import (
-    dataset_preview_page,
     dataset_status_metrics,
     dataset_status_table,
-    dataset_work_queue_display,
-    filter_dataset_work_queue,
     manual_entry_dataframe,
+)
+from shade_gis.taxonomy_components import (
     render_shade_coverage_taxonomy_editor,
     render_shade_source_taxonomy_editor,
     render_terminology_editor,
@@ -19,6 +18,7 @@ from shade_gis.pages.data_page import (
     toggle_taxonomy_edit_mode,
 )
 from shade_gis.shade_dimensions import normalize_terminology
+from shade_gis.ui_tables import dataset_preview_page
 
 
 def status_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -73,12 +73,12 @@ def test_normalize_terminology_cleans_rows_and_preserves_an_intentionally_empty_
 
 
 def test_taxonomy_edit_mode_is_project_scoped_and_toggleable(monkeypatch):
-    from shade_gis.pages import data_page
+    from shade_gis import taxonomy_components
 
     class FakeStreamlit:
         session_state = {"active_project_id": "project-1"}
 
-    monkeypatch.setattr(data_page, "st", FakeStreamlit)
+    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
 
     key = taxonomy_edit_mode_key("shade_source")
     assert key == "taxonomy_edit_mode:project-1:shade_source"
@@ -89,12 +89,12 @@ def test_taxonomy_edit_mode_is_project_scoped_and_toggleable(monkeypatch):
 
 
 def test_source_definition_reset_preserves_display_labels(monkeypatch):
-    from shade_gis.pages import data_page
+    from shade_gis import taxonomy_components
 
     class FakeStreamlit:
         session_state = {"active_project_id": "project-1"}
 
-    monkeypatch.setattr(data_page, "st", FakeStreamlit)
+    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
     methodology = {
         "shade_source_taxonomy": [
             {
@@ -126,12 +126,12 @@ def test_source_definition_reset_preserves_display_labels(monkeypatch):
 
 
 def test_coverage_definition_reset_preserves_display_labels(monkeypatch, taxonomy):
-    from shade_gis.pages import data_page
+    from shade_gis import taxonomy_components
 
     class FakeStreamlit:
         session_state = {"active_project_id": "project-1"}
 
-    monkeypatch.setattr(data_page, "st", FakeStreamlit)
+    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
     methodology = {
         "shade_coverage_taxonomy": [
             {
@@ -190,9 +190,9 @@ def test_terminology_editor_updates_project_methodology(monkeypatch):
                 ]
             )
 
-    from shade_gis.pages import data_page
+    from shade_gis import taxonomy_components
 
-    monkeypatch.setattr(data_page, "st", FakeStreamlit)
+    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
     methodology = {"terminology": []}
 
     edited = render_terminology_editor(methodology)
@@ -232,9 +232,9 @@ def test_source_taxonomy_editor_updates_definitions_without_editing_codes(monkey
             edited.loc[edited["code"] == "Natural", "operational_definition"] = "Custom natural definition."
             return edited
 
-    from shade_gis.pages import data_page
+    from shade_gis import taxonomy_components
 
-    monkeypatch.setattr(data_page, "st", FakeStreamlit)
+    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
     methodology = {}
 
     edited = render_shade_source_taxonomy_editor(methodology)
@@ -275,9 +275,9 @@ def test_coverage_taxonomy_editor_updates_definitions_without_editing_codes(monk
             ] = "Custom limited definition."
             return edited
 
-    from shade_gis.pages import data_page
+    from shade_gis import taxonomy_components
 
-    monkeypatch.setattr(data_page, "st", FakeStreamlit)
+    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
 
     methodology = {}
     edited = render_shade_coverage_taxonomy_editor(methodology, taxonomy)
@@ -326,24 +326,6 @@ def test_dataset_status_combines_final_labels_raw_labels_and_review_state():
         "unlabeled_stops": 1,
         "label_coverage": 0.75,
         "review_completion": 1 / 3,
-    }
-
-
-def test_dataset_work_queue_filters_searches_and_uses_concise_columns():
-    stops, labels = status_fixture()
-    status = dataset_status_table(stops, labels)
-
-    filtered = filter_dataset_work_queue(status, ["Needs Review"], "1002")
-    display = dataset_work_queue_display(filtered)
-
-    assert filtered["stop_id"].tolist() == ["1002"]
-    assert display.columns.tolist() == ["Stop ID", "Status", "Labels", "Final Label", "Agreement"]
-    assert display.iloc[0].to_dict() == {
-        "Stop ID": "1002",
-        "Status": "Needs Review",
-        "Labels": 2,
-        "Final Label": "Not set",
-        "Agreement": "50.0%",
     }
 
 

@@ -1,4 +1,86 @@
-from builder_app import *
+import hashlib
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import streamlit as st
+
+from builder_app import REVIEW_STATUS_COLORS, VISUAL_MAP_HEIGHT, rgb_to_hex, set_page
+from shade_gis.builder_imports import (
+    calculate_priority_scores,
+    format_bytes,
+    max_upload_bytes,
+    max_zip_uncompressed_bytes,
+    normalize_hex_color,
+    parse_geojson_overlay_bytes,
+    parse_shapefile_overlay_zip,
+    timestamp_with_timezone,
+)
+from shade_gis.builder_visuals import (
+    CHART_AGGREGATIONS,
+    CHART_TYPES,
+    COLOR_PALETTE,
+    DEFAULT_CUSTOM_CHART,
+    DEFAULT_VISUALIZATION,
+    GIS_OVERLAY_CATEGORIES,
+    MAP_STYLES,
+    MARKER_SHAPES,
+    MAX_CUSTOM_CHARTS,
+    RECORD_COUNT_FIELD,
+    SHADE_PALETTES,
+    build_deck_chart,
+    clean_gis_overlays,
+    clean_selected_options,
+    display_label,
+    ensure_custom_chart_defaults,
+    ensure_field_color_map,
+    field_values_for_colors,
+    get_available_metric_cards,
+    get_available_overlays,
+    get_chart_column_options,
+    get_color_options,
+    get_custom_charts,
+    get_display_column_options,
+    get_selected_display_columns,
+    has_column_data,
+)
+
+
+def visual_map_render_key(
+    visualization: dict[str, Any], taxonomy: list[dict[str, Any]]
+) -> str:
+    """Force deck.gl to remount when marker or color styling changes."""
+    style_fields = (
+        "color_by",
+        "marker_shape",
+        "marker_size",
+        "marker_opacity",
+        "marker_stroke_color",
+        "marker_stroke_width",
+        "shade_palette",
+        "review_status_colors",
+        "priority_colors",
+        "field_color_maps",
+    )
+    payload = {
+        "visualization": {
+            field: visualization.get(field) for field in style_fields
+        },
+        "taxonomy": [
+            {
+                "name": item.get("name"),
+                "color": item.get("color"),
+                "sort_order": item.get("sort_order"),
+            }
+            for item in taxonomy
+        ],
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"visual_map_{fingerprint}"
 
 
 def session_backed_color_picker(label: str, default: Any, key: str) -> str:
@@ -524,42 +606,23 @@ def render_visuals_page() -> None:
     st.session_state["stops"]["priority_score"] = calculate_priority_scores(
         stops, visualization["priority_weights"]
     )
-    display_columns = get_selected_display_columns(
-        st.session_state["stops"], visualization
-    )
-
     with preview:
         st.subheader("Map Preview")
         if stops.empty:
             st.warning("Import a dataset before configuring the map.")
         else:
+            taxonomy = st.session_state["taxonomy"]
             st.pydeck_chart(
-                build_deck_chart(stops, st.session_state["taxonomy"], visualization),
+                build_deck_chart(stops, taxonomy, visualization),
                 width="stretch",
                 height=VISUAL_MAP_HEIGHT,
+                key=visual_map_render_key(visualization, taxonomy),
             )
-    st.subheader("Custom Chart Preview")
-    if stops.empty:
-        st.info("Import a dataset to preview a custom chart.")
-    else:
-        render_custom_charts(st.session_state["stops"], visualization)
-
-    st.subheader("Data Table Preview")
-    if stops.empty:
-        st.info("Import a dataset to preview selected data columns.")
-    else:
-        st.dataframe(
-            st.session_state["stops"].loc[:, display_columns].head(20),
-            width="stretch",
-            hide_index=True,
+        st.caption("Open Preview to verify the complete public map, analytics, methodology, and exports.")
+        st.button(
+            "Open full preview →",
+            type="secondary",
+            key="visuals_open_full_preview",
+            on_click=set_page,
+            args=("Preview",),
         )
-
-    st.subheader("Available Fields")
-    active_columns = get_active_data_columns(stops)
-    field_summary = pd.DataFrame(
-        [
-            {"field": column, "non_null_values": int(stops[column].notna().sum())}
-            for column in active_columns
-        ]
-    )
-    st.dataframe(field_summary, width="stretch", hide_index=True)

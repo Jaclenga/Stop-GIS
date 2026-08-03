@@ -22,10 +22,10 @@ pre-release phase while the reusable platform stabilizes.
   per-row downloads, and a separate Dataset Provenance section.
 
 ### Changed
-- Clarified Labelling information architecture: Labels now leads with moderation, Independent Review
-  follows Study Setup → Review Materials → Study Progress, and Consensus pairs grouped configuration
+- Clarified Labelling information architecture: Dataset Review now leads with moderation, Intercoder Review
+  follows Study Setup → Review Materials → Study Progress, and Community Voting pairs grouped configuration
   with a live preview while moving versioning, role preview, and deployment guidance into disclosures.
-- Reorganized Labelling into `Labels`, `Independent Review`, and `Consensus`, with separate
+- Reorganized Labelling into `Dataset Review`, `Intercoder Review`, and `Community Voting`, with separate
   submit-label, review-queue, and audit-history views and clearer moderator-facing queue copy.
 - Redesigned the terminology and taxonomy workspace as a centered, research-oriented card layout
   with lighter tables, roomier wrapped definitions, sentence-case headings, and compact inline actions.
@@ -36,10 +36,14 @@ pre-release phase while the reusable platform stabilizes.
   success/update/unpublish actions, and the former ZIP/PowerShell workflow retained as an advanced fallback.
 - Builder Docs and public methodology taxonomy tables keep configured category ordering without
   displaying the internal `sort_order` field.
-- Progress-oriented Dataset Status dashboard with coverage/review progress bars, a filtered work
-  queue, and a collapsed paginated Dataset Preview replacing the former Dataset Health spreadsheets.
-- Agreement analytics section with a scalable disagreement-only queue, per-stop evidence review,
-  canonical decision persistence, automatic reopening after newer labels, and registered-image display.
+- Progress-oriented Dataset Status dashboard with coverage/review progress bars, a direct handoff
+  to Dataset Review, and a collapsed paginated Dataset Preview replacing the former Dataset Health spreadsheets.
+- Consolidated moderator review, disagreement resolution, and audit history in Dataset Review; Preview
+  agreement analytics are read-only and no longer expose a second write-capable adjudication flow.
+- Removed duplicate chart, table, methodology, and voting preview implementations. Visuals keeps a
+  live configuration map, Docs is editor-only, and Community Voting reuses the production voting panel.
+- Extracted shared taxonomy, data-quality, and table components from page modules and removed
+  wildcard page imports from the builder application.
 - Configurable public bus-stop coverage voting in generated apps, including editable admin controls,
   per-browser-session vote handling, consensus thresholds, SQLite development storage, and optional
   shared PostgreSQL persistence for hosted deployments, managed from a dedicated builder page.

@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from platform_store import list_images
-from shade_gis.pages.data_page import render_data_quality_dashboard
+from shade_gis.data_quality_components import render_data_quality_dashboard
 
 
 def render_data_quality_page() -> None:

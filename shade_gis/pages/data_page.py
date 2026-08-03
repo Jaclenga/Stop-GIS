@@ -1,17 +1,58 @@
-from builder_app import *
-from shade_gis.data_quality import DATA_QUALITY_ISSUES, ISSUE_BY_KEY, evaluate_data_quality
-from shade_gis.shade_dimensions import (
-    normalize_shade_coverage,
-    normalize_source_taxonomy,
-    normalize_terminology,
+import math
+
+import pandas as pd
+import streamlit as st
+
+from builder_app import (
+    create_blank_project,
+    load_project_into_session,
+    save_active_project_to_store,
+    set_page,
+)
+from platform_store import (
+    database_status,
+    list_projects,
+    list_review_history,
+    list_shade_labels,
+)
+from shade_gis.builder_imports import (
+    OPTIONAL_FIELDS,
+    REQUIRED_STOP_FIELDS,
+    clean_import_key,
+    detect_zip_import_format,
+    fetch_api_bytes,
+    format_bytes,
+    import_stop_dataset,
+    max_api_bytes,
+    max_upload_bytes,
+    max_zip_members,
+    max_zip_uncompressed_bytes,
+    parse_api_response,
+    parse_geojson_bytes,
+    parse_gtfs_zip,
+    parse_shapefile_zip,
+    read_csv_bytes,
+    render_mapped_import_controls,
+)
+from shade_gis.builder_labels import disagreement_queue_table, majority_label_table
+from shade_gis.shade_dimensions import normalize_shade_coverage
+from shade_gis.ui_tables import (
+    DATASET_PREVIEW_PAGE_SIZES,
+    dataset_preview_page,
+    render_dataframe_table,
 )
 
 
 DATASET_REVIEWED_STATUSES = {"Crowd Reviewed", "Expert Reviewed", "Accepted", "Archived"}
 DATASET_ATTENTION_STATUSES = {"Needs Review", "Disputed"}
-DATASET_STATUS_OPTIONS = ["Needs Review", "Reviewed", "Unlabeled"]
-DATASET_QUEUE_PAGE_SIZES = [10, 25, 50]
-DATASET_PREVIEW_PAGE_SIZES = [25, 50, 100]
+MANUAL_ENTRY_COLUMNS = REQUIRED_STOP_FIELDS + [
+    "agency",
+    "routes",
+    "municipality",
+    "shading",
+    "review_status",
+    "confidence",
+]
 
 
 def manual_entry_dataframe(records: list[dict[str, str]]) -> pd.DataFrame:
@@ -25,253 +66,6 @@ def manual_entry_dataframe(records: list[dict[str, str]]) -> pd.DataFrame:
         columns=MANUAL_ENTRY_COLUMNS,
         dtype=object,
     )
-
-
-def dataframe_html(frame: pd.DataFrame, column_labels: dict[str, str] | None = None) -> str:
-    """Build an escaped HTML table without Streamlit's PyArrow dataframe path."""
-    if frame.columns.duplicated().any():
-        duplicates = [str(column) for column in frame.columns[frame.columns.duplicated()].tolist()]
-        raise ValueError(f"Display dataframe contains duplicate columns: {duplicates}")
-    display = frame.rename(columns=column_labels or {})
-    return display.to_html(
-        index=False,
-        escape=True,
-        border=0,
-        classes="data-page-table",
-        na_rep="",
-    )
-
-
-def render_dataframe_table(frame: pd.DataFrame, column_labels: dict[str, str] | None = None) -> None:
-    if frame.empty:
-        st.caption("No rows to display.")
-        return
-    st.markdown(
-        '<div style="max-width:100%;overflow-x:auto">'
-        f"{dataframe_html(frame, column_labels)}"
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-
-def taxonomy_edit_mode_key(section: str) -> str:
-    project_id = st.session_state.get("active_project_id", "draft")
-    return f"taxonomy_edit_mode:{project_id}:{section}"
-
-
-def toggle_taxonomy_edit_mode(mode_key: str) -> None:
-    st.session_state[mode_key] = not bool(st.session_state.get(mode_key, False))
-
-
-def taxonomy_editor_revision_key(section: str) -> str:
-    project_id = st.session_state.get("active_project_id", "draft")
-    return f"taxonomy_editor_revision:{project_id}:{section}"
-
-
-def taxonomy_editor_key(section: str) -> str:
-    project_id = st.session_state.get("active_project_id", "draft")
-    base_key = f"{section}_taxonomy_editor:{project_id}"
-    revision = int(st.session_state.get(taxonomy_editor_revision_key(section), 0) or 0)
-    return f"{base_key}:{revision}" if revision else base_key
-
-
-def bump_taxonomy_editor_revision(section: str) -> None:
-    revision_key = taxonomy_editor_revision_key(section)
-    st.session_state[revision_key] = int(st.session_state.get(revision_key, 0) or 0) + 1
-
-
-def reset_shade_source_definitions(methodology: dict[str, Any]) -> None:
-    default_definitions = {
-        item["shade_source"]: item["operational_definition"]
-        for item in SHADE_SOURCE_TAXONOMY
-    }
-    source_taxonomy = normalize_source_taxonomy(methodology.get("shade_source_taxonomy"))
-    for item in source_taxonomy:
-        item["operational_definition"] = default_definitions[item["code"]]
-    methodology["shade_source_taxonomy"] = source_taxonomy
-    bump_taxonomy_editor_revision("shade_source")
-
-
-def reset_shade_coverage_definitions(
-    methodology: dict[str, Any],
-    taxonomy: list[dict[str, Any]],
-) -> None:
-    default_definitions = {
-        item["shade_coverage"]: item["operational_definition"]
-        for item in SHADE_COVERAGE_TAXONOMY
-    }
-    coverage_taxonomy = normalize_coverage_display_taxonomy(
-        methodology.get("shade_coverage_taxonomy"),
-        taxonomy,
-    )
-    for item in coverage_taxonomy:
-        item["operational_definition"] = default_definitions[item["code"]]
-    methodology["shade_coverage_taxonomy"] = coverage_taxonomy
-
-    canonical_taxonomy = normalize_coverage_taxonomy(taxonomy)
-    for item in canonical_taxonomy:
-        if item["name"] in default_definitions:
-            item["description"] = default_definitions[item["name"]]
-    taxonomy[:] = normalize_coverage_taxonomy(canonical_taxonomy)
-    bump_taxonomy_editor_revision("shade_coverage")
-
-
-def render_taxonomy_section_header(
-    title: str,
-    section: str,
-    help_text: str,
-    *,
-    reset_callback: Any | None = None,
-    reset_args: tuple[Any, ...] = (),
-) -> bool:
-    mode_key = taxonomy_edit_mode_key(section)
-    editing = bool(st.session_state.get(mode_key, False))
-    if editing and reset_callback is not None:
-        title_column, reset_column, action_column = st.columns(
-            [0.68, 0.20, 0.12],
-            vertical_alignment="center",
-        )
-    else:
-        title_column, action_column = st.columns([0.88, 0.12], vertical_alignment="center")
-        reset_column = None
-    with title_column:
-        st.subheader(title, help=help_text)
-    if reset_column is not None:
-        with reset_column:
-            st.button(
-                "Reset definitions",
-                type="secondary",
-                width="stretch",
-                key=f"taxonomy_reset_{section}_{st.session_state.get('active_project_id', 'draft')}",
-                help="Restore the original operational definitions while keeping your display labels.",
-                on_click=reset_callback,
-                args=reset_args,
-            )
-    with action_column:
-        st.button(
-            "Done" if editing else "Edit",
-            type="secondary",
-            width="stretch",
-            key=f"taxonomy_toggle_{section}_{st.session_state.get('active_project_id', 'draft')}",
-            on_click=toggle_taxonomy_edit_mode,
-            args=(mode_key,),
-        )
-    return editing
-
-
-def terminology_table_frame(methodology: dict[str, Any]) -> pd.DataFrame:
-    return pd.DataFrame(
-        normalize_terminology(methodology.get("terminology")),
-        columns=["term", "operational_definition"],
-    )
-
-
-def source_taxonomy_table_frame(methodology: dict[str, Any]) -> pd.DataFrame:
-    return pd.DataFrame(
-        normalize_source_taxonomy(methodology.get("shade_source_taxonomy")),
-        columns=["code", "shade_source", "operational_definition"],
-    )
-
-
-def coverage_taxonomy_table_frame(
-    methodology: dict[str, Any],
-    taxonomy: list[dict[str, Any]],
-) -> pd.DataFrame:
-    return pd.DataFrame(
-        normalize_coverage_display_taxonomy(
-            methodology.get("shade_coverage_taxonomy"),
-            taxonomy,
-        ),
-        columns=["code", "shade_coverage", "operational_definition"],
-    )
-
-
-def render_terminology_editor(methodology: dict[str, Any]) -> list[dict[str, str]]:
-    frame = terminology_table_frame(methodology)
-    edited = st.data_editor(
-        frame,
-        column_config={
-            "term": st.column_config.TextColumn("Term", required=True, width="small"),
-            "operational_definition": st.column_config.TextColumn(
-                "Operational definition",
-                width="large",
-            ),
-        },
-        num_rows="dynamic",
-        hide_index=True,
-        width="stretch",
-        height="auto",
-        row_height=44,
-        key=f"terminology_editor:{st.session_state.get('active_project_id', 'draft')}",
-    )
-    normalized = normalize_terminology(edited.to_dict(orient="records"))
-    methodology["terminology"] = normalized
-    return normalized
-
-
-def render_shade_source_taxonomy_editor(methodology: dict[str, Any]) -> list[dict[str, str]]:
-    frame = source_taxonomy_table_frame(methodology)
-    edited = st.data_editor(
-        frame,
-        column_config={
-            "shade_source": st.column_config.TextColumn("Shade source", width="small"),
-            "operational_definition": st.column_config.TextColumn(
-                "Operational definition",
-                required=True,
-                width="large",
-            ),
-        },
-        column_order=["shade_source", "operational_definition"],
-        num_rows="fixed",
-        hide_index=True,
-        width="stretch",
-        height="auto",
-        row_height=44,
-        key=taxonomy_editor_key("shade_source"),
-    )
-    normalized = normalize_source_taxonomy(edited.to_dict(orient="records"))
-    methodology["shade_source_taxonomy"] = normalized
-    return normalized
-
-
-def render_shade_coverage_taxonomy_editor(
-    methodology: dict[str, Any],
-    taxonomy: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    normalized_taxonomy = normalize_coverage_taxonomy(taxonomy)
-    frame = coverage_taxonomy_table_frame(methodology, normalized_taxonomy)
-    edited = st.data_editor(
-        frame,
-        column_config={
-            "shade_coverage": st.column_config.TextColumn("Shade coverage", width="small"),
-            "operational_definition": st.column_config.TextColumn(
-                "Operational definition",
-                required=True,
-                width="large",
-            ),
-        },
-        column_order=["shade_coverage", "operational_definition"],
-        num_rows="fixed",
-        hide_index=True,
-        width="stretch",
-        height="auto",
-        row_height=44,
-        key=taxonomy_editor_key("shade_coverage"),
-    )
-    display_taxonomy = normalize_coverage_display_taxonomy(
-        edited.to_dict(orient="records"),
-        normalized_taxonomy,
-    )
-    methodology["shade_coverage_taxonomy"] = display_taxonomy
-    definitions = {
-        item["code"]: item["operational_definition"]
-        for item in display_taxonomy
-    }
-    for item in normalized_taxonomy:
-        if item["name"] in definitions and definitions[item["name"]]:
-            item["description"] = definitions[item["name"]]
-    taxonomy[:] = normalize_coverage_taxonomy(normalized_taxonomy)
-    return taxonomy
 
 
 def dataset_status_table(
@@ -353,144 +147,6 @@ def dataset_status_metrics(status: pd.DataFrame) -> dict[str, int | float]:
     }
 
 
-def filter_dataset_work_queue(
-    status: pd.DataFrame,
-    selected_statuses: list[str],
-    stop_search: str = "",
-) -> pd.DataFrame:
-    filtered = status.copy()
-    if selected_statuses:
-        filtered = filtered[filtered["dataset_status"].isin(selected_statuses)]
-    if stop_search.strip():
-        query = stop_search.strip().lower()
-        filtered = filtered[filtered["stop_id"].astype(str).str.lower().str.contains(query, regex=False)]
-    rank = {"Needs Review": 0, "Unlabeled": 1, "Reviewed": 2}
-    filtered["status_rank"] = filtered["dataset_status"].map(rank).fillna(3)
-    filtered["agreement_sort"] = pd.to_numeric(filtered["agreement_pct"], errors="coerce").fillna(101)
-    return filtered.sort_values(["status_rank", "agreement_sort", "stop_id"])
-
-
-def dataset_work_queue_display(status: pd.DataFrame) -> pd.DataFrame:
-    records = []
-    for _, row in status.iterrows():
-        agreement = pd.to_numeric(pd.Series([row.get("agreement_pct")]), errors="coerce").iloc[0]
-        records.append(
-            {
-                "Stop ID": str(row.get("stop_id", "")),
-                "Status": str(row.get("dataset_status", "")),
-                "Labels": int(row.get("label_count", 0) or 0),
-                "Final Label": str(row.get("final_label", "Not set") or "Not set"),
-                "Agreement": f"{float(agreement):.1f}%" if pd.notna(agreement) else "—",
-            }
-        )
-    return pd.DataFrame.from_records(
-        records,
-        columns=["Stop ID", "Status", "Labels", "Final Label", "Agreement"],
-    )
-
-
-def dataset_preview_page(
-    stops: pd.DataFrame,
-    page: int,
-    page_size: int,
-) -> tuple[pd.DataFrame, int, int]:
-    """Return only the requested preview slice so the UI never mounts all rows."""
-    page_size = max(int(page_size), 1)
-    page_count = max(1, math.ceil(len(stops) / page_size))
-    safe_page = min(max(int(page), 1), page_count)
-    start = (safe_page - 1) * page_size
-    return stops.iloc[start : start + page_size].copy(), safe_page, page_count
-
-
-def render_data_quality_dashboard(
-    stops: pd.DataFrame,
-    images: pd.DataFrame,
-    *,
-    show_heading: bool = True,
-) -> None:
-    """Render the unified validation and publication-readiness workflow."""
-    report = evaluate_data_quality(stops, images)
-    if show_heading:
-        st.subheader("Data Quality")
-    st.caption(
-        "Resolve publication-blocking stop and image issues here before previewing or deploying the study."
-    )
-
-    if report.publication_ready:
-        st.success(f"Publication-ready: all {len(stops):,} stops passed the required data-quality checks.")
-    elif not len(stops):
-        st.warning("Not publication-ready: import at least one stop, then run the checks below.")
-    else:
-        st.error(
-            f"Not publication-ready: {report.total_issues:,} affected record occurrence(s) "
-            "must be resolved."
-        )
-
-    render_dataframe_table(report.summary_table())
-
-    st.markdown("#### Validation checks")
-    for issue in DATA_QUALITY_ISSUES:
-        count = report.count(issue.key)
-        check = st.columns([2.7, 0.7, 1.25], vertical_alignment="center")
-        check[0].markdown(f"**{issue.label}**  \n{issue.description}")
-        check[1].metric("Affected", f"{count:,}")
-        if check[2].button(
-            "View affected records",
-            key=f"data_quality_view_{issue.key}",
-            disabled=count == 0,
-            width="stretch",
-        ):
-            st.session_state["data_quality_issue_filter"] = issue.key
-
-    st.markdown('<div id="data-quality-affected-records"></div>', unsafe_allow_html=True)
-    st.markdown("#### Affected records")
-    issue_options = ["all", *[issue.key for issue in DATA_QUALITY_ISSUES]]
-    current_filter = st.session_state.get("data_quality_issue_filter", "all")
-    if current_filter not in issue_options:
-        st.session_state["data_quality_issue_filter"] = "all"
-    selected_issue = st.selectbox(
-        "Filter dataset by validation issue",
-        issue_options,
-        format_func=lambda key: "All validation issues" if key == "all" else ISSUE_BY_KEY[key].label,
-        key="data_quality_issue_filter",
-    )
-
-    if selected_issue == "all":
-        affected = report.issue_records()
-        display_label = "issue occurrences"
-    else:
-        affected = report.affected_records(selected_issue)
-        display_label = ISSUE_BY_KEY[selected_issue].label.lower()
-
-    if affected.empty:
-        st.info("No affected records match this validation filter.")
-        return
-
-    paging = st.columns([1, 1, 3], vertical_alignment="bottom")
-    page_size = paging[0].selectbox(
-        "Quality rows per page",
-        DATASET_PREVIEW_PAGE_SIZES,
-        index=0,
-        key="data_quality_page_size",
-    )
-    page_count = max(1, math.ceil(len(affected) / int(page_size)))
-    current_page = st.session_state.get("data_quality_page", 1)
-    if not isinstance(current_page, int) or current_page < 1 or current_page > page_count:
-        st.session_state["data_quality_page"] = min(max(int(current_page or 1), 1), page_count)
-    requested_page = paging[1].number_input(
-        "Quality page",
-        min_value=1,
-        max_value=page_count,
-        step=1,
-        key="data_quality_page",
-    )
-    visible, page, page_count = dataset_preview_page(affected, int(requested_page), int(page_size))
-    paging[2].caption(
-        f"{len(affected):,} {display_label} | Page {page:,} of {page_count:,}"
-    )
-    render_dataframe_table(visible)
-
-
 def render_dataset_status(
     stops: pd.DataFrame,
     labels: pd.DataFrame,
@@ -524,65 +180,21 @@ def render_dataset_status(
         )
 
     attention_count = int(metrics["stops_needing_review"]) + int(metrics["unlabeled_stops"])
-    queue_label = (
-        f"Work queue · {attention_count:,} stops need attention"
+    queue_message = (
+        f"{attention_count:,} stops need labeling or moderator attention."
         if attention_count
-        else "Work queue · All caught up"
+        else "All stops are labeled and reviewed."
     )
-    with st.expander(queue_label, expanded=False):
-        st.markdown("#### Work Queue")
-        st.caption(
-            "Choose the stops you want to work on. Stops that need review appear first; "
-            "open the labeling workspace when you are ready to resolve them."
-        )
-        filters = st.columns([2, 1.2])
-        selected_statuses = filters[0].multiselect(
-            "Show stops",
-            DATASET_STATUS_OPTIONS,
-            default=["Needs Review", "Unlabeled"],
-            key="dataset_queue_statuses",
-            help="Needs Review has submitted information to check. Unlabeled still needs a first label.",
-        )
-        stop_search = filters[1].text_input(
-            "Find a stop",
-            key="dataset_queue_stop_search",
-            placeholder="Enter a stop ID",
-        )
-        filtered = filter_dataset_work_queue(status, selected_statuses, stop_search)
-        if filtered.empty:
-            st.info("No stops match these choices. Try showing another group or clearing the search.")
-        else:
-            paging = st.columns([1, 1, 3], vertical_alignment="bottom")
-            page_size = paging[0].selectbox(
-                "Stops per page",
-                DATASET_QUEUE_PAGE_SIZES,
-                index=1,
-                key="dataset_queue_page_size",
-            )
-            page_count = max(1, math.ceil(len(filtered) / int(page_size)))
-            current_page = st.session_state.get("dataset_queue_page", 1)
-            if not isinstance(current_page, int) or current_page < 1 or current_page > page_count:
-                st.session_state["dataset_queue_page"] = min(max(int(current_page or 1), 1), page_count)
-            requested_page = paging[1].number_input(
-                "Page",
-                min_value=1,
-                max_value=page_count,
-                step=1,
-                key="dataset_queue_page",
-            )
-            start = (int(requested_page) - 1) * int(page_size)
-            visible = filtered.iloc[start : start + int(page_size)]
-            paging[2].caption(
-                f"Showing {start + 1:,}–{start + len(visible):,} of {len(filtered):,} matching stops"
-            )
-            render_dataframe_table(dataset_work_queue_display(visible))
-            st.button(
-                "Open labeling workspace →",
-                type="primary",
-                key="dataset_queue_open_labels",
-                on_click=set_page,
-                args=("Labels",),
-            )
+    queue_status = st.columns([3, 1], vertical_alignment="center")
+    queue_status[0].info(queue_message)
+    queue_status[1].button(
+        "Open Dataset Review →",
+        type="primary" if attention_count else "secondary",
+        width="stretch",
+        key="dataset_open_labels",
+        on_click=set_page,
+        args=("Labels",),
+    )
 
     with st.expander("Dataset Preview", expanded=False):
         st.caption("Browse the project dataset one page at a time. Only the visible page is rendered.")
@@ -678,7 +290,6 @@ def render_data_page() -> None:
     render_project_storage_controls()
     project = st.session_state["project"]
     taxonomy = st.session_state["taxonomy"]
-    methodology = st.session_state["methodology"]
 
     left, right = st.columns([1, 1])
     with left:
