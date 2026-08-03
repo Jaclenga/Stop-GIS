@@ -11,6 +11,7 @@ def test_core_modules_compile_without_bytecode_writes():
         "builder_app.py",
         "platform_store.py",
         "app.py",
+        "streamlit_app.py",
         "published_app.py",
         "public_voting.py",
         "shade_gis/shade_dimensions.py",
@@ -78,6 +79,24 @@ def test_app_py_is_builder_entrypoint():
     import app
 
     assert app.main.__module__ == "builder_app"
+
+
+def test_default_streamlit_entrypoint_is_builder():
+    import streamlit_app
+
+    assert streamlit_app.main.__module__ == "builder_app"
+
+
+def test_visual_pages_do_not_reference_removed_dense_map_overrides():
+    for filename in [
+        "shade_gis/pages/visuals_page.py",
+        "shade_gis/pages/preview_page.py",
+        "published_app.py",
+        "preview_app/app.py",
+    ]:
+        source = Path(filename).read_text(encoding="utf-8")
+        assert "DENSE_MAP_THRESHOLD" not in source
+        assert "DENSE_MAP_MARKER_SIZE" not in source
 
 
 def test_ui_smoke_can_disable_expensive_automatic_persistence(monkeypatch):
@@ -166,9 +185,9 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
     assert '("Export", "Deploy")' in builder_source
     assert '"Dataset": [' in builder_source
     assert '("Quality", "Data Quality")' in builder_source
-    assert '("Dataset Review", "Labels")' in builder_source
-    assert '("Intercoder Review", "Blind Coding")' in builder_source
-    assert '("Community Voting", "Voting")' in builder_source
+    assert '("Labels", "Labels")' in builder_source
+    assert '("Independent Review", "Blind Coding")' in builder_source
+    assert '("Consensus", "Voting")' in builder_source
     assert 'key=f"primary_nav_{label.lower()}"' in builder_source
     assert 'key="header_project"' in builder_source
     assert 'f"{selector_label} ▾"' not in builder_source
@@ -208,23 +227,23 @@ def test_builder_has_project_home_and_clickable_brand_navigation():
 def test_labelling_workflow_uses_action_oriented_navigation():
     source = Path("shade_gis/pages/labels_page.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Dataset Review")' in source
-    assert '"+ Add Administrative Label"' in source
+    assert 'st.title("Labels")' in source
+    assert '"+ Submit Label"' in source
     assert '"Review Queue"' in source
     assert '"Audit History"' in source
-    assert "Review submitted labels, resolve conflicts" in source
+    assert "Create labels, resolve conflicts" in source
     assert 'st.subheader("Label Review Queue")' in source
     assert "Stops awaiting moderator review, conflict resolution, or verification." in source
     assert 'st.subheader("Summary")' not in source
     assert '"Admin Review Queue"' not in source
-    assert '"+ Submit Label"' not in source
+    assert '"+ Add Administrative Label"' not in source
     assert '"Submit raw label"' not in source
 
 
 def test_independent_review_uses_research_workflow_hierarchy():
     source = Path("shade_gis/pages/blind_coding_page.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Intercoder Review")' in source
+    assert 'st.title("Independent Review")' in source
     assert 'st.subheader("Study Setup")' in source
     assert 'st.subheader("Review Materials")' in source
     assert 'st.subheader("Study Progress")' in source
@@ -232,7 +251,7 @@ def test_independent_review_uses_research_workflow_hierarchy():
     assert '"Agreement threshold"' in source
     assert "Items below this agreement level are flagged for adjudication." in source
     assert '"Add Review Image"' in source
-    assert '"Start Intercoder Review"' in source
+    assert '"Start Independent Review"' in source
     assert 'st.expander("Advanced versioning", expanded=False)' in source
     assert 'st.expander("Admin preview", expanded=False)' in source
     assert '"Workspace role"' not in source
@@ -242,7 +261,7 @@ def test_independent_review_uses_research_workflow_hierarchy():
 def test_consensus_groups_configuration_and_hides_deployment_details():
     source = Path("shade_gis/pages/voting_page.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Community Voting")' in source
+    assert 'st.title("Consensus")' in source
     assert 'st.subheader("Configuration")' in source
     assert 'st.subheader("Live Preview")' in source
     for group in ["Visitor Experience", "Voting Options", "Abuse Prevention", "Result Display"]:

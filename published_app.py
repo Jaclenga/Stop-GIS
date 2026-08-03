@@ -30,6 +30,7 @@ MAP_PANEL_HEIGHT = 620
 STOP_DETAIL_PANEL_HEIGHT = MAP_PANEL_HEIGHT
 
 MAP_STYLES = {
+    "High contrast": pdk.map_styles.CARTO_ROAD,
     "Light": pdk.map_styles.CARTO_LIGHT,
     "Dark": pdk.map_styles.CARTO_DARK,
     "Road": pdk.map_styles.CARTO_ROAD,
@@ -44,7 +45,14 @@ COLOR_MODE_FIELDS = {
 }
 LEGACY_COLOR_MODE_FIELDS = {"Shade category": "shading"}
 
-DEFAULT_DISPLAY_COLUMNS = ["stop_id", "stop_name", "routes", "shading", "review_status", "priority_score"]
+DEFAULT_DISPLAY_COLUMNS = [
+    "stop_id",
+    "stop_name",
+    "routes",
+    "shading",
+    "review_status",
+    "priority_score",
+]
 DEFAULT_PALETTE = [
     "#2563eb",
     "#16a34a",
@@ -199,7 +207,11 @@ SHADE_SOURCE_TAXONOMY = [
         ),
     },
 ]
-SHADE_SOURCE_CHART_CODES = {"natural": "Natural", "purpose-built": "Purpose-built", "incidental": "Incidental"}
+SHADE_SOURCE_CHART_CODES = {
+    "natural": "Natural",
+    "purpose-built": "Purpose-built",
+    "incidental": "Incidental",
+}
 SHADE_SOURCE_CHART_ALIASES = {
     "purpose built": "Purpose-built",
     "purpose-built shade": "Purpose-built",
@@ -255,7 +267,9 @@ def is_schema_default_chart(chart: Any) -> bool:
     )
 
 
-def normalize_published_visualization(visualization: dict[str, Any] | None) -> dict[str, Any]:
+def normalize_published_visualization(
+    visualization: dict[str, Any] | None,
+) -> dict[str, Any]:
     normalized = json.loads(json.dumps(visualization or {}, default=str))
     try:
         schema_version = int(normalized.get("analytics_schema_version", 0) or 0)
@@ -266,7 +280,9 @@ def normalize_published_visualization(visualization: dict[str, Any] | None) -> d
 
     normalized["metric_cards"] = list(DEFAULT_METRIC_CARDS)
     charts = normalized.get("custom_charts")
-    if not isinstance(charts, list) and isinstance(normalized.get("custom_chart"), dict):
+    if not isinstance(charts, list) and isinstance(
+        normalized.get("custom_chart"), dict
+    ):
         charts = [normalized["custom_chart"]]
     if not charts or all(is_schema_default_chart(chart) for chart in charts):
         normalized["custom_charts"] = json.loads(json.dumps(DEFAULT_CUSTOM_CHARTS))
@@ -276,7 +292,12 @@ def normalize_published_visualization(visualization: dict[str, Any] | None) -> d
                 continue
             chart["x"] = "shade_coverage"
             title = str(chart.get("title", "") or "").strip().lower()
-            if title in {"", "custom chart", f"custom chart {index + 1}", "shade distribution"}:
+            if title in {
+                "",
+                "custom chart",
+                f"custom chart {index + 1}",
+                "shade distribution",
+            }:
                 chart["title"] = "Shade Coverage"
         normalized["custom_charts"] = charts
     normalized.pop("custom_chart", None)
@@ -284,7 +305,9 @@ def normalize_published_visualization(visualization: dict[str, Any] | None) -> d
     return normalized
 
 
-def normalize_published_taxonomy(taxonomy: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+def normalize_published_taxonomy(
+    taxonomy: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
     configured: dict[str, tuple[int, dict[str, Any]]] = {}
     for item in taxonomy or []:
         original_name = str(item.get("name", "") or "").strip()
@@ -311,14 +334,20 @@ def normalize_published_taxonomy(taxonomy: list[dict[str, Any]] | None) -> list[
 def normalize_published_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = json.loads(json.dumps(config or {}, default=str))
     normalized["taxonomy"] = normalize_published_taxonomy(normalized.get("taxonomy"))
-    normalized["visualization"] = normalize_published_visualization(normalized.get("visualization"))
+    normalized["visualization"] = normalize_published_visualization(
+        normalized.get("visualization")
+    )
     return normalized
 
 
 def load_study() -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
-    config = normalize_published_config(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+    config = normalize_published_config(
+        json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    )
     stops = pd.read_csv(DATA_PATH)
-    raw_labels = pd.read_csv(RAW_LABELS_PATH) if RAW_LABELS_PATH.exists() else pd.DataFrame()
+    raw_labels = (
+        pd.read_csv(RAW_LABELS_PATH) if RAW_LABELS_PATH.exists() else pd.DataFrame()
+    )
     stops = normalize_published_stop_dimensions(stops)
     stops["priority_score"] = calculate_priority_scores(
         stops, config.get("visualization", {}).get("priority_weights", {})
@@ -337,7 +366,9 @@ def normalize_published_stop_dimensions(stops: pd.DataFrame) -> pd.DataFrame:
 
     legacy_shading = normalized["shading"].fillna("").astype(str)
     explicit_coverage = normalized["shade_coverage"].fillna("").astype(str).str.strip()
-    coverage_candidates = explicit_coverage.where(explicit_coverage != "", legacy_shading)
+    coverage_candidates = explicit_coverage.where(
+        explicit_coverage != "", legacy_shading
+    )
     normalized["shade_coverage"] = coverage_candidates.map(
         lambda value: normalize_shade_coverage_chart_value(value) or "Needs Review"
     )
@@ -355,10 +386,19 @@ def normalize_published_stop_dimensions(stops: pd.DataFrame) -> pd.DataFrame:
                 sources.append("Natural")
             if any(
                 token in legacy_text
-                for token in ["purpose-built", "purpose built", "constructed", "intentional", "shelter", "canopy"]
+                for token in [
+                    "purpose-built",
+                    "purpose built",
+                    "constructed",
+                    "intentional",
+                    "shelter",
+                    "canopy",
+                ]
             ):
                 sources.append("Purpose-built")
-            if any(token in legacy_text for token in ["manmade", "incidental", "building"]):
+            if any(
+                token in legacy_text for token in ["manmade", "incidental", "building"]
+            ):
                 sources.append("Incidental")
         return "" if coverage == "No Shade" else "; ".join(sources)
 
@@ -411,7 +451,13 @@ def calculate_priority_scores(df: pd.DataFrame, weights: dict[str, float]) -> pd
         else:
             low_shade_values = df["shading"].fillna("").astype(str).str.strip()
         low_shade = low_shade_values.isin(
-            ["No Shade", "Limited Shade", "Limited", "Limited Natural Shade", "Needs Review"]
+            [
+                "No Shade",
+                "Limited Shade",
+                "Limited",
+                "Limited Natural Shade",
+                "Needs Review",
+            ]
         ).astype(float)
         score += low_shade_weight * low_shade
         weight_total += low_shade_weight
@@ -420,10 +466,16 @@ def calculate_priority_scores(df: pd.DataFrame, weights: dict[str, float]) -> pd
     return ((score / weight_total) * 100).round(1)
 
 
-def get_selected_display_columns(df: pd.DataFrame, visualization: dict[str, Any]) -> list[str]:
+def get_selected_display_columns(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> list[str]:
     configured = visualization.get("display_columns") or DEFAULT_DISPLAY_COLUMNS
     columns = [column for column in configured if column in df.columns]
-    return columns or [column for column in DEFAULT_DISPLAY_COLUMNS if column in df.columns] or list(df.columns[:8])
+    return (
+        columns
+        or [column for column in DEFAULT_DISPLAY_COLUMNS if column in df.columns]
+        or list(df.columns[:8])
+    )
 
 
 def display_label(column: str) -> str:
@@ -438,7 +490,9 @@ def field_values_for_colors(df: pd.DataFrame, field: str) -> list[str]:
     return sorted(values.unique().tolist())[: len(DEFAULT_PALETTE)]
 
 
-def ensure_field_color_map(visualization: dict[str, Any], df: pd.DataFrame, field: str) -> dict[str, str]:
+def ensure_field_color_map(
+    visualization: dict[str, Any], df: pd.DataFrame, field: str
+) -> dict[str, str]:
     field_maps = visualization.setdefault("field_color_maps", {})
     color_map = field_maps.setdefault(field, {})
     for index, value in enumerate(field_values_for_colors(df, field)):
@@ -452,7 +506,10 @@ def clean_gis_overlays(visualization: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(overlay, dict):
             continue
         geojson = overlay.get("geojson")
-        if not isinstance(geojson, dict) or str(geojson.get("type", "")).lower() != "featurecollection":
+        if (
+            not isinstance(geojson, dict)
+            or str(geojson.get("type", "")).lower() != "featurecollection"
+        ):
             continue
         features = geojson.get("features")
         if not isinstance(features, list) or not features:
@@ -465,8 +522,12 @@ def clean_gis_overlays(visualization: dict[str, Any]) -> list[dict[str, Any]]:
         cleaned.setdefault("opacity", 0.35)
         cleaned.setdefault("line_width", 2)
         cleaned.setdefault("visible", True)
-        cleaned["color"] = normalize_hex_color(cleaned.get("color", DEFAULT_PALETTE[index % len(DEFAULT_PALETTE)]))
-        cleaned["opacity"] = max(0.05, min(1.0, float(cleaned.get("opacity", 0.35) or 0.35)))
+        cleaned["color"] = normalize_hex_color(
+            cleaned.get("color", DEFAULT_PALETTE[index % len(DEFAULT_PALETTE)])
+        )
+        cleaned["opacity"] = max(
+            0.05, min(1.0, float(cleaned.get("opacity", 0.35) or 0.35))
+        )
         cleaned["line_width"] = max(1, min(12, int(cleaned.get("line_width", 2) or 2)))
         overlays.append(cleaned)
     visualization["gis_overlays"] = overlays
@@ -484,8 +545,14 @@ def build_gis_overlay_layers(visualization: dict[str, Any]) -> list[pdk.Layer]:
     for index, overlay in enumerate(clean_gis_overlays(visualization)):
         if not overlay.get("visible", True):
             continue
-        color = rgba_from_hex(str(overlay.get("color", DEFAULT_PALETTE[index % len(DEFAULT_PALETTE)])), overlay.get("opacity", 0.35))
-        line_color = rgba_from_hex(str(overlay.get("color", DEFAULT_PALETTE[index % len(DEFAULT_PALETTE)])), min(1.0, float(overlay.get("opacity", 0.35)) + 0.25))
+        color = rgba_from_hex(
+            str(overlay.get("color", DEFAULT_PALETTE[index % len(DEFAULT_PALETTE)])),
+            overlay.get("opacity", 0.35),
+        )
+        line_color = rgba_from_hex(
+            str(overlay.get("color", DEFAULT_PALETTE[index % len(DEFAULT_PALETTE)])),
+            min(1.0, float(overlay.get("opacity", 0.35)) + 0.25),
+        )
         layers.append(
             pdk.Layer(
                 "GeoJsonLayer",
@@ -515,7 +582,15 @@ def build_tooltip_text(df: pd.DataFrame, visualization: dict[str, Any]) -> str:
 
 def get_color_options(df: pd.DataFrame) -> dict[str, str]:
     options = COLOR_MODE_FIELDS.copy()
-    excluded = {"stop_id", "stop_name", "stop_lat", "stop_lon", "priority_score", "shading", "review_status"}
+    excluded = {
+        "stop_id",
+        "stop_name",
+        "stop_lat",
+        "stop_lon",
+        "priority_score",
+        "shading",
+        "review_status",
+    }
     for column in df.columns:
         if column in excluded:
             continue
@@ -537,21 +612,30 @@ def color_for_priority(value: Any, visualization: dict[str, Any]) -> list[int]:
         start, end, fraction = low, mid, score / 50
     else:
         start, end, fraction = mid, high, (score - 50) / 50
-    return [int(start[channel] + (end[channel] - start[channel]) * fraction) for channel in range(3)]
+    return [
+        int(start[channel] + (end[channel] - start[channel]) * fraction)
+        for channel in range(3)
+    ]
 
 
-def color_dataset(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]) -> pd.DataFrame:
+def color_dataset(
+    df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
+) -> pd.DataFrame:
     colored = df.copy()
     color_options = get_color_options(colored)
     color_by = visualization.get("color_by", "Shade coverage")
-    field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(color_by, "shading")
+    field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
+        color_by, "shading"
+    )
     if field == "review_status":
         review_colors = visualization.get("review_status_colors", {})
         colored["fill_color"] = colored["review_status"].map(
             {status: hex_to_rgb(color) for status, color in review_colors.items()}
         )
     elif field == "priority_score":
-        colored["fill_color"] = colored["priority_score"].apply(lambda value: color_for_priority(value, visualization))
+        colored["fill_color"] = colored["priority_score"].apply(
+            lambda value: color_for_priority(value, visualization)
+        )
     elif field == "shading":
         color_map = {
             str(item.get("name", "")).strip(): hex_to_rgb(str(item.get("color", "")))
@@ -563,8 +647,12 @@ def color_dataset(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualizatio
         color_map = ensure_field_color_map(visualization, colored, field)
         values = colored[field].fillna("Unknown").astype(str).str.strip()
         values = values.where(values != "", "Unknown")
-        colored["fill_color"] = values.map({value: hex_to_rgb(color) for value, color in color_map.items()})
-    colored["fill_color"] = colored["fill_color"].apply(lambda value: value if isinstance(value, list) else [128, 128, 128])
+        colored["fill_color"] = values.map(
+            {value: hex_to_rgb(color) for value, color in color_map.items()}
+        )
+    colored["fill_color"] = colored["fill_color"].apply(
+        lambda value: value if isinstance(value, list) else [128, 128, 128]
+    )
     return colored
 
 
@@ -590,11 +678,25 @@ def _marker_icon_png(
 
     if shape == "Pin":
         points = [
-            (32, 4), (42, 7), (50, 15), (53, 25), (51, 35), (45, 45),
-            (32, 60), (19, 45), (13, 35), (11, 25), (14, 15), (22, 7),
+            (32, 4),
+            (42, 7),
+            (50, 15),
+            (53, 25),
+            (51, 35),
+            (45, 45),
+            (32, 60),
+            (19, 45),
+            (13, 35),
+            (11, 25),
+            (14, 15),
+            (22, 7),
         ]
-        draw.polygon([point(value) for value in points], fill=fill, outline=outline, width=width)
-        draw.ellipse((24 * scale, 17 * scale, 40 * scale, 33 * scale), fill=(255, 255, 255, 204))
+        draw.polygon(
+            [point(value) for value in points], fill=fill, outline=outline, width=width
+        )
+        draw.ellipse(
+            (24 * scale, 17 * scale, 40 * scale, 33 * scale), fill=(255, 255, 255, 204)
+        )
     elif shape == "Square":
         draw.rounded_rectangle(
             (12 * scale, 12 * scale, 52 * scale, 52 * scale),
@@ -648,7 +750,9 @@ def marker_icon_data_uri(
     return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
 
 
-def add_marker_icons(map_df: pd.DataFrame, visualization: dict[str, Any]) -> pd.DataFrame:
+def add_marker_icons(
+    map_df: pd.DataFrame, visualization: dict[str, Any]
+) -> pd.DataFrame:
     shaped = map_df.copy()
     shape = visualization.get("marker_shape", "Circle")
     if shape not in MARKER_SHAPES:
@@ -707,12 +811,16 @@ def marker_icon_atlas(
         }
     buffer = io.BytesIO()
     atlas.save(buffer, format="PNG", optimize=True)
-    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii"), mapping
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode(
+        "ascii"
+    ), mapping
 
 
 def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
     if df.empty:
-        return pdk.ViewState(latitude=39.5, longitude=-98.35, zoom=3, min_zoom=2, max_zoom=18, pitch=0)
+        return pdk.ViewState(
+            latitude=39.5, longitude=-98.35, zoom=3, min_zoom=2, max_zoom=18, pitch=0
+        )
     lat = pd.to_numeric(df["stop_lat"], errors="coerce")
     lon = pd.to_numeric(df["stop_lon"], errors="coerce")
     return pdk.ViewState(
@@ -725,7 +833,9 @@ def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
     )
 
 
-def build_deck_chart(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]) -> pdk.Deck:
+def build_deck_chart(
+    df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
+) -> pdk.Deck:
     map_df = color_dataset(df, taxonomy, visualization)
     marker_shape = visualization.get("marker_shape", "Circle")
     if marker_shape not in MARKER_SHAPES:
@@ -744,10 +854,16 @@ def build_deck_chart(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualiza
             radius_units=pdk.types.String("pixels"),
             radius_min_pixels=4,
             radius_max_pixels=48,
-            opacity=max(0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))),
+            opacity=max(
+                0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))
+            ),
             stroked=True,
-            get_line_color=hex_to_rgb(visualization.get("marker_stroke_color", "#141414")),
-            line_width_min_pixels=max(0, int(visualization.get("marker_stroke_width", 1))),
+            get_line_color=hex_to_rgb(
+                visualization.get("marker_stroke_color", "#141414")
+            ),
+            line_width_min_pixels=max(
+                0, int(visualization.get("marker_stroke_width", 1))
+            ),
             pickable=True,
             auto_highlight=True,
         )
@@ -772,7 +888,10 @@ def build_deck_chart(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualiza
     deck = pdk.Deck(
         initial_view_state=calculate_view_state(map_df),
         layers=[*build_gis_overlay_layers(visualization), layer],
-        map_style=MAP_STYLES.get(visualization.get("map_style", "Light"), pdk.map_styles.CARTO_LIGHT),
+        map_style=MAP_STYLES.get(
+            visualization.get("map_style", "High contrast"),
+            pdk.map_styles.CARTO_ROAD,
+        ),
         tooltip={"text": build_tooltip_text(map_df, visualization)},
     )
     deck.use_device_pixels = DECK_DEVICE_PIXEL_RATIO
@@ -828,7 +947,11 @@ def numeric_filter_bounds(df: pd.DataFrame, column: str) -> tuple[float, float] 
 
 
 def categorical_map_filter_columns(df: pd.DataFrame) -> list[str]:
-    columns = [column for column in BASE_CATEGORICAL_MAP_FILTERS if categorical_filter_options(df, column)]
+    columns = [
+        column
+        for column in BASE_CATEGORICAL_MAP_FILTERS
+        if categorical_filter_options(df, column)
+    ]
     for column in df.columns:
         if column in columns or column in FILTER_EXCLUDED_FIELDS:
             continue
@@ -841,7 +964,11 @@ def categorical_map_filter_columns(df: pd.DataFrame) -> list[str]:
 
 
 def numeric_map_filter_columns(df: pd.DataFrame) -> list[str]:
-    columns = [column for column in BASE_NUMERIC_MAP_FILTERS if numeric_filter_bounds(df, column) is not None]
+    columns = [
+        column
+        for column in BASE_NUMERIC_MAP_FILTERS
+        if numeric_filter_bounds(df, column) is not None
+    ]
     for column in df.columns:
         if column in columns or column in FILTER_EXCLUDED_FIELDS:
             continue
@@ -856,8 +983,12 @@ def destination_columns(df: pd.DataFrame) -> list[str]:
 
 def current_map_filters(df: pd.DataFrame, key_prefix: str) -> dict[str, Any]:
     filters: dict[str, Any] = {
-        "show_unlabeled": bool(st.session_state.get(f"{key_prefix}_show_unlabeled_stops", True)),
-        "search_query": str(st.session_state.get(f"{key_prefix}_stop_search", "") or ""),
+        "show_unlabeled": bool(
+            st.session_state.get(f"{key_prefix}_show_unlabeled_stops", True)
+        ),
+        "search_query": str(
+            st.session_state.get(f"{key_prefix}_stop_search", "") or ""
+        ),
         "selected_routes": [
             route
             for route in st.session_state.get(f"{key_prefix}_route_filter", [])
@@ -865,12 +996,16 @@ def current_map_filters(df: pd.DataFrame, key_prefix: str) -> dict[str, Any]:
         ],
         "categorical": {},
         "numeric": {},
-        "destination_query": str(st.session_state.get(f"{key_prefix}_destination_filter", "") or ""),
+        "destination_query": str(
+            st.session_state.get(f"{key_prefix}_destination_filter", "") or ""
+        ),
     }
     for column in categorical_map_filter_columns(df):
         options = categorical_filter_options(df, column)
         selected = st.session_state.get(f"{key_prefix}_{column}_filter", [])
-        filters["categorical"][column] = [value for value in selected if value in options]
+        filters["categorical"][column] = [
+            value for value in selected if value in options
+        ]
     for column in numeric_map_filter_columns(df):
         bounds = numeric_filter_bounds(df, column)
         if bounds is None:
@@ -947,13 +1082,25 @@ def filter_map_stops(
     filters = filters or {}
     query = str(search_query or "").strip().lower()
     if query:
-        searchable_columns = [column for column in ["stop_id", "stop_name", "routes"] if column in filtered.columns]
+        searchable_columns = [
+            column
+            for column in ["stop_id", "stop_name", "routes"]
+            if column in filtered.columns
+        ]
         if searchable_columns:
-            search_blob = filtered[searchable_columns].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+            search_blob = (
+                filtered[searchable_columns]
+                .fillna("")
+                .astype(str)
+                .agg(" ".join, axis=1)
+                .str.lower()
+            )
             filtered = filtered[search_blob.str.contains(re.escape(query), na=False)]
     if selected_routes and "routes" in filtered.columns:
         wanted = set(selected_routes)
-        route_mask = filtered["routes"].apply(lambda value: bool(wanted.intersection(split_route_values(value))))
+        route_mask = filtered["routes"].apply(
+            lambda value: bool(wanted.intersection(split_route_values(value)))
+        )
         filtered = filtered[route_mask]
     for column, selected in filters.get("categorical", {}).items():
         if selected and column in filtered.columns:
@@ -981,11 +1128,15 @@ def filter_map_stops(
             .agg(" ".join, axis=1)
             .str.lower()
         )
-        filtered = filtered[destination_blob.str.contains(re.escape(destination_query), na=False)]
+        filtered = filtered[
+            destination_blob.str.contains(re.escape(destination_query), na=False)
+        ]
     return filtered.copy()
 
 
-def selected_stop_id_from_map_selection(selection_event: Any, df: pd.DataFrame) -> str | None:
+def selected_stop_id_from_map_selection(
+    selection_event: Any, df: pd.DataFrame
+) -> str | None:
     if selection_event is None:
         return None
     selection = getattr(selection_event, "selection", None)
@@ -1051,14 +1202,18 @@ def render_stop_detail_workflow(
         return None
 
     options = df.reset_index(drop=True)
-    stop_ids = options["stop_id"].astype(str).tolist() if "stop_id" in options.columns else []
+    stop_ids = (
+        options["stop_id"].astype(str).tolist() if "stop_id" in options.columns else []
+    )
     selected_key = f"{key_prefix}_selected_stop_id"
     selected_stop_id = str(st.session_state.get(selected_key, "") or "")
     if selected_stop_id not in stop_ids and stop_ids:
         selected_stop_id = stop_ids[0]
         st.session_state[selected_key] = selected_stop_id
 
-    selected_index = stop_ids.index(selected_stop_id) if selected_stop_id in stop_ids else 0
+    selected_index = (
+        stop_ids.index(selected_stop_id) if selected_stop_id in stop_ids else 0
+    )
     picker_key = f"{key_prefix}_stop_picker"
     current_picker = st.session_state.get(picker_key)
     if (
@@ -1083,7 +1238,9 @@ def render_stop_detail_workflow(
         return selected_stop
 
     st.markdown("#### Stop Details")
-    priority = pd.to_numeric(pd.Series([selected_stop.get("priority_score")]), errors="coerce").iloc[0]
+    priority = pd.to_numeric(
+        pd.Series([selected_stop.get("priority_score")]), errors="coerce"
+    ).iloc[0]
     summary_rows = [
         ("Shade", str(selected_stop.get("shading", "Unknown") or "Unknown")),
         ("Review", str(selected_stop.get("review_status", "Unknown") or "Unknown")),
@@ -1102,7 +1259,13 @@ def render_stop_detail_workflow(
     ]:
         if column in options.columns and column not in detail_columns:
             detail_columns.append(column)
-    detail_rows = [{"Field": column.replace("_", " ").title(), "Value": selected_stop.get(column, "")} for column in detail_columns]
+    detail_rows = [
+        {
+            "Field": column.replace("_", " ").title(),
+            "Value": selected_stop.get(column, ""),
+        }
+        for column in detail_columns
+    ]
     for row in detail_rows:
         value = str(row["Value"] if pd.notna(row["Value"]) else "")
         st.markdown(f"**{row['Field']}**  \n{value}")
@@ -1173,7 +1336,9 @@ def format_summary_percent(numerator: int, denominator: int) -> str:
 def summary_metric_cards(df: pd.DataFrame) -> list[dict[str, str]]:
     total = len(df)
     if {"stop_lat", "stop_lon"}.issubset(df.columns):
-        coordinates = df.loc[:, ["stop_lat", "stop_lon"]].apply(pd.to_numeric, errors="coerce")
+        coordinates = df.loc[:, ["stop_lat", "stop_lon"]].apply(
+            pd.to_numeric, errors="coerce"
+        )
         mapped = int(coordinates.notna().all(axis=1).sum())
     else:
         mapped = 0
@@ -1214,7 +1379,9 @@ def summary_metric_cards(df: pd.DataFrame) -> list[dict[str, str]]:
     ]
 
 
-def chart_data(df: pd.DataFrame, chart: dict[str, Any]) -> tuple[pd.DataFrame, str, str]:
+def chart_data(
+    df: pd.DataFrame, chart: dict[str, Any]
+) -> tuple[pd.DataFrame, str, str]:
     x_field = chart.get("x", "shading")
     y_field = chart.get("y", RECORD_COUNT_FIELD)
     aggregation = chart.get("aggregation", "Count")
@@ -1257,13 +1424,16 @@ def build_safe_chart(
     chart_data = data.loc[:, required].copy()
     chart_data[y_field] = pd.to_numeric(chart_data[y_field], errors="coerce")
     chart_data = chart_data.loc[
-        chart_data[y_field].notna() & chart_data[y_field].map(lambda value: math.isfinite(float(value)))
+        chart_data[y_field].notna()
+        & chart_data[y_field].map(lambda value: math.isfinite(float(value)))
     ]
     if chart_data.empty:
         return None
 
     chart_data[x_field] = chart_data[x_field].fillna("(blank)")
-    x_is_numeric = chart_type == "Scatter" and pd.api.types.is_numeric_dtype(chart_data[x_field])
+    x_is_numeric = chart_type == "Scatter" and pd.api.types.is_numeric_dtype(
+        chart_data[x_field]
+    )
     x_type = "quantitative" if x_is_numeric else "nominal"
     x_sort = "-y" if chart_type == "Bar" and not x_is_numeric else None
     y_min = float(chart_data[y_field].min())
@@ -1289,8 +1459,16 @@ def build_safe_chart(
             "scale": {"domain": [y_min, y_max]},
         },
         "tooltip": [
-            {"field": x_field, "type": x_type, "title": FIELD_LABELS.get(x_field, x_field.replace("_", " ").title())},
-            {"field": y_field, "type": "quantitative", "title": FIELD_LABELS.get(y_field, y_field.replace("_", " ").title())},
+            {
+                "field": x_field,
+                "type": x_type,
+                "title": FIELD_LABELS.get(x_field, x_field.replace("_", " ").title()),
+            },
+            {
+                "field": y_field,
+                "type": "quantitative",
+                "title": FIELD_LABELS.get(y_field, y_field.replace("_", " ").title()),
+            },
         ],
     }
     if chart_type == "Bar":
@@ -1300,16 +1478,28 @@ def build_safe_chart(
         encoding["color"] = {
             "field": color_field,
             "type": "nominal",
-            "title": FIELD_LABELS.get(color_field, color_field.replace("_", " ").title()),
+            "title": FIELD_LABELS.get(
+                color_field, color_field.replace("_", " ").title()
+            ),
         }
         encoding["tooltip"].insert(
             1,
-            {"field": color_field, "type": "nominal", "title": FIELD_LABELS.get(color_field, color_field.replace("_", " ").title())},
+            {
+                "field": color_field,
+                "type": "nominal",
+                "title": FIELD_LABELS.get(
+                    color_field, color_field.replace("_", " ").title()
+                ),
+            },
         )
         if chart_type == "Bar":
             encoding["xOffset"] = {"field": color_field, "type": "nominal"}
 
-    inline_values = chart_data.astype(object).where(pd.notna(chart_data), None).to_dict(orient="records")
+    inline_values = (
+        chart_data.astype(object)
+        .where(pd.notna(chart_data), None)
+        .to_dict(orient="records")
+    )
     mark: dict[str, Any] = {"type": "bar"}
     if chart_type == "Line":
         mark = {"type": "line", "point": True}
@@ -1337,7 +1527,9 @@ def render_safe_chart(
         st.vega_lite_chart(spec=chart, width="stretch")
 
 
-def wide_chart_data(data: pd.DataFrame, value_name: str = "stops") -> tuple[pd.DataFrame, str, str]:
+def wide_chart_data(
+    data: pd.DataFrame, value_name: str = "stops"
+) -> tuple[pd.DataFrame, str, str]:
     if data.empty:
         return pd.DataFrame(), "", ""
     index_field = str(data.index.name or "group")
@@ -1376,7 +1568,9 @@ def available_dashboard_sections(df: pd.DataFrame) -> list[str]:
     return sections
 
 
-def selected_dashboard_sections(df: pd.DataFrame, visualization: dict[str, Any]) -> list[str]:
+def selected_dashboard_sections(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> list[str]:
     available = available_dashboard_sections(df)
     metric_cards = visualization.get("metric_cards", [])
     if metric_cards == LEGACY_DEFAULT_METRIC_CARDS:
@@ -1392,7 +1586,9 @@ def normalized_category_series(df: pd.DataFrame, column: str) -> pd.Series:
 def normalize_shade_source_chart_value(value: Any) -> str:
     text = str(value or "").strip()
     normalized = text.lower()
-    return SHADE_SOURCE_CHART_CODES.get(normalized) or SHADE_SOURCE_CHART_ALIASES.get(normalized, "")
+    return SHADE_SOURCE_CHART_CODES.get(normalized) or SHADE_SOURCE_CHART_ALIASES.get(
+        normalized, ""
+    )
 
 
 def normalize_shade_coverage_chart_value(value: Any) -> str:
@@ -1440,14 +1636,21 @@ def custom_chart_title(chart: dict[str, Any], index: int) -> str:
     return title
 
 
-def count_by_field(df: pd.DataFrame, column: str, count_name: str = "stops") -> pd.DataFrame:
+def count_by_field(
+    df: pd.DataFrame, column: str, count_name: str = "stops"
+) -> pd.DataFrame:
     if df.empty or column not in df.columns:
         return pd.DataFrame(columns=[column, count_name])
     working = normalize_chart_dimension_values(df, column)
     if working.empty:
         return pd.DataFrame(columns=[column, count_name])
     working[column] = normalized_category_series(working, column)
-    return working.groupby(column, dropna=False).size().reset_index(name=count_name).sort_values(count_name, ascending=False)
+    return (
+        working.groupby(column, dropna=False)
+        .size()
+        .reset_index(name=count_name)
+        .sort_values(count_name, ascending=False)
+    )
 
 
 def split_routes_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -1456,7 +1659,12 @@ def split_routes_table(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for _, row in df.iterrows():
         for route in split_route_values(row.get("routes")):
-            rows.append({"route": route, "shading": str(row.get("shading", "Unknown") or "Unknown")})
+            rows.append(
+                {
+                    "route": route,
+                    "shading": str(row.get("shading", "Unknown") or "Unknown"),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -1464,35 +1672,75 @@ def render_route_shade_dashboard(df: pd.DataFrame) -> None:
     routes = split_routes_table(df)
     if routes.empty:
         return
-    grouped = routes.groupby(["route", "shading"], dropna=False).size().reset_index(name="stops")
-    top_routes = grouped.groupby("route")["stops"].sum().sort_values(ascending=False).head(25).index
+    grouped = (
+        routes.groupby(["route", "shading"], dropna=False)
+        .size()
+        .reset_index(name="stops")
+    )
+    top_routes = (
+        grouped.groupby("route")["stops"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(25)
+        .index
+    )
     grouped = grouped[grouped["route"].isin(top_routes)]
-    pivot = grouped.pivot_table(index="route", columns="shading", values="stops", fill_value=0, aggfunc="sum")
+    pivot = grouped.pivot_table(
+        index="route", columns="shading", values="stops", fill_value=0, aggfunc="sum"
+    )
     st.markdown("#### Shade By Route")
     chart_rows, x_field, color_field = wide_chart_data(pivot)
     render_safe_chart(chart_rows, x_field, "stops", color_field=color_field)
-    st.dataframe(grouped.sort_values(["stops", "route"], ascending=[False, True]), width="stretch", hide_index=True)
+    st.dataframe(
+        grouped.sort_values(["stops", "route"], ascending=[False, True]),
+        width="stretch",
+        hide_index=True,
+    )
 
 
-def render_grouped_shade_dashboard(df: pd.DataFrame, group_column: str, title: str) -> None:
+def render_grouped_shade_dashboard(
+    df: pd.DataFrame, group_column: str, title: str
+) -> None:
     if df.empty or group_column not in df.columns or "shading" not in df.columns:
         return
     working = df.loc[:, [group_column, "shading"]].copy()
     working[group_column] = normalized_category_series(working, group_column)
     working["shading"] = normalized_category_series(working, "shading")
-    grouped = working.groupby([group_column, "shading"], dropna=False).size().reset_index(name="stops")
-    top_groups = grouped.groupby(group_column)["stops"].sum().sort_values(ascending=False).head(25).index
+    grouped = (
+        working.groupby([group_column, "shading"], dropna=False)
+        .size()
+        .reset_index(name="stops")
+    )
+    top_groups = (
+        grouped.groupby(group_column)["stops"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(25)
+        .index
+    )
     grouped = grouped[grouped[group_column].isin(top_groups)]
     if grouped.empty:
         return
-    pivot = grouped.pivot_table(index=group_column, columns="shading", values="stops", fill_value=0, aggfunc="sum")
+    pivot = grouped.pivot_table(
+        index=group_column,
+        columns="shading",
+        values="stops",
+        fill_value=0,
+        aggfunc="sum",
+    )
     st.markdown(f"#### {title}")
     chart_rows, x_field, color_field = wide_chart_data(pivot)
     render_safe_chart(chart_rows, x_field, "stops", color_field=color_field)
-    st.dataframe(grouped.sort_values(["stops", group_column], ascending=[False, True]), width="stretch", hide_index=True)
+    st.dataframe(
+        grouped.sort_values(["stops", group_column], ascending=[False, True]),
+        width="stretch",
+        hide_index=True,
+    )
 
 
-def render_numeric_by_shade_dashboard(df: pd.DataFrame, numeric_column: str, value_label: str, title: str) -> None:
+def render_numeric_by_shade_dashboard(
+    df: pd.DataFrame, numeric_column: str, value_label: str, title: str
+) -> None:
     if df.empty or numeric_column not in df.columns or "shading" not in df.columns:
         return
     working = df.loc[:, ["shading", numeric_column]].copy()
@@ -1503,7 +1751,13 @@ def render_numeric_by_shade_dashboard(df: pd.DataFrame, numeric_column: str, val
         return
     summary = (
         working.groupby("shading", dropna=False)[numeric_column]
-        .agg(**{f"Mean {value_label}": "mean", f"Median {value_label}": "median", "Stops": "count"})
+        .agg(
+            **{
+                f"Mean {value_label}": "mean",
+                f"Median {value_label}": "median",
+                "Stops": "count",
+            }
+        )
         .reset_index()
         .sort_values(f"Mean {value_label}", ascending=False)
     )
@@ -1548,9 +1802,23 @@ def render_issue_analytics_dashboard(
 
     queue_rows = []
     if "Stops without shade" in selected and "shading" in df.columns:
-        queue_rows.append({"Queue": "Stops without shade", "Stops": int(normalized_category_series(df, "shading").eq("No Shade").sum())})
+        queue_rows.append(
+            {
+                "Queue": "Stops without shade",
+                "Stops": int(
+                    normalized_category_series(df, "shading").eq("No Shade").sum()
+                ),
+            }
+        )
     if "Stops requiring review" in selected and "shading" in df.columns:
-        queue_rows.append({"Queue": "Stops requiring review", "Stops": int(normalized_category_series(df, "shading").eq("Needs Review").sum())})
+        queue_rows.append(
+            {
+                "Queue": "Stops requiring review",
+                "Stops": int(
+                    normalized_category_series(df, "shading").eq("Needs Review").sum()
+                ),
+            }
+        )
     if queue_rows:
         st.markdown("#### Action Queues")
         st.dataframe(pd.DataFrame(queue_rows), width="stretch", hide_index=True)
@@ -1562,7 +1830,9 @@ def render_issue_analytics_dashboard(
     if "Shade by neighborhood" in selected:
         render_grouped_shade_dashboard(df, "municipality", "Shade By Neighborhood")
     if "Shade vs ridership" in selected:
-        render_numeric_by_shade_dashboard(df, "ridership", "Ridership", "Shade Vs Ridership")
+        render_numeric_by_shade_dashboard(
+            df, "ridership", "Ridership", "Shade Vs Ridership"
+        )
     if "Priority stops" in selected and "priority_score" in df.columns:
         st.markdown("#### Highest Priority Stops")
         priority = df.sort_values("priority_score", ascending=False).head(20)
@@ -1589,7 +1859,10 @@ def coverage_schema_display_table(
             columns=["shade_coverage", "operational_definition"],
         )
         return display.rename(
-            columns={"shade_coverage": "Shade Coverage", "operational_definition": "Operational Definition"}
+            columns={
+                "shade_coverage": "Shade Coverage",
+                "operational_definition": "Operational Definition",
+            }
         )
     display = taxonomy_display_table(normalize_published_taxonomy(taxonomy))
     if display.empty:
@@ -1599,16 +1872,23 @@ def coverage_schema_display_table(
     ).drop(columns=["color"], errors="ignore")
 
 
-def source_schema_display_table(taxonomy: list[dict[str, Any]] | None = None) -> pd.DataFrame:
+def source_schema_display_table(
+    taxonomy: list[dict[str, Any]] | None = None,
+) -> pd.DataFrame:
     if taxonomy is None:
         return pd.DataFrame(SHADE_SOURCE_TAXONOMY)
     display = pd.DataFrame(taxonomy, columns=["shade_source", "operational_definition"])
     return display.rename(
-        columns={"shade_source": "Shade Source", "operational_definition": "Operational Definition"}
+        columns={
+            "shade_source": "Shade Source",
+            "operational_definition": "Operational Definition",
+        }
     ).loc[:, ["Shade Source", "Operational Definition"]]
 
 
-def terminology_display_table(terminology: list[dict[str, Any]] | None = None) -> pd.DataFrame:
+def terminology_display_table(
+    terminology: list[dict[str, Any]] | None = None,
+) -> pd.DataFrame:
     source = DEFAULT_TERMINOLOGY if terminology is None else terminology
     display = pd.DataFrame(source, columns=["term", "operational_definition"])
     return display.rename(
@@ -1695,19 +1975,33 @@ def render_methodology(config: dict[str, Any]) -> None:
 def dataframe_to_geojson(df: pd.DataFrame) -> str:
     features = []
     for _, row in df.iterrows():
-        properties = row.drop(labels=["stop_lat", "stop_lon"], errors="ignore").to_dict()
+        properties = row.drop(
+            labels=["stop_lat", "stop_lon"], errors="ignore"
+        ).to_dict()
         features.append(
             {
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [float(row["stop_lon"]), float(row["stop_lat"])]},
-                "properties": {key: (None if pd.isna(value) else value) for key, value in properties.items()},
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(row["stop_lon"]), float(row["stop_lat"])],
+                },
+                "properties": {
+                    key: (None if pd.isna(value) else value)
+                    for key, value in properties.items()
+                },
             }
         )
     return json.dumps({"type": "FeatureCollection", "features": features}, indent=2)
 
 
-def clean_label_values(labels: pd.DataFrame, label_column: str = "shade_category") -> pd.DataFrame:
-    if labels.empty or label_column not in labels.columns or "stop_id" not in labels.columns:
+def clean_label_values(
+    labels: pd.DataFrame, label_column: str = "shade_category"
+) -> pd.DataFrame:
+    if (
+        labels.empty
+        or label_column not in labels.columns
+        or "stop_id" not in labels.columns
+    ):
         return pd.DataFrame(columns=["stop_id", label_column])
     clean = labels.copy()
     clean["stop_id"] = clean["stop_id"].fillna("").astype(str).str.strip()
@@ -1715,7 +2009,9 @@ def clean_label_values(labels: pd.DataFrame, label_column: str = "shade_category
     return clean[(clean["stop_id"] != "") & (clean[label_column] != "")]
 
 
-def majority_label_table(labels: pd.DataFrame, label_column: str = "shade_category") -> pd.DataFrame:
+def majority_label_table(
+    labels: pd.DataFrame, label_column: str = "shade_category"
+) -> pd.DataFrame:
     clean = clean_label_values(labels, label_column)
     rows = []
     for stop_id, group in clean.groupby("stop_id", sort=True):
@@ -1723,15 +2019,17 @@ def majority_label_table(labels: pd.DataFrame, label_column: str = "shade_catego
         max_count = int(counts.max())
         winners = sorted(counts[counts == max_count].index.astype(str).tolist())
         total = int(counts.sum())
-        rows.append({
-            "stop_id": stop_id,
-            "majority_label": "; ".join(winners),
-            "label_count": total,
-            "majority_count": max_count,
-            "agreement_pct": round(max_count / total * 100, 1) if total else 0.0,
-            "disagreement_flag": len(counts) > 1,
-            "tied_majority": len(winners) > 1,
-        })
+        rows.append(
+            {
+                "stop_id": stop_id,
+                "majority_label": "; ".join(winners),
+                "label_count": total,
+                "majority_count": max_count,
+                "agreement_pct": round(max_count / total * 100, 1) if total else 0.0,
+                "disagreement_flag": len(counts) > 1,
+                "tied_majority": len(winners) > 1,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -1744,7 +2042,9 @@ def label_rater_key(row: pd.Series) -> str:
     return f"{role or 'unknown'}:{source or 'manual'}"
 
 
-def latest_labels_by_rater(labels: pd.DataFrame, label_column: str = "shade_category") -> pd.DataFrame:
+def latest_labels_by_rater(
+    labels: pd.DataFrame, label_column: str = "shade_category"
+) -> pd.DataFrame:
     clean = clean_label_values(labels, label_column)
     if clean.empty:
         return pd.DataFrame(columns=["stop_id", "rater", label_column])
@@ -1755,13 +2055,19 @@ def latest_labels_by_rater(labels: pd.DataFrame, label_column: str = "shade_cate
     return clean.drop_duplicates(subset=["stop_id", "rater"], keep="last")
 
 
-def cohen_kappa_for_pair(left: pd.Series, right: pd.Series, categories: list[str]) -> float | None:
+def cohen_kappa_for_pair(
+    left: pd.Series, right: pd.Series, categories: list[str]
+) -> float | None:
     paired = pd.DataFrame({"left": left, "right": right}).dropna()
     if paired.empty:
         return None
     observed = float((paired["left"] == paired["right"]).mean())
     total = len(paired)
-    expected = sum((paired["left"].eq(category).sum() / total) * (paired["right"].eq(category).sum() / total) for category in categories)
+    expected = sum(
+        (paired["left"].eq(category).sum() / total)
+        * (paired["right"].eq(category).sum() / total)
+        for category in categories
+    )
     if math.isclose(1.0 - expected, 0.0):
         return 1.0 if math.isclose(observed, 1.0) else None
     return (observed - expected) / (1.0 - expected)
@@ -1776,11 +2082,13 @@ def average_pairwise_cohen_kappa(labels: pd.DataFrame) -> tuple[float | None, in
     kappas = []
     raters = list(matrix.columns)
     for left_index, left_rater in enumerate(raters):
-        for right_rater in raters[left_index + 1:]:
+        for right_rater in raters[left_index + 1 :]:
             paired = matrix[[left_rater, right_rater]].dropna()
             if len(paired) < 2:
                 continue
-            kappa = cohen_kappa_for_pair(paired[left_rater], paired[right_rater], categories)
+            kappa = cohen_kappa_for_pair(
+                paired[left_rater], paired[right_rater], categories
+            )
             if kappa is not None:
                 kappas.append(kappa)
     return (float(sum(kappas) / len(kappas)), len(kappas)) if kappas else (None, 0)
@@ -1788,7 +2096,11 @@ def average_pairwise_cohen_kappa(labels: pd.DataFrame) -> tuple[float | None, in
 
 def category_count_matrix(labels: pd.DataFrame) -> pd.DataFrame:
     clean = clean_label_values(labels)
-    return pd.crosstab(clean["stop_id"], clean["shade_category"]) if not clean.empty else pd.DataFrame()
+    return (
+        pd.crosstab(clean["stop_id"], clean["shade_category"])
+        if not clean.empty
+        else pd.DataFrame()
+    )
 
 
 def fleiss_kappa(labels: pd.DataFrame) -> float | None:
@@ -1800,7 +2112,9 @@ def fleiss_kappa(labels: pd.DataFrame) -> float | None:
         return None
     item_totals = counts.sum(axis=1)
     total_assignments = float(item_totals.sum())
-    p_i = ((counts.pow(2).sum(axis=1) - item_totals) / (item_totals * (item_totals - 1))).fillna(0)
+    p_i = (
+        (counts.pow(2).sum(axis=1) - item_totals) / (item_totals * (item_totals - 1))
+    ).fillna(0)
     p_bar = float((p_i * item_totals / total_assignments).sum())
     p_e = float((counts.sum(axis=0) / total_assignments).pow(2).sum())
     if math.isclose(1.0 - p_e, 0.0):
@@ -1816,12 +2130,20 @@ def krippendorff_alpha_nominal(labels: pd.DataFrame) -> float | None:
     if counts.empty:
         return None
     item_totals = counts.sum(axis=1)
-    observed = sum(float((row * (float(item_totals.loc[stop_id]) - row)).sum() / (float(item_totals.loc[stop_id]) - 1)) for stop_id, row in counts.iterrows()) / float(item_totals.sum())
+    observed = sum(
+        float(
+            (row * (float(item_totals.loc[stop_id]) - row)).sum()
+            / (float(item_totals.loc[stop_id]) - 1)
+        )
+        for stop_id, row in counts.iterrows()
+    ) / float(item_totals.sum())
     category_totals = counts.sum(axis=0)
     total = float(category_totals.sum())
     if total <= 1:
         return None
-    expected = float((category_totals * (total - category_totals)).sum() / (total - 1) / total)
+    expected = float(
+        (category_totals * (total - category_totals)).sum() / (total - 1) / total
+    )
     if math.isclose(expected, 0.0):
         return 1.0 if math.isclose(observed, 0.0) else None
     return 1.0 - (observed / expected)
@@ -1836,9 +2158,15 @@ def format_metric_value(value: float | None) -> str:
 def agreement_overview_values(labels: pd.DataFrame) -> dict[str, int | float | None]:
     majority = majority_label_table(labels)
     return {
-        "stops_labeled": int(majority["stop_id"].nunique()) if not majority.empty else 0,
-        "stops_needing_review": int(majority["disagreement_flag"].sum()) if not majority.empty else 0,
-        "mean_agreement": float(majority["agreement_pct"].mean()) if not majority.empty else None,
+        "stops_labeled": int(majority["stop_id"].nunique())
+        if not majority.empty
+        else 0,
+        "stops_needing_review": int(majority["disagreement_flag"].sum())
+        if not majority.empty
+        else 0,
+        "mean_agreement": float(majority["agreement_pct"].mean())
+        if not majority.empty
+        else None,
         "krippendorff_alpha": krippendorff_alpha_nominal(labels),
         "fleiss_kappa": fleiss_kappa(labels),
     }
@@ -1873,8 +2201,8 @@ def agreement_overview_markup(metrics: dict[str, int | float | None]) -> str:
     @media (max-width:720px) {{ .agreement-cards {{ grid-template-columns:1fr; }} }}
     </style>
     <div class="agreement-cards">
-      <div class="agreement-stat"><div class="agreement-stat-label">📍 Labeled</div><div class="agreement-stat-value">{int(metrics['stops_labeled']):,}</div></div>
-      <div class="agreement-stat"><div class="agreement-stat-label">⚠️ Review</div><div class="agreement-stat-value">{int(metrics['stops_needing_review']):,}</div></div>
+      <div class="agreement-stat"><div class="agreement-stat-label">📍 Labeled</div><div class="agreement-stat-value">{int(metrics["stops_labeled"]):,}</div></div>
+      <div class="agreement-stat"><div class="agreement-stat-label">⚠️ Review</div><div class="agreement-stat-value">{int(metrics["stops_needing_review"]):,}</div></div>
       <div class="agreement-stat"><div class="agreement-stat-label">🤝 Agreement</div><div class="agreement-stat-value">{mean_text}</div></div>
     </div>
     <div class="agreement-reliability">
@@ -1901,7 +2229,11 @@ def render_agreement_metrics(labels: pd.DataFrame) -> None:
     st.markdown("##### Disagreements requiring project review")
     filters = st.columns([1, 1.25, 2])
     minimum_labels = filters[0].number_input(
-        "Minimum labels", min_value=2, value=2, step=1, key="published_agreement_minimum_labels"
+        "Minimum labels",
+        min_value=2,
+        value=2,
+        step=1,
+        key="published_agreement_minimum_labels",
     )
     threshold = filters[1].slider(
         "Agreement threshold", 0.0, 99.9, 99.9, 0.1, key="published_agreement_threshold"
@@ -1924,8 +2256,12 @@ def render_agreement_metrics(labels: pd.DataFrame) -> None:
     if selected_categories:
         selected_set = set(selected_categories)
         filtered = filtered[
-            filtered["majority_label"].astype(str).map(
-                lambda value: bool(selected_set.intersection(part.strip() for part in value.split(";")))
+            filtered["majority_label"]
+            .astype(str)
+            .map(
+                lambda value: bool(
+                    selected_set.intersection(part.strip() for part in value.split(";"))
+                )
             )
         ]
     if filtered.empty:
@@ -1937,19 +2273,29 @@ def render_agreement_metrics(labels: pd.DataFrame) -> None:
     )
     page_count = max(1, math.ceil(len(filtered) / int(page_size)))
     page_number = paging[1].number_input(
-        "Page", min_value=1, max_value=page_count, value=1, step=1, key="published_agreement_page"
+        "Page",
+        min_value=1,
+        max_value=page_count,
+        value=1,
+        step=1,
+        key="published_agreement_page",
     )
     start = (int(page_number) - 1) * int(page_size)
     visible = filtered.iloc[start : start + int(page_size)]
-    paging[2].caption(f"{len(filtered):,} disagreements · Page {int(page_number):,} of {page_count:,}")
+    paging[2].caption(
+        f"{len(filtered):,} disagreements · Page {int(page_number):,} of {page_count:,}"
+    )
     display = pd.DataFrame(
         {
             "Stop": visible["stop_id"].astype(str),
             "Majority Label": visible["majority_label"].astype(str),
             "Votes": visible.apply(
-                lambda row: f"{int(row['majority_count'])} / {int(row['label_count'])}", axis=1
+                lambda row: f"{int(row['majority_count'])} / {int(row['label_count'])}",
+                axis=1,
             ),
-            "Agreement": visible["agreement_pct"].map(lambda value: f"{float(value):.1f}%"),
+            "Agreement": visible["agreement_pct"].map(
+                lambda value: f"{float(value):.1f}%"
+            ),
         }
     )
     st.dataframe(display, width="stretch", hide_index=True)
@@ -1985,7 +2331,9 @@ def export_file_catalog(
     config: dict[str, Any],
     import_log: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    provenance = import_log if import_log is not None else list(config.get("import_log") or [])
+    provenance = (
+        import_log if import_log is not None else list(config.get("import_log") or [])
+    )
     imported_at = compact_timestamp(latest_import_timestamp(provenance))
     latest_label_at = ""
     if not raw_labels.empty and "created_at" in raw_labels.columns:
@@ -1995,7 +2343,9 @@ def export_file_catalog(
 
     stops_csv = stops.to_csv(index=False).encode("utf-8")
     stops_geojson = dataframe_to_geojson(stops).encode("utf-8")
-    labels_csv = raw_labels.to_csv(index=False).encode("utf-8") if not raw_labels.empty else b""
+    labels_csv = (
+        raw_labels.to_csv(index=False).encode("utf-8") if not raw_labels.empty else b""
+    )
     config_json = json.dumps(config, indent=2, default=str).encode("utf-8")
     return [
         {
@@ -2053,16 +2403,24 @@ def render_export_files(
     key_prefix: str = "published",
 ) -> None:
     st.markdown("#### Export Files")
-    st.caption("Download analysis-ready data, GIS features, annotation history, or reproducibility settings.")
+    st.caption(
+        "Download analysis-ready data, GIS features, annotation history, or reproducibility settings."
+    )
     catalog = export_file_catalog(stops, raw_labels, config, import_log)
     with st.container(border=True):
-        header = st.columns([1.15, 2.5, .65, .7, 1.05, .75], vertical_alignment="center")
-        for column, label in zip(header, ["File", "Contents", "Records", "Size", "Updated", ""]):
+        header = st.columns(
+            [1.15, 2.5, 0.65, 0.7, 1.05, 0.75], vertical_alignment="center"
+        )
+        for column, label in zip(
+            header, ["File", "Contents", "Records", "Size", "Updated", ""]
+        ):
             column.markdown(f"**{label}**")
         for index, export in enumerate(catalog):
             if index:
                 st.divider()
-            columns = st.columns([1.15, 2.5, .65, .7, 1.05, .75], vertical_alignment="center")
+            columns = st.columns(
+                [1.15, 2.5, 0.65, 0.7, 1.05, 0.75], vertical_alignment="center"
+            )
             columns[0].markdown(f"**{export['name']}**")
             columns[1].caption(str(export["description"]))
             columns[2].write(f"{int(export['records']):,}")
@@ -2081,22 +2439,28 @@ def render_export_files(
 
 def render_dataset_provenance(import_log: list[dict[str, Any]]) -> None:
     st.markdown("#### Dataset Provenance")
-    st.caption("Sources and import events used to assemble the current project dataset.")
+    st.caption(
+        "Sources and import events used to assemble the current project dataset."
+    )
     if not import_log:
         st.info("No dataset import provenance has been recorded.")
         return
     with st.container(border=True):
-        header = st.columns([2.4, .8, .7, 1.3])
+        header = st.columns([2.4, 0.8, 0.7, 1.3])
         for column, label in zip(header, ["Source", "Format", "Records", "Imported"]):
             column.markdown(f"**{label}**")
         for index, entry in enumerate(reversed(import_log)):
             if index:
                 st.divider()
-            columns = st.columns([2.4, .8, .7, 1.3], vertical_alignment="center")
-            columns[0].write(str(entry.get("source", "Unknown source") or "Unknown source"))
+            columns = st.columns([2.4, 0.8, 0.7, 1.3], vertical_alignment="center")
+            columns[0].write(
+                str(entry.get("source", "Unknown source") or "Unknown source")
+            )
             columns[1].write(str(entry.get("format", "Unknown") or "Unknown"))
             columns[2].write(f"{int(entry.get('rows', 0) or 0):,}")
-            columns[3].caption(compact_timestamp(entry.get("imported_at"), "Not recorded"))
+            columns[3].caption(
+                compact_timestamp(entry.get("imported_at"), "Not recorded")
+            )
 
 
 def main() -> None:
@@ -2106,12 +2470,16 @@ def main() -> None:
     visualization = config.get("visualization", {})
     taxonomy = config.get("taxonomy", [])
     voting = normalize_voting_config(visualization.get("voting"), taxonomy)
-    study_id = str(config.get("study_id") or project.get("name") or "shade-study").strip()
+    study_id = str(
+        config.get("study_id") or project.get("name") or "shade-study"
+    ).strip()
 
     st.set_page_config(page_title=project.get("name", "Shade Study"), layout="wide")
     st.title(project.get("name", "Shade Study"))
     st.markdown(f"### {methodology.get('summary', '')}")
-    st.caption(f"{project.get('agency', '')} | {project.get('region', '')} | dataset v{project.get('dataset_version', 'draft')}")
+    st.caption(
+        f"{project.get('agency', '')} | {project.get('region', '')} | dataset v{project.get('dataset_version', 'draft')}"
+    )
 
     filters = current_map_filters(stops, "published")
     visible_stops = filter_map_stops(
@@ -2140,9 +2508,13 @@ def main() -> None:
                         selection_mode="single-object",
                         key="published_stops_map",
                     )
-                    selected_stop_id = selected_stop_id_from_map_selection(map_selection, visible_stops)
+                    selected_stop_id = selected_stop_id_from_map_selection(
+                        map_selection, visible_stops
+                    )
                     if selected_stop_id:
-                        st.session_state["published_selected_stop_id"] = selected_stop_id
+                        st.session_state["published_selected_stop_id"] = (
+                            selected_stop_id
+                        )
                 with map_cols[1]:
                     with st.container(height=MAP_PANEL_HEIGHT, border=False):
                         render_stop_and_voting_panel(
@@ -2154,7 +2526,9 @@ def main() -> None:
                             voting,
                             app_dir=APP_DIR,
                         )
-            st.caption(f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters.")
+            st.caption(
+                f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters."
+            )
             render_map_filter_controls(stops, "published")
             if visualization.get("show_legend", True) and taxonomy:
                 render_taxonomy_legend(taxonomy)
@@ -2176,4 +2550,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

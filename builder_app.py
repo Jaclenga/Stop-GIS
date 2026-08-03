@@ -1365,9 +1365,9 @@ def render_header() -> str:
             ("Taxonomy", "Taxonomy"),
         ],
         "Labelling": [
-            ("Dataset Review", "Labels"),
-            ("Intercoder Review", "Blind Coding"),
-            ("Community Voting", "Voting"),
+            ("Labels", "Labels"),
+            ("Independent Review", "Blind Coding"),
+            ("Consensus", "Voting"),
         ],
         "Preview": [("Visuals", "Visuals"), ("Docs", "Docs"), ("Preview", "Preview")],
     }

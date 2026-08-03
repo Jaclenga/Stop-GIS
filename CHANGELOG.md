@@ -22,10 +22,10 @@ pre-release phase while the reusable platform stabilizes.
   per-row downloads, and a separate Dataset Provenance section.
 
 ### Changed
-- Clarified Labelling information architecture: Dataset Review now leads with moderation, Intercoder Review
-  follows Study Setup → Review Materials → Study Progress, and Community Voting pairs grouped configuration
+- Clarified Labelling information architecture: Labels now leads with moderation, Independent Review
+  follows Study Setup → Review Materials → Study Progress, and Consensus pairs grouped configuration
   with a live preview while moving versioning, role preview, and deployment guidance into disclosures.
-- Reorganized Labelling into `Dataset Review`, `Intercoder Review`, and `Community Voting`, with separate
+- Reorganized Labelling into `Labels`, `Independent Review`, and `Consensus`, with separate
   submit-label, review-queue, and audit-history views and clearer moderator-facing queue copy.
 - Redesigned the terminology and taxonomy workspace as a centered, research-oriented card layout
   with lighter tables, roomier wrapped definitions, sentence-case headings, and compact inline actions.

@@ -162,7 +162,7 @@ def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
             "labels, comments, and other reviewers' answers remain hidden until independent review closes."
         )
     if protocol["phase"] != "coding":
-        st.warning("The research administrator has not started Intercoder Review, or review has closed.")
+        st.warning("The research administrator has not started Independent Review, or review has closed.")
         return
     coder_id = st.text_input(
         "Pseudonymous reviewer ID",
@@ -522,7 +522,7 @@ def render_admin_workflow(
         )
 
     action_labels = {
-        "setup": "Start Intercoder Review",
+        "setup": "Start Independent Review",
         "coding": "Close Review and Reveal Agreement",
         "adjudication": "Close experiment",
     }
@@ -542,7 +542,7 @@ def render_admin_workflow(
                 st.success(f"Protocol advanced to {PHASE_LABELS[next_phase]}.")
                 st.rerun()
         if protocol["phase"] == "setup" and disabled:
-            st.caption("Create reviewer assignments before starting Intercoder Review.")
+            st.caption("Create reviewer assignments before starting Independent Review.")
         elif disabled:
             st.caption("Every assignment must be submitted before agreement can be revealed.")
 
@@ -611,7 +611,7 @@ def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> No
 
 
 def render_blind_coding_page() -> None:
-    st.title("Intercoder Review")
+    st.title("Independent Review")
     st.markdown(
         "Collect independent assessments by image or transit stop, then reveal agreement and send "
         "low-agreement cases for adjudication."
@@ -620,7 +620,7 @@ def render_blind_coding_page() -> None:
     project_id = str(st.session_state.get("active_project_id") or "")
     stops = st.session_state.get("stops", pd.DataFrame())
     if not project_id:
-        st.warning("Save or load a project before configuring Intercoder Review.")
+        st.warning("Save or load a project before configuring Independent Review.")
         return
     protocol = get_blind_protocol(project_id)
     _phase_caption(protocol)

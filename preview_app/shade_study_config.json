@@ -99,7 +99,7 @@
     "marker_opacity": 0.7,
     "marker_stroke_color": "#141414",
     "marker_stroke_width": 1,
-    "map_style": "Light",
+    "map_style": "High contrast",
     "priority_colors": {
       "low": "#34d399",
       "mid": "#facc15",

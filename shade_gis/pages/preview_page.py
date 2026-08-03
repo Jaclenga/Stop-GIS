@@ -1,16 +1,21 @@
 from builder_app import *
 from shade_gis.pages.agreement_page import render_agreement_analytics_section
 
+
 def render_preview_page() -> None:
     project = st.session_state["project"]
     methodology = st.session_state["methodology"]
     visualization = st.session_state["visualization"]
     taxonomy = st.session_state["taxonomy"]
     stops = st.session_state["stops"]
-    stops["priority_score"] = calculate_priority_scores(stops, visualization["priority_weights"])
+    stops["priority_score"] = calculate_priority_scores(
+        stops, visualization["priority_weights"]
+    )
     raw_labels = active_raw_labels()
     config = study_config_payload()
-    voting = published_app.normalize_voting_config(visualization.get("voting"), taxonomy)
+    voting = published_app.normalize_voting_config(
+        visualization.get("voting"), taxonomy
+    )
     voting["shade_source_taxonomy"] = normalize_source_taxonomy(
         methodology.get("shade_source_taxonomy")
     )
@@ -18,11 +23,15 @@ def render_preview_page() -> None:
         methodology.get("shade_coverage_taxonomy"),
         taxonomy,
     )
-    study_id = str(config.get("study_id") or project.get("name") or "shade-study").strip()
+    study_id = str(
+        config.get("study_id") or project.get("name") or "shade-study"
+    ).strip()
 
     st.title(project["name"])
     st.markdown(f"### {methodology['summary']}")
-    st.caption(f"{project['agency']} | {project['region']} | dataset v{project['dataset_version']}")
+    st.caption(
+        f"{project['agency']} | {project['region']} | dataset v{project['dataset_version']}"
+    )
 
     if stops.empty:
         st.warning("Import a stop dataset before previewing the public app.")
@@ -49,18 +58,26 @@ def render_preview_page() -> None:
                 map_cols = st.columns([2, 1])
                 with map_cols[0]:
                     map_selection = st.pydeck_chart(
-                        published_app.build_deck_chart(visible_stops, taxonomy, visualization),
+                        published_app.build_deck_chart(
+                            visible_stops, taxonomy, visualization
+                        ),
                         width="stretch",
                         height=published_app.MAP_PANEL_HEIGHT,
                         on_select="rerun",
                         selection_mode="single-object",
                         key="preview_stops_map",
                     )
-                    selected_stop_id = published_app.selected_stop_id_from_map_selection(map_selection, visible_stops)
+                    selected_stop_id = (
+                        published_app.selected_stop_id_from_map_selection(
+                            map_selection, visible_stops
+                        )
+                    )
                     if selected_stop_id:
                         st.session_state["preview_selected_stop_id"] = selected_stop_id
                 with map_cols[1]:
-                    with st.container(height=published_app.MAP_PANEL_HEIGHT, border=False):
+                    with st.container(
+                        height=published_app.MAP_PANEL_HEIGHT, border=False
+                    ):
                         published_app.render_stop_and_voting_panel(
                             visible_stops,
                             visualization,
@@ -70,13 +87,17 @@ def render_preview_page() -> None:
                             voting,
                             app_dir=published_app.APP_DIR,
                         )
-            st.caption(f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters.")
+            st.caption(
+                f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters."
+            )
             published_app.render_map_filter_controls(stops, "preview")
             if visualization.get("show_legend", True):
                 published_app.render_taxonomy_legend(taxonomy)
     elif tabs[1].open:
         with tabs[1]:
-            selected_sections = published_app.selected_dashboard_sections(visible_stops, visualization)
+            selected_sections = published_app.selected_dashboard_sections(
+                visible_stops, visualization
+            )
             agreement_enabled = "Agreement metrics" in selected_sections
             agreement_view = str(st.session_state.get("agreement_view", "overview"))
             if agreement_enabled and agreement_view in {"queue", "review"}:
@@ -117,7 +138,3 @@ def render_preview_page() -> None:
             else:
                 st.info("Public file downloads are disabled for this study.")
             published_app.render_dataset_provenance(st.session_state["import_log"])
-
-
-
-

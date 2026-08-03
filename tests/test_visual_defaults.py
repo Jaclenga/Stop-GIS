@@ -35,9 +35,13 @@ def test_session_backed_color_picker_uses_only_session_state_for_default(monkeyp
 
     monkeypatch.setattr(visuals_page, "st", FakeStreamlit)
 
-    selected = visuals_page.session_backed_color_picker("No Shade", "#dc143c", "shade_color_0")
+    selected = visuals_page.session_backed_color_picker(
+        "No Shade", "#dc143c", "shade_color_0"
+    )
     FakeStreamlit.session_state["shade_color_0"] = "#123456"
-    selected_again = visuals_page.session_backed_color_picker("No Shade", "#dc143c", "shade_color_0")
+    selected_again = visuals_page.session_backed_color_picker(
+        "No Shade", "#dc143c", "shade_color_0"
+    )
 
     assert selected == "#dc143c"
     assert selected_again == "#123456"
@@ -99,7 +103,10 @@ def test_default_dashboard_charts_are_sources_and_coverage():
     )
 
     assert DEFAULT_VISUALIZATION["metric_cards"] == ["Shade sources", "Shade coverage"]
-    assert selected_dashboard_sections(stops, DEFAULT_VISUALIZATION) == ["Shade sources", "Shade coverage"]
+    assert selected_dashboard_sections(stops, DEFAULT_VISUALIZATION) == [
+        "Shade sources",
+        "Shade coverage",
+    ]
     assert published_app.selected_dashboard_sections(stops, DEFAULT_VISUALIZATION) == [
         "Shade sources",
         "Shade coverage",
@@ -119,8 +126,14 @@ def test_legacy_default_dashboard_selection_migrates_to_sources_and_coverage():
     )
     visualization = {"metric_cards": LEGACY_DEFAULT_METRIC_CARDS}
 
-    assert selected_dashboard_sections(stops, visualization) == ["Shade sources", "Shade coverage"]
-    assert published_app.selected_dashboard_sections(stops, visualization) == ["Shade sources", "Shade coverage"]
+    assert selected_dashboard_sections(stops, visualization) == [
+        "Shade sources",
+        "Shade coverage",
+    ]
+    assert published_app.selected_dashboard_sections(stops, visualization) == [
+        "Shade sources",
+        "Shade coverage",
+    ]
 
 
 def test_legacy_mixed_dashboard_and_duplicate_source_charts_migrate_once():
@@ -172,7 +185,10 @@ def test_source_count_chart_splits_semicolon_values():
     stops = pd.DataFrame(
         [
             {"shade_sources": "Natural; Incidental", "shade_coverage": "Limited"},
-            {"shade_sources": "Natural; Intentional Built", "shade_coverage": "Significant Shade"},
+            {
+                "shade_sources": "Natural; Intentional Built",
+                "shade_coverage": "Significant Shade",
+            },
             {"shade_sources": "Incidental Built", "shade_coverage": "No Shade"},
             {"shade_sources": "", "shade_coverage": "No Shade"},
         ]
@@ -302,8 +318,14 @@ def test_published_map_matches_visuals_map_renderer():
         }
     )
 
-    visuals_deck = json.loads(build_deck_chart(stops, taxonomy, copy.deepcopy(visualization)).to_json())
-    published_deck = json.loads(published_app.build_deck_chart(stops, taxonomy, copy.deepcopy(visualization)).to_json())
+    visuals_deck = json.loads(
+        build_deck_chart(stops, taxonomy, copy.deepcopy(visualization)).to_json()
+    )
+    published_deck = json.loads(
+        published_app.build_deck_chart(
+            stops, taxonomy, copy.deepcopy(visualization)
+        ).to_json()
+    )
 
     assert published_deck == visuals_deck
     assert visuals_deck["useDevicePixels"] == 2
@@ -330,7 +352,9 @@ def test_marker_slider_sizes_serialize_as_literal_pixels_and_scale_linearly():
         for marker_size in slider_sizes:
             visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
             visualization.update({"marker_shape": "Circle", "marker_size": marker_size})
-            layer = json.loads(chart_builder(stops, [], visualization).to_json())["layers"][-1]
+            layer = json.loads(chart_builder(stops, [], visualization).to_json())[
+                "layers"
+            ][-1]
 
             assert layer["radiusUnits"] == "pixels"
             rendered_circle_sizes.append(layer["data"][0]["marker_size"])
@@ -339,7 +363,9 @@ def test_marker_slider_sizes_serialize_as_literal_pixels_and_scale_linearly():
 
         visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
         visualization.update({"marker_shape": "Diamond", "marker_size": 24})
-        icon_layer = json.loads(chart_builder(stops, [], visualization).to_json())["layers"][-1]
+        icon_layer = json.loads(chart_builder(stops, [], visualization).to_json())[
+            "layers"
+        ][-1]
         assert icon_layer["sizeUnits"] == "pixels"
         assert icon_layer["data"][0]["marker_size"] == 24
 
@@ -364,7 +390,9 @@ def test_non_circle_markers_use_a_browser_loadable_raster_icon_atlas():
         visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
         visualization["marker_shape"] = shape
         for chart_builder in (build_deck_chart, published_app.build_deck_chart):
-            layer = json.loads(chart_builder(stops, taxonomy, visualization).to_json())["layers"][-1]
+            layer = json.loads(chart_builder(stops, taxonomy, visualization).to_json())[
+                "layers"
+            ][-1]
             icon_url = layer["iconAtlas"]
 
             assert icon_url.startswith("data:image/png;base64,")
@@ -375,7 +403,39 @@ def test_non_circle_markers_use_a_browser_loadable_raster_icon_atlas():
                 assert image.mode == "RGBA"
             icon_name = layer["data"][0]["icon_name"]
             assert layer["getIcon"] == "@@=icon_name"
-            assert layer["iconMapping"][icon_name]["anchorY"] == (120 if shape == "Pin" else 64)
+            assert layer["iconMapping"][icon_name]["anchorY"] == (
+                120 if shape == "Pin" else 64
+            )
+
+
+def test_dense_overviews_honor_selected_marker_shape_and_size():
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": str(index),
+                "stop_name": f"Stop {index}",
+                "stop_lat": 27.8 + index * 0.0001,
+                "stop_lon": -82.6 + index * 0.0001,
+                "shading": "No Shade",
+                "review_status": "Unlabeled",
+                "priority_score": 0,
+            }
+            for index in range(500)
+        ]
+    )
+    taxonomy = [{"name": "No Shade", "color": "#dc143c", "sort_order": 1}]
+    visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
+    visualization.update({"marker_shape": "Square", "marker_size": 24})
+
+    for chart_builder in (build_deck_chart, published_app.build_deck_chart):
+        layer = json.loads(chart_builder(stops, taxonomy, visualization).to_json())[
+            "layers"
+        ][-1]
+
+        assert layer["@@type"] == "IconLayer"
+        assert layer["id"] == "stops_layer_square"
+        assert layer["data"][0]["marker_size"] == 24
+        assert layer["pickable"] is True
 
 
 def test_each_marker_shape_gets_a_distinct_deck_layer_id():
@@ -429,5 +489,7 @@ def test_default_map_marker_size_is_seven_for_builder_and_published_maps():
 
     assert DEFAULT_VISUALIZATION["marker_size"] == 7
     for chart_builder in (build_deck_chart, published_app.build_deck_chart):
-        layer = json.loads(chart_builder(stops, [], visualization).to_json())["layers"][-1]
+        layer = json.loads(chart_builder(stops, [], visualization).to_json())["layers"][
+            -1
+        ]
         assert layer["data"][0]["marker_size"] == 7

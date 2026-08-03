@@ -14,7 +14,9 @@ def render_palette_controls(
     taxonomy: list[dict[str, Any]],
     color_options: dict[str, str],
 ) -> None:
-    field = color_options.get(visualization.get("color_by", "Shade coverage"), "shading")
+    field = color_options.get(
+        visualization.get("color_by", "Shade coverage"), "shading"
+    )
     st.markdown("#### Color Palette")
     if field == "shading":
         previous_palette = visualization.get("shade_palette", "Custom")
@@ -59,24 +61,35 @@ def render_palette_controls(
         return
 
     if field == "priority_score":
-        priority_colors = visualization.setdefault("priority_colors", DEFAULT_VISUALIZATION["priority_colors"].copy())
+        priority_colors = visualization.setdefault(
+            "priority_colors", DEFAULT_VISUALIZATION["priority_colors"].copy()
+        )
         grid = st.columns(3)
         with grid[0]:
             priority_colors["low"] = st.color_picker(
                 "Low score",
-                normalize_hex_color(priority_colors.get("low"), DEFAULT_VISUALIZATION["priority_colors"]["low"]),
+                normalize_hex_color(
+                    priority_colors.get("low"),
+                    DEFAULT_VISUALIZATION["priority_colors"]["low"],
+                ),
                 key="priority_color_low",
             )
         with grid[1]:
             priority_colors["mid"] = st.color_picker(
                 "Mid score",
-                normalize_hex_color(priority_colors.get("mid"), DEFAULT_VISUALIZATION["priority_colors"]["mid"]),
+                normalize_hex_color(
+                    priority_colors.get("mid"),
+                    DEFAULT_VISUALIZATION["priority_colors"]["mid"],
+                ),
                 key="priority_color_mid",
             )
         with grid[2]:
             priority_colors["high"] = st.color_picker(
                 "High score",
-                normalize_hex_color(priority_colors.get("high"), DEFAULT_VISUALIZATION["priority_colors"]["high"]),
+                normalize_hex_color(
+                    priority_colors.get("high"),
+                    DEFAULT_VISUALIZATION["priority_colors"]["high"],
+                ),
                 key="priority_color_high",
             )
         return
@@ -86,7 +99,14 @@ def render_palette_controls(
     if not values:
         st.caption("No values are available for the selected column.")
         return
-    total_unique = stops[field].fillna("Unknown").astype(str).str.strip().replace("", "Unknown").nunique()
+    total_unique = (
+        stops[field]
+        .fillna("Unknown")
+        .astype(str)
+        .str.strip()
+        .replace("", "Unknown")
+        .nunique()
+    )
     if total_unique > len(values):
         st.caption(f"Showing colors for the first {len(values)} values in this column.")
     grid = st.columns(2)
@@ -94,7 +114,9 @@ def render_palette_controls(
         with grid[index % 2]:
             color_map[value] = st.color_picker(
                 value[:80],
-                normalize_hex_color(color_map.get(value, COLOR_PALETTE[index % len(COLOR_PALETTE)])),
+                normalize_hex_color(
+                    color_map.get(value, COLOR_PALETTE[index % len(COLOR_PALETTE)])
+                ),
                 key=f"field_color_{field}_{index}",
             )
 
@@ -104,7 +126,9 @@ def gis_overlay_id(name: str, index: int) -> str:
     return f"{slug or 'gis-overlay'}-{index + 1}"
 
 
-def parse_uploaded_gis_overlay(contents: bytes, filename: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
+def parse_uploaded_gis_overlay(
+    contents: bytes, filename: str
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
     suffix = Path(filename).suffix.lower()
     if suffix == ".zip":
         geojson, metadata = parse_shapefile_overlay_zip(contents)
@@ -132,26 +156,49 @@ def render_gis_overlay_controls(visualization: dict[str, Any]) -> None:
         f"{format_bytes(max_zip_uncompressed_bytes())}."
     )
     overlay_cols = st.columns([1.2, 1, 1])
-    overlay_name = overlay_cols[0].text_input("Overlay name", key="gis_overlay_name", placeholder="Transit service area")
-    overlay_category = overlay_cols[1].selectbox("Overlay category", GIS_OVERLAY_CATEGORIES, key="gis_overlay_category")
-    overlay_color = overlay_cols[2].color_picker("Overlay color", "#2563eb", key="gis_overlay_color")
+    overlay_name = overlay_cols[0].text_input(
+        "Overlay name", key="gis_overlay_name", placeholder="Transit service area"
+    )
+    overlay_category = overlay_cols[1].selectbox(
+        "Overlay category", GIS_OVERLAY_CATEGORIES, key="gis_overlay_category"
+    )
+    overlay_color = overlay_cols[2].color_picker(
+        "Overlay color", "#2563eb", key="gis_overlay_color"
+    )
     source_cols = st.columns([1, 1])
-    overlay_source = source_cols[0].text_input("Source", key="gis_overlay_source", placeholder="Agency, dataset, or URL")
-    overlay_license = source_cols[1].text_input("License", key="gis_overlay_license", placeholder="Optional")
+    overlay_source = source_cols[0].text_input(
+        "Source", key="gis_overlay_source", placeholder="Agency, dataset, or URL"
+    )
+    overlay_license = source_cols[1].text_input(
+        "License", key="gis_overlay_license", placeholder="Optional"
+    )
     style_cols = st.columns([1, 1, 1])
-    overlay_opacity = style_cols[0].slider("Overlay opacity", 0.05, 1.0, 0.35, 0.05, key="gis_overlay_opacity")
-    overlay_line_width = style_cols[1].slider("Line width", 1, 12, 2, 1, key="gis_overlay_line_width")
-    overlay_visible = style_cols[2].checkbox("Visible by default", value=True, key="gis_overlay_visible")
+    overlay_opacity = style_cols[0].slider(
+        "Overlay opacity", 0.05, 1.0, 0.35, 0.05, key="gis_overlay_opacity"
+    )
+    overlay_line_width = style_cols[1].slider(
+        "Line width", 1, 12, 2, 1, key="gis_overlay_line_width"
+    )
+    overlay_visible = style_cols[2].checkbox(
+        "Visible by default", value=True, key="gis_overlay_visible"
+    )
 
     if st.button("Add GIS overlay", type="primary", disabled=uploaded is None):
         if uploaded is None:
             st.warning("Upload a GeoJSON file or zipped Shapefile first.")
         elif getattr(uploaded, "size", 0) > max_upload_bytes():
-            st.error(f"This overlay is larger than the {format_bytes(max_upload_bytes())} limit.")
+            st.error(
+                f"This overlay is larger than the {format_bytes(max_upload_bytes())} limit."
+            )
         else:
             try:
-                overlay_format, geojson, metadata = parse_uploaded_gis_overlay(uploaded.getvalue(), uploaded.name)
-                name = overlay_name.strip() or Path(uploaded.name).stem.replace("_", " ").title()
+                overlay_format, geojson, metadata = parse_uploaded_gis_overlay(
+                    uploaded.getvalue(), uploaded.name
+                )
+                name = (
+                    overlay_name.strip()
+                    or Path(uploaded.name).stem.replace("_", " ").title()
+                )
                 overlay = {
                     "id": gis_overlay_id(name, len(overlays)),
                     "name": name,
@@ -185,7 +232,9 @@ def render_gis_overlay_controls(visualization: dict[str, Any]) -> None:
                         },
                     }
                 )
-                st.success(f"Added {name} with {metadata.get('features', 0)} feature(s).")
+                st.success(
+                    f"Added {name} with {metadata.get('features', 0)} feature(s)."
+                )
                 st.rerun()
             except Exception as error:
                 st.error(f"Could not import GIS overlay: {error}")
@@ -199,10 +248,16 @@ def render_gis_overlay_controls(visualization: dict[str, Any]) -> None:
         label = f"{overlay.get('name', f'GIS overlay {index + 1}')} ({overlay.get('category', 'Other')})"
         with st.expander(label, expanded=False):
             edit_cols = st.columns([1, 1, 1])
-            overlay["visible"] = edit_cols[0].checkbox("Visible", value=bool(overlay.get("visible", True)), key=f"gis_overlay_visible_{index}")
+            overlay["visible"] = edit_cols[0].checkbox(
+                "Visible",
+                value=bool(overlay.get("visible", True)),
+                key=f"gis_overlay_visible_{index}",
+            )
             overlay["color"] = edit_cols[1].color_picker(
                 "Color",
-                normalize_hex_color(overlay.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)])),
+                normalize_hex_color(
+                    overlay.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)])
+                ),
                 key=f"gis_overlay_color_{index}",
             )
             overlay["opacity"] = edit_cols[2].slider(
@@ -221,7 +276,9 @@ def render_gis_overlay_controls(visualization: dict[str, Any]) -> None:
                 1,
                 key=f"gis_overlay_width_{index}",
             )
-            overlay["name"] = st.text_input("Name", str(overlay.get("name", "")), key=f"gis_overlay_name_{index}")
+            overlay["name"] = st.text_input(
+                "Name", str(overlay.get("name", "")), key=f"gis_overlay_name_{index}"
+            )
             category = str(overlay.get("category", "Other"))
             if category not in GIS_OVERLAY_CATEGORIES:
                 category = "Other"
@@ -290,7 +347,9 @@ def render_visuals_page() -> None:
                 )
                 visualization["marker_stroke_color"] = st.color_picker(
                     "Marker outline",
-                    normalize_hex_color(visualization.get("marker_stroke_color", "#141414"), "#141414"),
+                    normalize_hex_color(
+                        visualization.get("marker_stroke_color", "#141414"), "#141414"
+                    ),
                 )
                 visualization["marker_stroke_width"] = st.slider(
                     "Outline width",
@@ -299,16 +358,18 @@ def render_visuals_page() -> None:
                     int(visualization.get("marker_stroke_width", 1)),
                     1,
                 )
-                map_style = visualization.get("map_style", "Light")
+                map_style = visualization.get("map_style", "High contrast")
                 if map_style not in MAP_STYLES:
-                    map_style = "Light"
+                    map_style = "High contrast"
                 visualization["map_style"] = st.selectbox(
                     "Base map style",
                     list(MAP_STYLES),
                     index=list(MAP_STYLES).index(map_style),
                 )
                 overlay_options = get_available_overlays(stops)
-                visualization["overlays"] = clean_selected_options(visualization.get("overlays", []), overlay_options)
+                visualization["overlays"] = clean_selected_options(
+                    visualization.get("overlays", []), overlay_options
+                )
                 if overlay_options:
                     visualization["overlays"] = st.multiselect(
                         "Dataset-backed context fields",
@@ -323,7 +384,9 @@ def render_visuals_page() -> None:
                     )
                 else:
                     visualization["overlays"] = []
-                    st.caption("No optional context layers are available in the active dataset.")
+                    st.caption(
+                        "No optional context layers are available in the active dataset."
+                    )
 
                 st.divider()
                 render_gis_overlay_controls(visualization)
@@ -340,7 +403,9 @@ def render_visuals_page() -> None:
                     )
                 else:
                     visualization["metric_cards"] = []
-                    st.caption("No dashboard summaries are available for the active dataset yet.")
+                    st.caption(
+                        "No dashboard summaries are available for the active dataset yet."
+                    )
 
                 st.subheader("Custom Chart")
                 charts = get_custom_charts(stops, visualization)
@@ -366,7 +431,10 @@ def render_visuals_page() -> None:
                     charts = charts[:chart_count]
                     for index, chart in enumerate(charts):
                         chart = ensure_custom_chart_defaults(stops, chart, index)
-                        with st.expander(chart.get("title", f"Custom chart {index + 1}"), expanded=index == 0):
+                        with st.expander(
+                            chart.get("title", f"Custom chart {index + 1}"),
+                            expanded=index == 0,
+                        ):
                             chart["title"] = st.text_input(
                                 "Chart title",
                                 chart.get("title", f"Custom chart {index + 1}"),
@@ -384,7 +452,11 @@ def render_visuals_page() -> None:
                                 "Y column",
                                 y_options,
                                 index=y_options.index(chart["y"]),
-                                format_func=lambda value: value if value == RECORD_COUNT_FIELD else display_label(value),
+                                format_func=lambda value: (
+                                    value
+                                    if value == RECORD_COUNT_FIELD
+                                    else display_label(value)
+                                ),
                                 key=f"custom_chart_y_{index}",
                             )
                             chart["aggregation"] = st.selectbox(
@@ -403,7 +475,9 @@ def render_visuals_page() -> None:
                 else:
                     st.caption("Import a dataset before configuring a custom chart.")
 
-                current_display_columns = get_selected_display_columns(stops, visualization)
+                current_display_columns = get_selected_display_columns(
+                    stops, visualization
+                )
                 display_columns = st.multiselect(
                     "Published data columns",
                     get_display_column_options(stops),
@@ -416,7 +490,9 @@ def render_visuals_page() -> None:
                 else:
                     st.warning("Select at least one column for the public data table.")
                     visualization["display_columns"] = current_display_columns
-                visualization["show_legend"] = st.checkbox("Show legend", value=visualization["show_legend"])
+                visualization["show_legend"] = st.checkbox(
+                    "Show legend", value=visualization["show_legend"]
+                )
                 visualization["show_downloads"] = st.checkbox(
                     "Show public downloads", value=visualization["show_downloads"]
                 )
@@ -434,13 +510,23 @@ def render_visuals_page() -> None:
 
                 if priority_factors:
                     for key, label in priority_factors:
-                        weights[key] = st.slider(label, 0.0, 1.0, float(weights.get(key, 0.0)), 0.05)
+                        weights[key] = st.slider(
+                            label, 0.0, 1.0, float(weights.get(key, 0.0)), 0.05
+                        )
                 else:
-                    st.caption("No priority factors are available in the active dataset.")
-                st.caption("The preview stores the selected formula version with exported configuration.")
+                    st.caption(
+                        "No priority factors are available in the active dataset."
+                    )
+                st.caption(
+                    "The preview stores the selected formula version with exported configuration."
+                )
 
-    st.session_state["stops"]["priority_score"] = calculate_priority_scores(stops, visualization["priority_weights"])
-    display_columns = get_selected_display_columns(st.session_state["stops"], visualization)
+    st.session_state["stops"]["priority_score"] = calculate_priority_scores(
+        stops, visualization["priority_weights"]
+    )
+    display_columns = get_selected_display_columns(
+        st.session_state["stops"], visualization
+    )
 
     with preview:
         st.subheader("Map Preview")
@@ -471,10 +557,9 @@ def render_visuals_page() -> None:
     st.subheader("Available Fields")
     active_columns = get_active_data_columns(stops)
     field_summary = pd.DataFrame(
-        [{"field": column, "non_null_values": int(stops[column].notna().sum())} for column in active_columns]
+        [
+            {"field": column, "non_null_values": int(stops[column].notna().sum())}
+            for column in active_columns
+        ]
     )
     st.dataframe(field_summary, width="stretch", hide_index=True)
-
-
-
-

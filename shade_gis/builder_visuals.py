@@ -13,9 +13,20 @@ from PIL import Image, ImageDraw
 import published_app
 from public_voting import DEFAULT_VOTING_CONFIG
 
-from shade_gis.builder_imports import REQUIRED_STOP_FIELDS, hex_to_rgb, normalize_hex_color
+from shade_gis.builder_imports import (
+    REQUIRED_STOP_FIELDS,
+    hex_to_rgb,
+    normalize_hex_color,
+)
 
-DEFAULT_DISPLAY_COLUMNS = ["stop_id", "stop_name", "routes", "shading", "review_status", "priority_score"]
+DEFAULT_DISPLAY_COLUMNS = [
+    "stop_id",
+    "stop_name",
+    "routes",
+    "shading",
+    "review_status",
+    "priority_score",
+]
 RECORD_COUNT_FIELD = "Record count"
 MAX_CUSTOM_CHARTS = 10
 ANALYTICS_SCHEMA_VERSION = 2
@@ -60,7 +71,7 @@ DEFAULT_VISUALIZATION = {
     "marker_opacity": 0.82,
     "marker_stroke_color": "#141414",
     "marker_stroke_width": 1,
-    "map_style": "Light",
+    "map_style": "High contrast",
     "priority_colors": {
         "low": "#34d399",
         "mid": "#facc15",
@@ -104,7 +115,9 @@ def is_schema_default_chart(chart: Any) -> bool:
     )
 
 
-def migrate_legacy_analytics_config(visualization: dict[str, Any] | None) -> dict[str, Any]:
+def migrate_legacy_analytics_config(
+    visualization: dict[str, Any] | None,
+) -> dict[str, Any]:
     """Move pre-split analytics defaults to the source/coverage schema once."""
     migrated = json.loads(json.dumps(visualization or {}, default=str))
     try:
@@ -126,21 +139,40 @@ def migrate_legacy_analytics_config(visualization: dict[str, Any] | None) -> dic
                 continue
             chart["x"] = "shade_coverage"
             title = str(chart.get("title", "") or "").strip().lower()
-            if title in {"", "custom chart", f"custom chart {index + 1}", "shade distribution"}:
+            if title in {
+                "",
+                "custom chart",
+                f"custom chart {index + 1}",
+                "shade distribution",
+            }:
                 chart["title"] = "Shade Coverage"
         migrated["custom_charts"] = charts
     migrated.pop("custom_chart", None)
     migrated["analytics_schema_version"] = ANALYTICS_SCHEMA_VERSION
     return migrated
 
+
 MARKER_SHAPES = ["Circle", "Pin", "Square", "Diamond", "Triangle"]
 DESTINATION_FILTER_COLUMNS = ["nearby_destinations", "destinations", "destination"]
 CATEGORICAL_MAP_FILTERS = ["shading", "review_status"]
 NUMERIC_MAP_FILTERS = ["confidence", "ridership", "priority_score"]
-GIS_OVERLAY_CATEGORIES = ["Transportation", "Environmental", "Demographic", "Destinations", "Other"]
-GIS_OVERLAY_CATEGORIES = ["Transportation", "Environmental", "Demographic", "Destinations", "Other"]
+GIS_OVERLAY_CATEGORIES = [
+    "Transportation",
+    "Environmental",
+    "Demographic",
+    "Destinations",
+    "Other",
+]
+GIS_OVERLAY_CATEGORIES = [
+    "Transportation",
+    "Environmental",
+    "Demographic",
+    "Destinations",
+    "Other",
+]
 
 MAP_STYLES = {
+    "High contrast": pdk.map_styles.CARTO_ROAD,
     "Light": pdk.map_styles.CARTO_LIGHT,
     "Dark": pdk.map_styles.CARTO_DARK,
     "Road": pdk.map_styles.CARTO_ROAD,
@@ -197,7 +229,11 @@ METRIC_REQUIREMENTS = {
 
 CHART_TYPES = ["Bar", "Line", "Scatter"]
 CHART_AGGREGATIONS = ["Count", "Mean", "Sum", "Median", "Min", "Max"]
-SHADE_SOURCE_CHART_CODES = {"natural": "Natural", "purpose-built": "Purpose-built", "incidental": "Incidental"}
+SHADE_SOURCE_CHART_CODES = {
+    "natural": "Natural",
+    "purpose-built": "Purpose-built",
+    "incidental": "Incidental",
+}
 SHADE_SOURCE_CHART_ALIASES = {
     "purpose built": "Purpose-built",
     "purpose-built shade": "Purpose-built",
@@ -259,12 +295,34 @@ COLOR_PALETTE = [
 ]
 
 SHADE_PALETTES = {
-    "Default shade study": ["#dc143c", "#d69e2e", "#228b22", "#4682b4", "#805aaa", "#808080"],
-    "Colorblind friendly": ["#d55e00", "#e69f00", "#009e73", "#0072b2", "#cc79a7", "#999999"],
+    "Default shade study": [
+        "#dc143c",
+        "#d69e2e",
+        "#228b22",
+        "#4682b4",
+        "#805aaa",
+        "#808080",
+    ],
+    "Colorblind friendly": [
+        "#d55e00",
+        "#e69f00",
+        "#009e73",
+        "#0072b2",
+        "#cc79a7",
+        "#999999",
+    ],
     "High contrast": ["#b91c1c", "#f97316", "#15803d", "#2563eb", "#7c3aed", "#475569"],
-    "Infrastructure mix": ["#dc2626", "#ca8a04", "#16a34a", "#0ea5e9", "#9333ea", "#71717a"],
+    "Infrastructure mix": [
+        "#dc2626",
+        "#ca8a04",
+        "#16a34a",
+        "#0ea5e9",
+        "#9333ea",
+        "#71717a",
+    ],
     "Civic map": ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#64748b"],
 }
+
 
 def get_taxonomy_color_map(taxonomy: list[dict[str, Any]]) -> dict[str, list[int]]:
     return {
@@ -293,7 +351,15 @@ def has_all_column_data(df: pd.DataFrame, columns: list[str]) -> bool:
 
 def get_color_options(df: pd.DataFrame) -> dict[str, str]:
     options = COLOR_MODE_FIELDS.copy()
-    excluded = {"stop_id", "stop_name", "stop_lat", "stop_lon", "priority_score", "shading", "review_status"}
+    excluded = {
+        "stop_id",
+        "stop_name",
+        "stop_lat",
+        "stop_lon",
+        "priority_score",
+        "shading",
+        "review_status",
+    }
     for column in df.columns:
         if column in excluded:
             continue
@@ -310,7 +376,11 @@ def display_label(column: str) -> str:
 
 def get_active_data_columns(df: pd.DataFrame) -> list[str]:
     always_show = set(REQUIRED_STOP_FIELDS + ["priority_score"])
-    return [column for column in df.columns if column in always_show or has_column_data(df, column)]
+    return [
+        column
+        for column in df.columns
+        if column in always_show or has_column_data(df, column)
+    ]
 
 
 def get_display_column_options(df: pd.DataFrame) -> list[str]:
@@ -320,9 +390,15 @@ def get_display_column_options(df: pd.DataFrame) -> list[str]:
     return options
 
 
-def get_selected_display_columns(df: pd.DataFrame, visualization: dict[str, Any]) -> list[str]:
+def get_selected_display_columns(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> list[str]:
     options = get_display_column_options(df)
-    selected = [column for column in visualization.get("display_columns", []) if column in options]
+    selected = [
+        column
+        for column in visualization.get("display_columns", [])
+        if column in options
+    ]
     if not selected:
         selected = [column for column in DEFAULT_DISPLAY_COLUMNS if column in options]
     if not selected:
@@ -356,7 +432,9 @@ def clean_selected_options(selected: list[str], options: list[str]) -> list[str]
     return [item for item in selected if item in options]
 
 
-def selected_dashboard_sections(df: pd.DataFrame, visualization: dict[str, Any]) -> list[str]:
+def selected_dashboard_sections(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> list[str]:
     available = get_available_metric_cards(df)
     metric_cards = visualization.get("metric_cards", [])
     if metric_cards == LEGACY_DEFAULT_METRIC_CARDS:
@@ -371,7 +449,10 @@ def clean_gis_overlays(visualization: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(overlay, dict):
             continue
         geojson = overlay.get("geojson")
-        if not isinstance(geojson, dict) or str(geojson.get("type", "")).lower() != "featurecollection":
+        if (
+            not isinstance(geojson, dict)
+            or str(geojson.get("type", "")).lower() != "featurecollection"
+        ):
             continue
         features = geojson.get("features")
         if not isinstance(features, list) or not features:
@@ -384,8 +465,12 @@ def clean_gis_overlays(visualization: dict[str, Any]) -> list[dict[str, Any]]:
         cleaned.setdefault("opacity", 0.35)
         cleaned.setdefault("line_width", 2)
         cleaned.setdefault("visible", True)
-        cleaned["color"] = normalize_hex_color(cleaned.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)]))
-        cleaned["opacity"] = max(0.05, min(1.0, float(cleaned.get("opacity", 0.35) or 0.35)))
+        cleaned["color"] = normalize_hex_color(
+            cleaned.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)])
+        )
+        cleaned["opacity"] = max(
+            0.05, min(1.0, float(cleaned.get("opacity", 0.35) or 0.35))
+        )
         cleaned["line_width"] = max(1, min(12, int(cleaned.get("line_width", 2) or 2)))
         overlays.append(cleaned)
     visualization["gis_overlays"] = overlays
@@ -403,8 +488,14 @@ def build_gis_overlay_layers(visualization: dict[str, Any]) -> list[pdk.Layer]:
     for index, overlay in enumerate(clean_gis_overlays(visualization)):
         if not overlay.get("visible", True):
             continue
-        color = rgba_from_hex(str(overlay.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)])), overlay.get("opacity", 0.35))
-        line_color = rgba_from_hex(str(overlay.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)])), min(1.0, float(overlay.get("opacity", 0.35)) + 0.25))
+        color = rgba_from_hex(
+            str(overlay.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)])),
+            overlay.get("opacity", 0.35),
+        )
+        line_color = rgba_from_hex(
+            str(overlay.get("color", COLOR_PALETTE[index % len(COLOR_PALETTE)])),
+            min(1.0, float(overlay.get("opacity", 0.35)) + 0.25),
+        )
         layers.append(
             pdk.Layer(
                 "GeoJsonLayer",
@@ -431,7 +522,9 @@ def get_chart_column_options(df: pd.DataFrame) -> list[str]:
     return get_display_column_options(df)
 
 
-def ensure_custom_chart_defaults(df: pd.DataFrame, chart: dict[str, Any] | None = None, index: int = 0) -> dict[str, Any]:
+def ensure_custom_chart_defaults(
+    df: pd.DataFrame, chart: dict[str, Any] | None = None, index: int = 0
+) -> dict[str, Any]:
     chart = chart if isinstance(chart, dict) else {}
     for key, value in DEFAULT_CUSTOM_CHART.items():
         chart.setdefault(key, json.loads(json.dumps(value)))
@@ -441,8 +534,14 @@ def ensure_custom_chart_defaults(df: pd.DataFrame, chart: dict[str, Any] | None 
     fallback_x = "shading" if "shading" in columns else (columns[0] if columns else "")
     if chart.get("x") not in columns:
         chart["x"] = fallback_x
-    if str(chart.get("title", "")).strip().lower() in {"", "custom chart", f"custom chart {index + 1}"}:
-        chart["title"] = DEFAULT_CHART_TITLES_BY_X.get(chart.get("x"), f"Custom chart {index + 1}")
+    if str(chart.get("title", "")).strip().lower() in {
+        "",
+        "custom chart",
+        f"custom chart {index + 1}",
+    }:
+        chart["title"] = DEFAULT_CHART_TITLES_BY_X.get(
+            chart.get("x"), f"Custom chart {index + 1}"
+        )
     y_options = [RECORD_COUNT_FIELD] + columns
     if chart.get("y") not in y_options:
         chart["y"] = RECORD_COUNT_FIELD
@@ -460,7 +559,9 @@ def default_custom_charts() -> list[dict[str, Any]]:
 def normalize_shade_source_chart_value(value: Any) -> str:
     text = str(value or "").strip()
     normalized = text.lower()
-    return SHADE_SOURCE_CHART_CODES.get(normalized) or SHADE_SOURCE_CHART_ALIASES.get(normalized, "")
+    return SHADE_SOURCE_CHART_CODES.get(normalized) or SHADE_SOURCE_CHART_ALIASES.get(
+        normalized, ""
+    )
 
 
 def normalize_shade_coverage_chart_value(value: Any) -> str:
@@ -468,15 +569,23 @@ def normalize_shade_coverage_chart_value(value: Any) -> str:
     return SHADE_COVERAGE_CHART_CODES.get(text.lower(), "")
 
 
-def get_custom_charts(df: pd.DataFrame, visualization: dict[str, Any]) -> list[dict[str, Any]]:
+def get_custom_charts(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> list[dict[str, Any]]:
     charts = visualization.get("custom_charts")
     if not isinstance(charts, list):
         legacy_chart = visualization.get("custom_chart")
-        charts = [legacy_chart] if isinstance(legacy_chart, dict) else default_custom_charts()
+        charts = (
+            [legacy_chart]
+            if isinstance(legacy_chart, dict)
+            else default_custom_charts()
+        )
     if not charts:
         charts = default_custom_charts()
     charts = [
-        ensure_custom_chart_defaults(df, chart if isinstance(chart, dict) else {}, index)
+        ensure_custom_chart_defaults(
+            df, chart if isinstance(chart, dict) else {}, index
+        )
         for index, chart in enumerate(charts[:MAX_CUSTOM_CHARTS])
     ]
     visualization["custom_charts"] = charts
@@ -511,7 +620,9 @@ def normalize_chart_dimension_values(df: pd.DataFrame, column: str) -> pd.DataFr
     return df
 
 
-def build_custom_chart_data(df: pd.DataFrame, chart: dict[str, Any]) -> tuple[pd.DataFrame, str, str]:
+def build_custom_chart_data(
+    df: pd.DataFrame, chart: dict[str, Any]
+) -> tuple[pd.DataFrame, str, str]:
     x_column = chart.get("x", "")
     y_column = chart.get("y", RECORD_COUNT_FIELD)
     chart_type = chart.get("chart_type", "Bar")
@@ -522,10 +633,22 @@ def build_custom_chart_data(df: pd.DataFrame, chart: dict[str, Any]) -> tuple[pd
     working = normalize_chart_dimension_values(df, x_column)
     if working.empty:
         return pd.DataFrame(), "", ""
-    working[x_column] = working[x_column].fillna("(blank)").astype(str).str.strip().replace("", "(blank)")
+    working[x_column] = (
+        working[x_column]
+        .fillna("(blank)")
+        .astype(str)
+        .str.strip()
+        .replace("", "(blank)")
+    )
     if y_column == RECORD_COUNT_FIELD or y_column not in working.columns:
-        chart_df = working.groupby(x_column, dropna=False).size().reset_index(name="records")
-        return chart_df.sort_values("records", ascending=False).head(50), x_column, "records"
+        chart_df = (
+            working.groupby(x_column, dropna=False).size().reset_index(name="records")
+        )
+        return (
+            chart_df.sort_values("records", ascending=False).head(50),
+            x_column,
+            "records",
+        )
 
     numeric_y = pd.to_numeric(working[y_column], errors="coerce")
     if chart_type == "Scatter":
@@ -548,11 +671,27 @@ def build_custom_chart_data(df: pd.DataFrame, chart: dict[str, Any]) -> tuple[pd
         else:
             grouped = working.groupby(x_column, dropna=False)[y_column].mean()
         chart_df = grouped.reset_index(name=display_label(y_column))
-        return chart_df.sort_values(display_label(y_column), ascending=False).head(50), x_column, display_label(y_column)
+        return (
+            chart_df.sort_values(display_label(y_column), ascending=False).head(50),
+            x_column,
+            display_label(y_column),
+        )
 
-    working[y_column] = working[y_column].fillna("(blank)").astype(str).str.strip().replace("", "(blank)")
-    chart_df = working.groupby([x_column, y_column], dropna=False).size().reset_index(name="records")
-    chart_df["pair"] = chart_df[x_column].astype(str) + " / " + chart_df[y_column].astype(str)
+    working[y_column] = (
+        working[y_column]
+        .fillna("(blank)")
+        .astype(str)
+        .str.strip()
+        .replace("", "(blank)")
+    )
+    chart_df = (
+        working.groupby([x_column, y_column], dropna=False)
+        .size()
+        .reset_index(name="records")
+    )
+    chart_df["pair"] = (
+        chart_df[x_column].astype(str) + " / " + chart_df[y_column].astype(str)
+    )
     return chart_df.sort_values("records", ascending=False).head(50), "pair", "records"
 
 
@@ -579,17 +718,24 @@ def render_custom_charts(df: pd.DataFrame, visualization: dict[str, Any]) -> Non
 
 
 def priority_score_used_in_visualization(visualization: dict[str, Any]) -> bool:
-    if {**LEGACY_COLOR_MODE_FIELDS, **COLOR_MODE_FIELDS}.get(visualization.get("color_by", "")) == "priority_score":
+    if {**LEGACY_COLOR_MODE_FIELDS, **COLOR_MODE_FIELDS}.get(
+        visualization.get("color_by", "")
+    ) == "priority_score":
         return True
     if "Priority stops" in visualization.get("metric_cards", []):
         return True
     if "priority_score" in visualization.get("display_columns", []):
         return True
     charts = visualization.get("custom_charts")
-    if not isinstance(charts, list) and isinstance(visualization.get("custom_chart"), dict):
+    if not isinstance(charts, list) and isinstance(
+        visualization.get("custom_chart"), dict
+    ):
         charts = [visualization["custom_chart"]]
     for chart in charts or []:
-        if isinstance(chart, dict) and "priority_score" in {chart.get("x"), chart.get("y")}:
+        if isinstance(chart, dict) and "priority_score" in {
+            chart.get("x"),
+            chart.get("y"),
+        }:
             return True
     return False
 
@@ -634,7 +780,9 @@ def field_values_for_colors(df: pd.DataFrame, field: str) -> list[str]:
     return sorted(values.unique().tolist())[: len(COLOR_PALETTE)]
 
 
-def ensure_field_color_map(visualization: dict[str, Any], df: pd.DataFrame, field: str) -> dict[str, str]:
+def ensure_field_color_map(
+    visualization: dict[str, Any], df: pd.DataFrame, field: str
+) -> dict[str, str]:
     field_maps = visualization.setdefault("field_color_maps", {})
     color_map = field_maps.setdefault(field, {})
     for index, value in enumerate(field_values_for_colors(df, field)):
@@ -645,29 +793,42 @@ def ensure_field_color_map(visualization: dict[str, Any], df: pd.DataFrame, fiel
 def color_for_priority(value: Any, visualization: dict[str, Any]) -> list[int]:
     numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
     score = 0.0 if pd.isna(numeric) else max(0.0, min(100.0, float(numeric)))
-    colors = visualization.get("priority_colors", DEFAULT_VISUALIZATION["priority_colors"])
+    colors = visualization.get(
+        "priority_colors", DEFAULT_VISUALIZATION["priority_colors"]
+    )
     low = hex_to_rgb(colors.get("low", DEFAULT_VISUALIZATION["priority_colors"]["low"]))
     mid = hex_to_rgb(colors.get("mid", DEFAULT_VISUALIZATION["priority_colors"]["mid"]))
-    high = hex_to_rgb(colors.get("high", DEFAULT_VISUALIZATION["priority_colors"]["high"]))
+    high = hex_to_rgb(
+        colors.get("high", DEFAULT_VISUALIZATION["priority_colors"]["high"])
+    )
     if score <= 50:
         start, end, fraction = low, mid, score / 50
     else:
         start, end, fraction = mid, high, (score - 50) / 50
-    return [int(start[channel] + (end[channel] - start[channel]) * fraction) for channel in range(3)]
+    return [
+        int(start[channel] + (end[channel] - start[channel]) * fraction)
+        for channel in range(3)
+    ]
 
 
-def color_dataset(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]) -> pd.DataFrame:
+def color_dataset(
+    df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
+) -> pd.DataFrame:
     colored = df.copy()
     color_options = get_color_options(colored)
     color_by = visualization.get("color_by", "Shade coverage")
-    field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(color_by, "shading")
+    field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
+        color_by, "shading"
+    )
     if field == "review_status":
         review_colors = visualization.get("review_status_colors", {})
         colored["fill_color"] = colored["review_status"].map(
             {status: hex_to_rgb(color) for status, color in review_colors.items()}
         )
     elif field == "priority_score":
-        colored["fill_color"] = colored["priority_score"].apply(lambda value: color_for_priority(value, visualization))
+        colored["fill_color"] = colored["priority_score"].apply(
+            lambda value: color_for_priority(value, visualization)
+        )
     elif field == "shading":
         color_map = get_taxonomy_color_map(taxonomy)
         colored["fill_color"] = colored["shading"].map(color_map)
@@ -675,8 +836,12 @@ def color_dataset(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualizatio
         color_map = ensure_field_color_map(visualization, colored, field)
         values = colored[field].fillna("Unknown").astype(str).str.strip()
         values = values.where(values != "", "Unknown")
-        colored["fill_color"] = values.map({value: hex_to_rgb(color) for value, color in color_map.items()})
-    colored["fill_color"] = colored["fill_color"].apply(lambda value: value if isinstance(value, list) else [128, 128, 128])
+        colored["fill_color"] = values.map(
+            {value: hex_to_rgb(color) for value, color in color_map.items()}
+        )
+    colored["fill_color"] = colored["fill_color"].apply(
+        lambda value: value if isinstance(value, list) else [128, 128, 128]
+    )
     return colored
 
 
@@ -702,11 +867,25 @@ def _marker_icon_png(
 
     if shape == "Pin":
         points = [
-            (32, 4), (42, 7), (50, 15), (53, 25), (51, 35), (45, 45),
-            (32, 60), (19, 45), (13, 35), (11, 25), (14, 15), (22, 7),
+            (32, 4),
+            (42, 7),
+            (50, 15),
+            (53, 25),
+            (51, 35),
+            (45, 45),
+            (32, 60),
+            (19, 45),
+            (13, 35),
+            (11, 25),
+            (14, 15),
+            (22, 7),
         ]
-        draw.polygon([point(value) for value in points], fill=fill, outline=outline, width=width)
-        draw.ellipse((24 * scale, 17 * scale, 40 * scale, 33 * scale), fill=(255, 255, 255, 204))
+        draw.polygon(
+            [point(value) for value in points], fill=fill, outline=outline, width=width
+        )
+        draw.ellipse(
+            (24 * scale, 17 * scale, 40 * scale, 33 * scale), fill=(255, 255, 255, 204)
+        )
     elif shape == "Square":
         draw.rounded_rectangle(
             (12 * scale, 12 * scale, 52 * scale, 52 * scale),
@@ -760,7 +939,9 @@ def marker_icon_data_uri(
     return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
 
 
-def add_marker_icons(map_df: pd.DataFrame, visualization: dict[str, Any]) -> pd.DataFrame:
+def add_marker_icons(
+    map_df: pd.DataFrame, visualization: dict[str, Any]
+) -> pd.DataFrame:
     shaped = map_df.copy()
     shape = visualization.get("marker_shape", "Circle")
     if shape not in MARKER_SHAPES:
@@ -768,7 +949,9 @@ def add_marker_icons(map_df: pd.DataFrame, visualization: dict[str, Any]) -> pd.
     shaped["icon_name"] = shaped["fill_color"].apply(
         lambda color: "marker_" + "_".join(str(int(channel)) for channel in color[:3])
     )
-    shaped["marker_size"] = int(visualization.get("marker_size", DEFAULT_VISUALIZATION["marker_size"]))
+    shaped["marker_size"] = int(
+        visualization.get("marker_size", DEFAULT_VISUALIZATION["marker_size"])
+    )
     return shaped
 
 
@@ -819,12 +1002,16 @@ def marker_icon_atlas(
         }
     buffer = io.BytesIO()
     atlas.save(buffer, format="PNG", optimize=True)
-    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii"), mapping
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode(
+        "ascii"
+    ), mapping
 
 
 def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
     if df.empty:
-        return pdk.ViewState(latitude=39.5, longitude=-98.35, zoom=3, min_zoom=2, max_zoom=18, pitch=0)
+        return pdk.ViewState(
+            latitude=39.5, longitude=-98.35, zoom=3, min_zoom=2, max_zoom=18, pitch=0
+        )
     lat = pd.to_numeric(df["stop_lat"], errors="coerce")
     lon = pd.to_numeric(df["stop_lon"], errors="coerce")
     return pdk.ViewState(
@@ -837,7 +1024,9 @@ def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
     )
 
 
-def build_deck_chart(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]) -> pdk.Deck:
+def build_deck_chart(
+    df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
+) -> pdk.Deck:
     map_df = color_dataset(df, taxonomy, visualization)
     marker_shape = visualization.get("marker_shape", "Circle")
     if marker_shape not in MARKER_SHAPES:
@@ -856,10 +1045,16 @@ def build_deck_chart(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualiza
             radius_units=pdk.types.String("pixels"),
             radius_min_pixels=4,
             radius_max_pixels=48,
-            opacity=max(0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))),
+            opacity=max(
+                0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))
+            ),
             stroked=True,
-            get_line_color=hex_to_rgb(visualization.get("marker_stroke_color", "#141414")),
-            line_width_min_pixels=max(0, int(visualization.get("marker_stroke_width", 1))),
+            get_line_color=hex_to_rgb(
+                visualization.get("marker_stroke_color", "#141414")
+            ),
+            line_width_min_pixels=max(
+                0, int(visualization.get("marker_stroke_width", 1))
+            ),
             pickable=True,
             auto_highlight=True,
         )
@@ -884,11 +1079,11 @@ def build_deck_chart(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualiza
     deck = pdk.Deck(
         initial_view_state=calculate_view_state(map_df),
         layers=[*build_gis_overlay_layers(visualization), layer],
-        map_style=MAP_STYLES.get(visualization.get("map_style", "Light"), pdk.map_styles.CARTO_LIGHT),
+        map_style=MAP_STYLES.get(
+            visualization.get("map_style", "High contrast"),
+            pdk.map_styles.CARTO_ROAD,
+        ),
         tooltip={"text": build_tooltip_text(map_df, visualization)},
     )
     deck.use_device_pixels = DECK_DEVICE_PIXEL_RATIO
     return deck
-
-
-

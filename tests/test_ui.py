@@ -174,9 +174,9 @@ def choose_streamlit_selectbox_option(
 def navigate_workspace_page(page, page_name: str, heading: str) -> None:
     """Navigate through the task tab and optional second-level tab."""
     sections = {
-        "Dataset Review": ("Labelling", "Dataset Review", "Dataset Review"),
-        "Intercoder Review": ("Labelling", "Dataset Review", "Dataset Review"),
-        "Community Voting": ("Labelling", "Dataset Review", "Dataset Review"),
+        "Labels": ("Labelling", "Labels", "Labels"),
+        "Independent Review": ("Labelling", "Labels", "Labels"),
+        "Consensus": ("Labelling", "Labels", "Labels"),
         "Visuals": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
         "Docs": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
         "Preview": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
@@ -338,7 +338,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             ).to_be_visible(timeout=30_000)
 
             page.get_by_role("button", name="Labelling", exact=True).click(timeout=30_000)
-            page.get_by_role("heading", name="Dataset Review", exact=True).wait_for(timeout=30_000)
+            page.get_by_role("heading", name="Labels", exact=True).wait_for(timeout=30_000)
 
             page.get_by_role("button", name="Dataset", exact=True).click(timeout=30_000)
             page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
@@ -470,10 +470,10 @@ def test_project_settings_can_edit_and_delete_a_project(
 
 def test_builder_navigation_pages_render(playwright_api, streamlit_server: StreamlitServer):
     expected_pages = {
-        "Dataset Review": "Dataset Review",
-        "Intercoder Review": "Intercoder Review",
+        "Labels": "Labels",
+        "Independent Review": "Independent Review",
         "Visuals": "Metrics And Visualizations",
-        "Community Voting": "Community Voting",
+        "Consensus": "Consensus",
         "Docs": "Project Documentation",
         "Preview": "Tampa Bus Stop Shade Study",
         "Deploy": "Publish website",
@@ -604,9 +604,9 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                if nav_label == "Dataset Review":
+                if nav_label == "Labels":
                     page.get_by_role(
-                        "button", name="+ Add Administrative Label", exact=True
+                        "button", name="+ Submit Label", exact=True
                     ).click(timeout=30_000)
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
@@ -634,7 +634,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                         has_text="Natural"
                     ).get_by_role("checkbox")
                     playwright_api.expect(natural_source).to_be_enabled(timeout=30_000)
-                elif nav_label == "Intercoder Review":
+                elif nav_label == "Independent Review":
                     for section_heading in ["Study Setup", "Review Materials", "Study Progress"]:
                         playwright_api.expect(
                             page.get_by_role("heading", name=section_heading, exact=True)
@@ -645,7 +645,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                             exact=True,
                         )
                     ).to_be_visible(timeout=30_000)
-                elif nav_label == "Community Voting":
+                elif nav_label == "Consensus":
                     playwright_api.expect(
                         page.get_by_role("heading", name="Configuration", exact=True)
                     ).to_be_visible(timeout=30_000)

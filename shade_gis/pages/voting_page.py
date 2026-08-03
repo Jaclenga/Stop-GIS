@@ -211,9 +211,9 @@ def render_advanced_deployment_guidance() -> None:
 
 
 def render_voting_page() -> None:
-    st.title("Community Voting")
+    st.title("Consensus")
     st.markdown(
-        "Configure community voting and public result reporting for the deployed app."
+        "Configure how community input contributes to consensus and public result reporting."
     )
 
     visualization = st.session_state["visualization"]
