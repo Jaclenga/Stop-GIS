@@ -17,7 +17,8 @@ REVIEW_STATUS_DEFINITIONS = {
     "Archived": "The stop or decision is retained for audit history but removed from active review.",
 }
 
-LABEL_WORKFLOW_OPTIONS = ["Review labels", "Submit raw label"]
+LABEL_WORKFLOW_OPTIONS = ["Review Queue", "Audit History", "Add Administrative Label"]
+DEFAULT_LABEL_WORKFLOW = "Review Queue"
 CONFIDENCE_LEVEL_SCORES = {"Low": 0.35, "Medium": 0.7, "High": 1.0}
 
 
@@ -157,22 +158,44 @@ def render_label_code_helper(taxonomy: list[dict[str, Any]], title: str = "Label
             st.dataframe(table, width="stretch", hide_index=True)
 
 
-def render_label_workflow_toggle() -> str:
-    if hasattr(st, "segmented_control"):
-        selected = st.segmented_control(
-            "Labeling workflow",
-            LABEL_WORKFLOW_OPTIONS,
-            default=LABEL_WORKFLOW_OPTIONS[0],
-            key="label_workflow_mode",
-        )
-        return selected or LABEL_WORKFLOW_OPTIONS[0]
-    return st.radio(
-        "Labeling workflow",
-        LABEL_WORKFLOW_OPTIONS,
-        index=0,
-        horizontal=True,
-        key="label_workflow_mode",
+def set_label_workflow(view: str) -> None:
+    st.session_state["label_workflow_mode"] = (
+        view if view in LABEL_WORKFLOW_OPTIONS else DEFAULT_LABEL_WORKFLOW
     )
+
+
+def render_label_workflow_navigation() -> str:
+    current = str(st.session_state.get("label_workflow_mode", DEFAULT_LABEL_WORKFLOW))
+    if current not in LABEL_WORKFLOW_OPTIONS:
+        current = DEFAULT_LABEL_WORKFLOW
+        st.session_state["label_workflow_mode"] = current
+    st.caption("Choose a moderation task.")
+    queue_col, history_col, add_col, _ = st.columns([1, 1, 1.55, 3.5])
+    queue_col.button(
+        "Review Queue",
+        type="primary" if current == "Review Queue" else "secondary",
+        width="stretch",
+        key="label_action_queue",
+        on_click=set_label_workflow,
+        args=("Review Queue",),
+    )
+    history_col.button(
+        "Audit History",
+        type="primary" if current == "Audit History" else "secondary",
+        width="stretch",
+        key="label_action_history",
+        on_click=set_label_workflow,
+        args=("Audit History",),
+    )
+    add_col.button(
+        "+ Add Administrative Label",
+        type="primary" if current == "Add Administrative Label" else "secondary",
+        width="stretch",
+        key="label_action_add_admin",
+        on_click=set_label_workflow,
+        args=("Add Administrative Label",),
+    )
+    return current
 
 
 def render_confidence_level_buttons(label: str, default_score: Any, key: str) -> tuple[str, float]:
@@ -242,10 +265,23 @@ def render_review_queue_selector(
     stops: pd.DataFrame,
     labels: pd.DataFrame,
 ) -> tuple[str | None, pd.Series | None, pd.DataFrame]:
-    st.subheader("Admin Review Queue")
+    st.subheader("Label Review Queue")
+    st.caption("Stops awaiting moderator review, conflict resolution, or verification.")
+    st.markdown(
+        """
+        <style>
+        .st-key-review_queue_statuses span[data-baseweb="tag"] {
+            background: #eef2ef !important;
+            color: #26332c !important;
+            border: 1px solid #d4ddd7 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     queue = review_queue_table(stops, labels)
     if queue.empty:
-        st.info("Submit raw labels before reviewing label decisions.")
+        st.info("Submit labels before reviewing label decisions.")
         return None, None, pd.DataFrame()
 
     filter_cols = st.columns([1.2, 1.1, 1.1], vertical_alignment="bottom")
@@ -430,7 +466,7 @@ def render_review_queue(project_id: str, stops: pd.DataFrame, labels: pd.DataFra
 
 
 def render_review_audit_history(project_id: str, selected_stop_id: str | None) -> None:
-    st.subheader("Review Audit History")
+    st.subheader("Moderator Decision History")
     show_selected = st.checkbox(
         "Show queue-selected stop only",
         value=bool(selected_stop_id),
@@ -804,7 +840,11 @@ def render_raw_label_collection(
     labels: pd.DataFrame,
     taxonomy: list[dict[str, Any]],
 ) -> None:
-    st.subheader("Raw Label Collection")
+    st.subheader("Add Administrative Label")
+    st.caption(
+        "Add a direct curator-supplied label outside the structured Intercoder Review study. "
+        "The submission remains auditable and does not replace earlier raw labels."
+    )
     stop_options = stops.reset_index(drop=True)
     sync_label_stop_picker(stop_options)
     stop_labels = [stop_picker_label(row) for _, row in stop_options.iterrows()]
@@ -828,7 +868,7 @@ def render_raw_label_collection(
 
     coverage_default, existing_sources = raw_label_form_defaults(selected_stop)
     source_labels = project_source_display_labels()
-    st.subheader("Submit Raw Shade Label")
+    st.subheader("Administrative Shade Label")
     render_label_code_helper(taxonomy, "Raw label/code definitions")
     manual_source_index = LABEL_SOURCE_OPTIONS.index("Manual review") if "Manual review" in LABEL_SOURCE_OPTIONS else 0
     default_role = "Reviewer" if "Reviewer" in LABELER_ROLE_OPTIONS else LABELER_ROLE_OPTIONS[0]
@@ -900,7 +940,7 @@ def render_raw_label_collection(
         )
     with action_cols[1]:
         submitted = st.button(
-            "Save Label",
+            "Save Administrative Label",
             type="primary",
             width="stretch",
             key=raw_label_widget_key(selected_stop_id, "submit"),
@@ -956,9 +996,9 @@ def render_raw_label_collection(
             st.success(f"Saved raw label {label_id}.")
             st.rerun()
 
-    st.subheader("Raw Label History")
-    show_selected_only = st.checkbox("Show selected stop only", value=False, key="show_selected_label_history")
-    history = list_shade_labels(project_id, selected_stop_id if show_selected_only else None)
+def render_raw_label_history(project_id: str) -> None:
+    st.subheader("Submitted Label History")
+    history = list_shade_labels(project_id)
     if history.empty:
         st.info("No raw labels have been submitted yet.")
     else:
@@ -997,16 +1037,13 @@ def render_review_label_section(
     if selected_stop_id and selected_stop is not None:
         render_shared_label_reference_map(queue_records, selected_stop_id, taxonomy)
         render_admin_review_decision(project_id, selected_stop_id, selected_stop, taxonomy)
-    render_review_audit_history(project_id, selected_stop_id)
-
-
-def render_labeling_summary(labels: pd.DataFrame, stops: pd.DataFrame) -> None:
-    st.subheader("Summary")
-    st.dataframe(raw_label_summary(labels, stops), width="stretch", hide_index=True)
 
 
 def render_labels_page() -> None:
-    st.title("Labeling")
+    st.title("Dataset Review")
+    st.markdown(
+        "Review submitted labels, resolve conflicts, and inspect the dataset’s labeling history."
+    )
     project_id = st.session_state.get("active_project_id")
     stops = st.session_state.get("stops", pd.DataFrame())
     taxonomy = st.session_state.get("taxonomy", [])
@@ -1018,12 +1055,16 @@ def render_labels_page() -> None:
         return
 
     labels = list_shade_labels(project_id)
-    workflow = render_label_workflow_toggle()
-    if workflow == "Review labels":
+    workflow = render_label_workflow_navigation()
+    if workflow == "Review Queue":
         render_review_label_section(project_id, stops, labels, taxonomy)
-    else:
+    elif workflow == "Add Administrative Label":
         render_raw_label_collection(project_id, stops, labels, taxonomy)
-    render_labeling_summary(labels, stops)
+    else:
+        st.subheader("Audit History")
+        st.caption("A read-only record of submitted labels and moderator decisions.")
+        render_raw_label_history(project_id)
+        render_review_audit_history(project_id, None)
 
 
 

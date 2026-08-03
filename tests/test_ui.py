@@ -174,8 +174,9 @@ def choose_streamlit_selectbox_option(
 def navigate_workspace_page(page, page_name: str, heading: str) -> None:
     """Navigate through the task tab and optional second-level tab."""
     sections = {
-        "Labels": ("Annotate", "Labels", "Labeling"),
-        "Voting": ("Annotate", "Labels", "Labeling"),
+        "Dataset Review": ("Labelling", "Dataset Review", "Dataset Review"),
+        "Intercoder Review": ("Labelling", "Dataset Review", "Dataset Review"),
+        "Community Voting": ("Labelling", "Dataset Review", "Dataset Review"),
         "Visuals": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
         "Docs": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
         "Preview": ("Preview", "Preview", "Tampa Bus Stop Shade Study"),
@@ -328,16 +329,16 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             playwright_api.expect(
                 page.get_by_role("button", name="Use manual entries", exact=True)
             ).to_be_disabled(timeout=30_000)
-            for tab_name in ["Dataset", "Annotate", "Preview", "Export"]:
+            for tab_name in ["Dataset", "Labelling", "Preview", "Export"]:
                 playwright_api.expect(
                     page.get_by_role("button", name=tab_name, exact=True)
                 ).to_be_visible(timeout=30_000)
             playwright_api.expect(
-                page.get_by_role("button", name="Tampa Bus Stop Shade... ▾", exact=True)
+                page.get_by_role("button", name="Tampa Bus Stop Shade...", exact=True)
             ).to_be_visible(timeout=30_000)
 
-            page.get_by_role("button", name="Annotate", exact=True).click(timeout=30_000)
-            page.get_by_role("heading", name="Labeling", exact=True).wait_for(timeout=30_000)
+            page.get_by_role("button", name="Labelling", exact=True).click(timeout=30_000)
+            page.get_by_role("heading", name="Dataset Review", exact=True).wait_for(timeout=30_000)
 
             page.get_by_role("button", name="Dataset", exact=True).click(timeout=30_000)
             page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
@@ -469,9 +470,10 @@ def test_project_settings_can_edit_and_delete_a_project(
 
 def test_builder_navigation_pages_render(playwright_api, streamlit_server: StreamlitServer):
     expected_pages = {
-        "Labels": "Labeling",
+        "Dataset Review": "Dataset Review",
+        "Intercoder Review": "Intercoder Review",
         "Visuals": "Metrics And Visualizations",
-        "Voting": "Public Voting",
+        "Community Voting": "Community Voting",
         "Docs": "Project Documentation",
         "Preview": "Tampa Bus Stop Shade Study",
         "Deploy": "Publish website",
@@ -602,8 +604,10 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                if nav_label == "Labels":
-                    page.get_by_text("Submit raw label", exact=True).click(timeout=30_000)
+                if nav_label == "Dataset Review":
+                    page.get_by_role(
+                        "button", name="+ Add Administrative Label", exact=True
+                    ).click(timeout=30_000)
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
                     coverage_control = page.get_by_test_id("stSelectbox").filter(has_text="Coverage")
@@ -630,6 +634,41 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                         has_text="Natural"
                     ).get_by_role("checkbox")
                     playwright_api.expect(natural_source).to_be_enabled(timeout=30_000)
+                elif nav_label == "Intercoder Review":
+                    for section_heading in ["Study Setup", "Review Materials", "Study Progress"]:
+                        playwright_api.expect(
+                            page.get_by_role("heading", name=section_heading, exact=True)
+                        ).to_be_visible(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_text(
+                            "Reviewers cannot see existing ratings until they submit their own.",
+                            exact=True,
+                        )
+                    ).to_be_visible(timeout=30_000)
+                elif nav_label == "Community Voting":
+                    playwright_api.expect(
+                        page.get_by_role("heading", name="Configuration", exact=True)
+                    ).to_be_visible(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_role("heading", name="Live Preview", exact=True)
+                    ).to_be_visible(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_text("Visitor Experience", exact=True)
+                    ).to_be_visible(timeout=30_000)
+                    voting_toggle_container = page.get_by_test_id("stCheckbox").filter(
+                        has_text="Enable visitor voting"
+                    )
+                    voting_toggle = voting_toggle_container.get_by_role("checkbox")
+                    if not voting_toggle.is_checked():
+                        voting_toggle_container.click()
+                    playwright_api.expect(voting_toggle).to_be_checked(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_text(
+                            "Voting is currently hidden in the deployed app. Enable it to publish this interface.",
+                            exact=True,
+                        )
+                    ).to_have_count(0, timeout=60_000)
+                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 elif nav_label == "Visuals":
                     marker_shape_control = page.get_by_test_id("stSelectbox").filter(
                         has_text="Marker shape"
@@ -658,20 +697,6 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                         if kind in {"error", "pageerror"} and "IconLayer" in message
                     ]
                     assert icon_layer_errors == []
-                elif nav_label == "Voting":
-                    voting_toggle_container = page.get_by_test_id("stCheckbox").filter(
-                        has_text="Let deployed-app visitors vote on stop coverage"
-                    )
-                    voting_toggle = voting_toggle_container.get_by_role("checkbox")
-                    voting_toggle_container.click()
-                    playwright_api.expect(voting_toggle).to_be_checked(timeout=30_000)
-                    playwright_api.expect(
-                        page.get_by_text(
-                            "Voting is currently hidden in the deployed app. Enable it to publish this interface.",
-                            exact=True,
-                        )
-                    ).to_have_count(0, timeout=60_000)
-                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 elif nav_label == "Preview":
                     map_tab = page.get_by_role("tab", name="Map", exact=True)
                     playwright_api.expect(map_tab).to_have_attribute("aria-selected", "true", timeout=60_000)

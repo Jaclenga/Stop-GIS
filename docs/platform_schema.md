@@ -28,6 +28,15 @@ The canonical relational shape is:
 | `shade_votes` | Deployed-app coverage votes and separate shade-source selections, isolated by study, stop, and browser-session voter ID. |
 | `images` | Uploaded or referenced imagery associated with projects and stops. |
 | `shade_labels` | Raw expert, crowd, imported, or model-assisted label submissions. |
+| `blind_protocols` | Versioned protocol, image/stop assessment unit, phase gate, target rating count, and prespecified agreement threshold. |
+| `blind_images` | Random public aliases that separate coding assignments from source image and stop identifiers. |
+| `blind_assignments` | Per-coder randomized image assignments and completion state. |
+| `blind_ratings` | Immutable image-level codebook responses, one row per assignment, including review method. |
+| `blind_adjudications` | Identity-blinded final decisions stored separately from raw ratings. |
+| `blind_stops` | Random aliases for stop-level assessment units. |
+| `blind_stop_assignments` | Per-reviewer randomized stop assignments and completion state. |
+| `blind_stop_ratings` | Immutable stop-level responses with the field, map, or imagery method used. |
+| `blind_stop_adjudications` | Final stop-level decisions stored separately from raw reviewer ratings. |
 | `review_history` | Status transitions, reviewer actions, notes, and audit metadata. |
 | `releases` | Published or draft dataset/app release records and artifact manifests. |
 | `import_logs` | Source, format, row count, timestamp, and import metadata. |
@@ -169,7 +178,7 @@ coverage are independently queryable and never appear in the same choice list.
 
 ## Raw Shade Labels
 
-The `Labels` page writes every submitted assessment to `shade_labels` instead of replacing earlier
+The `Dataset Review` page writes every submitted assessment to `shade_labels` instead of replacing earlier
 labels. Each label records the stop ID, optional image reference, reviewer or contributor ID,
 reviewer role, source type, derived coverage category, coverage, shade sources, confidence, notes, and
 timestamp. A reviewer can optionally apply a submitted label to the current stop fields used by the
@@ -188,6 +197,40 @@ Reviewer-based metrics use `labeler_id` when present; otherwise they fall back t
 role/source combination. These metrics summarize reliability and do not overwrite raw labels or
 current stop fields.
 
+## Blind Inter-Rater Coding
+
+Blind coding is a separate research workflow from ordinary `shade_labels`. A protocol moves forward
+through `setup`, `coding`, `adjudication`, and `closed` phases and cannot move backward. Setup fixes a
+codebook version, requires at least three ratings per image, and records a low-agreement threshold
+before coding begins. Registered images receive random `IMG-######` display IDs, and every coder gets
+their own persisted random image order.
+
+The coder query returns only assignment ID, blind display ID, image location, order, and the coder's
+own submission status. Stop IDs, routes, maps, demographics, existing scores, previous comments,
+other ratings, and consensus are not returned. Each `blind_assignments` row can create only one
+`blind_ratings` row; both application validation and a database uniqueness constraint make the
+submission immutable. Ratings include codebook version, shade source, coverage, waiting-area
+coverage, permanence, image adequacy, 1–5 confidence, location-recognition response, and timestamp.
+
+The coding phase cannot close while any assignment remains. Agreement queries and research exports
+also reject access during setup and coding, so administrators cannot inspect emerging consensus.
+After coding closes, the platform calculates pairwise percent agreement and Krippendorff's alpha for
+each variable. Coverage uses squared ordinal distance; the other variables use nominal distance. An
+image is flagged when any variable falls below the prespecified threshold. Adjudicators receive the
+blind image alias and competing-code counts without rater IDs. Their locked decision is written to
+`blind_adjudications`; raw ratings are never overwritten.
+
+Research exports are available only after coding closes. The locked-ratings CSV includes the private
+source image and stop linkage plus pseudonymous rater IDs. A separate adjudication CSV and protocol
+JSON keep final decisions and prespecified methods explicit. These exports are builder-side research
+artifacts and are not included automatically in a generated public study bundle.
+
+The collapsed `Admin preview` selector is workflow preview, not authentication, and is labeled so it
+does not imply permission elevation. Teams operating a shared builder must add access control around
+it. Visual clues inside imagery can also defeat geographic blinding, so
+teams should crop signs and addresses, strip EXIF/coordinate metadata, standardize framing, and use
+neutral filenames before registering an image.
+
 The Agreement overview replaces the former metrics table and shows those reliability measures
 alongside the unresolved-disagreement count. Its primary action opens a queue containing only
 unresolved disagreements, sorted by lowest agreement. The queue supports minimum-label,
@@ -201,10 +244,15 @@ filtered disagreement queue without canonical-decision controls.
 
 ## Review Workflow
 
-The `Labels` page includes an admin review queue built from current stop statuses, raw-label counts,
+The `Dataset Review` page is for moderation and dataset curation. It includes a role-neutral review queue
+built from current stop statuses, raw-label counts,
 agreement percentages, disagreement flags, and priority scores. Project teams can filter the queue
 to stops that are unlabeled, disputed, or need review; search by stop ID/name/route; and isolate
 stops with conflicting raw labels.
+
+Broad label-coverage metrics remain on Dataset Status rather than being duplicated here. Direct raw
+entry remains available as `Add Administrative Label`, making its curator role distinct from the
+structured Intercoder Review study.
 
 For each queued stop, an admin can accept the current label, enter an expert override, mark a stop
 as disputed, resolve a dispute, or archive the stop. The decision form writes the final shade
@@ -225,7 +273,7 @@ active stop table and remain project data, not schema-level platform fields.
 heading/instructions/coverage-question/source-question/button/confirmation/result copy, allowed canonical coverage choices,
 result visibility, minimum votes required before reporting a unique leader, and whether a browser
 session may revise its vote. These controls and their deployed-interface preview live on the
-builder's dedicated `Voting` page. Voting is hidden by default. Public consensus remains a separate signal
+builder's dedicated `Community Voting` page. Public contributions are hidden by default. Community consensus remains a separate signal
 and does not overwrite the reviewed stop classification.
 
 The generated app writes public observations to a `shade_votes` table keyed by `study_id`, `stop_id`,
@@ -305,4 +353,4 @@ select a stop, inspect a stop-detail panel, and show or hide stops whose shade l
 
 `images` and `releases` remain durable schema foundations for richer evidence and publication
 workflows. Raw label submission, admin review decisions, dispute resolution, expert overrides, and
-review audit trails are exposed through the `Labels` page.
+review audit trails are exposed through the `Dataset Review` page.

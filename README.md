@@ -34,6 +34,8 @@ Shade-GIS addresses those recurring needs by providing:
 - A reusable Streamlit builder for configuring study metadata, source data, shade source and coverage taxonomies, methodology copy, visualizations, optional public crowd voting, and exports.
 - Flexible import paths for GTFS, CSV, GeoJSON, zipped Shapefiles, API-hosted files, and manually entered records.
 - A raw labeling and admin review workflow that preserves submissions, agreement metrics, final labels, and audit history.
+- A blind inter-rater workflow with versioned codebooks, neutral image IDs, randomized assignments,
+  locked independent ratings, prespecified agreement thresholds, and identity-blinded adjudication.
 - Project-scoped durable storage through SQLite by default, with a Postgres-ready relational schema for shared deployments.
 - A generated public Streamlit app that can be bundled with current stops, raw labels, configuration, downloads, and methodology text.
 
@@ -68,7 +70,7 @@ streamlit run app.py
 `builder_app.py` coordinates Streamlit state, navigation, and page rendering. Domain logic lives under
 `shade_gis/`; deployment bundle assembly and generated scripts are grouped under `shade_gis/deploy/`.
 
-The compact task header organizes the builder into `Dataset`, `Annotate`, `Preview`, and `Export`.
+The compact task header organizes the builder into `Dataset`, `Labelling`, `Preview`, and `Export`.
 Dataset and other multi-page tasks expose a consistent second-level navigation row, while the
 project selector stays at the right side of the header. Dataset's `Quality` page reports duplicate stop
 IDs, missing coordinates, missing required fields, invalid point
@@ -96,6 +98,34 @@ canonical coverage/source decision. That decision marks the stop `Accepted` and 
 `Resolve disagreement` event to `review_history`; a newer raw label automatically reopens the stop.
 Generated public apps show the compact summary and filtered disagreement queue without admin write
 controls.
+
+The Labelling task follows a clear `Dataset Review` → `Intercoder Review` → `Community Voting` pipeline.
+`Dataset Review` is the moderation workspace: its default review queue resolves conflicts and verifies final
+dataset decisions, while audit history remains read-only. Direct raw entry is retained as the
+secondary `Add Administrative Label` action so it is not confused with structured research review.
+The private `Intercoder Review` workspace supports formal reliability studies. A protocol can use
+either standardized images or transit stops as its assessment unit. Image mode assigns every image
+under a random `IMG-######` alias and withholds stop and geographic context. Stop mode assigns one
+rating per stop under a `STOP-######` alias—even when several evidence images are attached—and can
+support field surveys, Google Maps/Street View, or project imagery. Stop mode exposes location details
+by design while continuing to hide existing labels, comments, other reviewers' answers, and aggregate
+results. Every assignment accepts one immutable submission and records the evidence method used.
+Agreement and consensus remain blocked until every assignment is submitted and coding closes.
+
+After coding closes, Shade-GIS reports pairwise percent agreement and Krippendorff's alpha for each
+codebook variable (ordinal for coverage and nominal for the others). Images with any variable below
+the prespecified agreement threshold enter an adjudication queue. The adjudicator sees competing
+code counts but not rater identities, and the final adjudication is stored separately without
+altering the raw ratings. Administrator-only CSV downloads preserve the assessment unit, image/stop
+linkage, evidence method, and rater IDs
+for analysis, while a JSON download records the prespecified protocol.
+
+The collapsed `Admin preview` control lets a trusted builder operator inspect administrator,
+reviewer, and adjudicator interfaces; it is explicitly not an authentication system. Shared or
+remote studies should put the builder behind access control and issue non-identifying reviewer IDs.
+Images can still disclose location through visible signs or landmarks; crop those details, remove
+EXIF/coordinate metadata before registration, and use neutral source filenames. The coding form
+records whether a coder recognized the location so sensitivity analyses can exclude those ratings.
 
 The Preview `Exports` tab and generated app downloads use a compact Export Files catalog instead of
 stacked buttons. Every file row includes its purpose, record count, generated file size, relevant
@@ -129,11 +159,14 @@ The `Preview` page renders the public-facing study experience for the active pro
 - `shade_study_config.json`: project metadata, editable terminology, shade taxonomy, methodology, visualization settings, and import log.
 - `requirements.txt`, `.streamlit/config.toml`, generated `README.md`, and `deploy_to_github.ps1`.
 
-The dedicated `Voting` page includes the Public Voting editor. An admin can enable or hide voting, choose the
+The dedicated `Community Voting` page places grouped visitor-voting configuration beside a responsive live
+preview. An admin can enable or hide contributions, choose the
 coverage categories visitors may submit, edit all visible voting copy including the separate shade-source
 checkbox prompt, control whether a visitor may change an existing vote, show or hide totals, and set the minimum vote count
 before a unique leading status is reported. Community results stay separate from the reviewed stop
 dataset so public input does not silently overwrite an admin-approved classification.
+Abuse prevention, result display, and deployment storage guidance are retained in collapsed groups;
+environment-variable instructions no longer dominate the ordinary configuration workflow.
 
 Robustness controls are enabled by default. The deployed app uses a server-keyed, one-way visitor
 pseudonym to make session resets less useful, enforces a short cooldown, and caps how many new stops

@@ -1354,7 +1354,7 @@ def render_home_page() -> None:
 def render_header() -> str:
     primary_navigation = [
         ("Dataset", "Data"),
-        ("Annotate", "Labels"),
+        ("Labelling", "Labels"),
         ("Preview", "Preview"),
         ("Export", "Deploy"),
     ]
@@ -1364,15 +1364,20 @@ def render_header() -> str:
             ("Quality", "Data Quality"),
             ("Taxonomy", "Taxonomy"),
         ],
-        "Annotate": [("Labels", "Labels"), ("Voting", "Voting")],
+        "Labelling": [
+            ("Dataset Review", "Labels"),
+            ("Intercoder Review", "Blind Coding"),
+            ("Community Voting", "Voting"),
+        ],
         "Preview": [("Visuals", "Visuals"), ("Docs", "Docs"), ("Preview", "Preview")],
     }
     page_sections = {
         "Data": "Dataset",
         "Data Quality": "Dataset",
         "Taxonomy": "Dataset",
-        "Labels": "Annotate",
-        "Voting": "Annotate",
+        "Labels": "Labelling",
+        "Blind Coding": "Labelling",
+        "Voting": "Labelling",
         "Visuals": "Preview",
         "Docs": "Preview",
         "Preview": "Preview",
@@ -1492,14 +1497,17 @@ def render_header() -> str:
             padding: 0.25rem 0 0.45rem;
         }
         .st-key-header_subnav [data-testid="stHorizontalBlock"] {
-            gap: 0.25rem;
-            justify-content: flex-start;
-            width: fit-content;
+            gap: 0.5rem !important;
+            justify-content: flex-start !important;
+            width: 100%;
         }
         .st-key-header_subnav [data-testid="stColumn"] {
-            flex: 0 0 auto;
-            min-width: 100px;
-            width: auto;
+            flex: 0 0 auto !important;
+            min-width: 0 !important;
+            width: auto !important;
+        }
+        .st-key-header_subnav [data-testid="stColumn"] button {
+            width: auto !important;
         }
         div[data-testid="stDialog"]:has(.main-menu-dialog-marker) button[kind="primary"] {
             background: #166534;
@@ -1552,7 +1560,7 @@ def render_header() -> str:
                     else f"{project_name[:21].rstrip()}..."
                 )
                 with st.popover(
-                    f"{selector_label} ▾",
+                    selector_label,
                     key="header_project",
                     width="stretch",
                 ):
@@ -1601,6 +1609,7 @@ def render_header() -> str:
 
 def main() -> None:
     from shade_gis.pages.data_page import render_data_page
+    from shade_gis.pages.blind_coding_page import render_blind_coding_page
     from shade_gis.pages.data_quality_page import render_data_quality_page
     from shade_gis.pages.deploy_page import render_deploy_page
     from shade_gis.pages.docs_page import render_methodology_page
@@ -1621,6 +1630,8 @@ def main() -> None:
         render_data_quality_page()
     elif page == "Labels":
         render_labels_page()
+    elif page == "Blind Coding":
+        render_blind_coding_page()
     elif page == "Taxonomy":
         render_taxonomy_page()
     elif page == "Visuals":

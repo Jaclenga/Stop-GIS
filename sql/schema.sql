@@ -115,6 +115,131 @@ CREATE TABLE IF NOT EXISTS shade_labels (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Private, builder-side workflow for independent image coding. Public study apps do not use
+-- these tables. Results remain hidden until the protocol advances out of the coding phase.
+CREATE TABLE IF NOT EXISTS blind_protocols (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  phase TEXT NOT NULL DEFAULT 'setup' CHECK (phase IN ('setup', 'coding', 'adjudication', 'closed')),
+  codebook_version TEXT NOT NULL,
+  target_ratings INTEGER NOT NULL DEFAULT 3 CHECK (target_ratings >= 3),
+  assessment_unit TEXT NOT NULL DEFAULT 'image' CHECK (assessment_unit IN ('image', 'stop')),
+  agreement_threshold DOUBLE PRECISION NOT NULL DEFAULT 0.67 CHECK (agreement_threshold BETWEEN 0 AND 1),
+  instructions TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS blind_images (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  image_id TEXT NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+  display_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, image_id),
+  UNIQUE (project_id, display_id)
+);
+
+CREATE TABLE IF NOT EXISTS blind_stops (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  stop_id TEXT NOT NULL,
+  display_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, stop_id),
+  UNIQUE (project_id, display_id),
+  FOREIGN KEY (project_id, stop_id) REFERENCES stops(project_id, stop_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS blind_assignments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  blind_image_id TEXT NOT NULL REFERENCES blind_images(id) ON DELETE CASCADE,
+  coder_id TEXT NOT NULL,
+  sort_order INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN ('assigned', 'submitted')),
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  submitted_at TIMESTAMPTZ,
+  UNIQUE (project_id, blind_image_id, coder_id)
+);
+
+CREATE TABLE IF NOT EXISTS blind_ratings (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  assignment_id TEXT NOT NULL UNIQUE REFERENCES blind_assignments(id) ON DELETE CASCADE,
+  codebook_version TEXT NOT NULL,
+  shade_source TEXT NOT NULL,
+  coverage TEXT NOT NULL,
+  waiting_area_covered TEXT NOT NULL,
+  permanence TEXT NOT NULL,
+  image_adequacy TEXT NOT NULL,
+  confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
+  location_recognized TEXT NOT NULL,
+  review_method TEXT NOT NULL DEFAULT 'standardized_image',
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS blind_stop_assignments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  blind_stop_id TEXT NOT NULL REFERENCES blind_stops(id) ON DELETE CASCADE,
+  coder_id TEXT NOT NULL,
+  sort_order INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN ('assigned', 'submitted')),
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  submitted_at TIMESTAMPTZ,
+  UNIQUE (project_id, blind_stop_id, coder_id)
+);
+
+CREATE TABLE IF NOT EXISTS blind_stop_ratings (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  assignment_id TEXT NOT NULL UNIQUE REFERENCES blind_stop_assignments(id) ON DELETE CASCADE,
+  codebook_version TEXT NOT NULL,
+  shade_source TEXT NOT NULL,
+  coverage TEXT NOT NULL,
+  waiting_area_covered TEXT NOT NULL,
+  permanence TEXT NOT NULL,
+  image_adequacy TEXT NOT NULL,
+  confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
+  location_recognized TEXT NOT NULL,
+  review_method TEXT NOT NULL,
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS blind_adjudications (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  blind_image_id TEXT NOT NULL REFERENCES blind_images(id) ON DELETE CASCADE,
+  adjudicator_id TEXT NOT NULL,
+  codebook_version TEXT NOT NULL,
+  shade_source TEXT NOT NULL,
+  coverage TEXT NOT NULL,
+  waiting_area_covered TEXT NOT NULL,
+  permanence TEXT NOT NULL,
+  image_adequacy TEXT NOT NULL,
+  confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, blind_image_id)
+);
+
+CREATE TABLE IF NOT EXISTS blind_stop_adjudications (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  blind_stop_id TEXT NOT NULL REFERENCES blind_stops(id) ON DELETE CASCADE,
+  adjudicator_id TEXT NOT NULL,
+  codebook_version TEXT NOT NULL,
+  shade_source TEXT NOT NULL,
+  coverage TEXT NOT NULL,
+  waiting_area_covered TEXT NOT NULL,
+  permanence TEXT NOT NULL,
+  image_adequacy TEXT NOT NULL,
+  confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, blind_stop_id)
+);
+
 CREATE TABLE IF NOT EXISTS review_history (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -157,5 +282,13 @@ CREATE TABLE IF NOT EXISTS import_logs (
 CREATE INDEX IF NOT EXISTS idx_stops_project ON stops(project_id);
 CREATE INDEX IF NOT EXISTS idx_images_project_stop ON images(project_id, stop_id);
 CREATE INDEX IF NOT EXISTS idx_labels_project_stop ON shade_labels(project_id, stop_id);
+CREATE INDEX IF NOT EXISTS idx_blind_images_project ON blind_images(project_id);
+CREATE INDEX IF NOT EXISTS idx_blind_stops_project ON blind_stops(project_id);
+CREATE INDEX IF NOT EXISTS idx_blind_assignments_coder ON blind_assignments(project_id, coder_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_blind_stop_assignments_coder ON blind_stop_assignments(project_id, coder_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_blind_ratings_project ON blind_ratings(project_id);
+CREATE INDEX IF NOT EXISTS idx_blind_stop_ratings_project ON blind_stop_ratings(project_id);
+CREATE INDEX IF NOT EXISTS idx_blind_adjudications_project ON blind_adjudications(project_id);
+CREATE INDEX IF NOT EXISTS idx_blind_stop_adjudications_project ON blind_stop_adjudications(project_id);
 CREATE INDEX IF NOT EXISTS idx_review_project_stop ON review_history(project_id, stop_id);
 CREATE INDEX IF NOT EXISTS idx_releases_project ON releases(project_id);

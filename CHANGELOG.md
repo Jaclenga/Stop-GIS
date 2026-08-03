@@ -8,6 +8,9 @@ pre-release phase while the reusable platform stabilizes.
 ## [Unreleased]
 
 ### Added
+- Independent inter-rater coding by standardized image or transit stop, with versioned protocols,
+  randomized neutral assignments, bundled stop evidence, recorded field/map/image review methods,
+  immutable multi-field ratings, phase-gated agreement, adjudication, and research exports.
 - Editable project terminology, seeded with the `Waiting Area` operational definition and carried
   through builder labeling, published methodology, exports, documentation, and starter previews.
 - Inline editors for Shade Source and Shade Coverage display labels and operational definitions,
@@ -19,6 +22,11 @@ pre-release phase while the reusable platform stabilizes.
   per-row downloads, and a separate Dataset Provenance section.
 
 ### Changed
+- Clarified Labelling information architecture: Dataset Review now leads with moderation, Intercoder Review
+  follows Study Setup → Review Materials → Study Progress, and Community Voting pairs grouped configuration
+  with a live preview while moving versioning, role preview, and deployment guidance into disclosures.
+- Reorganized Labelling into `Dataset Review`, `Intercoder Review`, and `Community Voting`, with separate
+  submit-label, review-queue, and audit-history views and clearer moderator-facing queue copy.
 - Redesigned the terminology and taxonomy workspace as a centered, research-oriented card layout
   with lighter tables, roomier wrapped definitions, sentence-case headings, and compact inline actions.
 - Moved terminology and taxonomy editing from Data Overview to a dedicated Taxonomy page in

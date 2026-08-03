@@ -306,6 +306,7 @@ def test_published_map_matches_visuals_map_renderer():
     published_deck = json.loads(published_app.build_deck_chart(stops, taxonomy, copy.deepcopy(visualization)).to_json())
 
     assert published_deck == visuals_deck
+    assert visuals_deck["useDevicePixels"] == 2
 
 
 def test_marker_slider_sizes_serialize_as_literal_pixels_and_scale_linearly():
@@ -370,11 +371,11 @@ def test_non_circle_markers_use_a_browser_loadable_raster_icon_atlas():
             png = base64.b64decode(icon_url.partition(",")[2])
             assert png.startswith(b"\x89PNG\r\n\x1a\n")
             with Image.open(io.BytesIO(png)) as image:
-                assert image.size == (64, 64)
+                assert image.size == (128, 128)
                 assert image.mode == "RGBA"
             icon_name = layer["data"][0]["icon_name"]
             assert layer["getIcon"] == "@@=icon_name"
-            assert layer["iconMapping"][icon_name]["anchorY"] == (60 if shape == "Pin" else 32)
+            assert layer["iconMapping"][icon_name]["anchorY"] == (120 if shape == "Pin" else 64)
 
 
 def test_each_marker_shape_gets_a_distinct_deck_layer_id():

@@ -342,7 +342,7 @@ def agreement_overview_metrics(
 def render_agreement_metrics(labels: pd.DataFrame, stops: pd.DataFrame) -> None:
     st.markdown("#### Agreement Metrics")
     if labels.empty:
-        st.info("Submit raw labels from at least two assessments to compute agreement metrics.")
+        st.info("Submit labels from at least two assessments to compute agreement metrics.")
         return
     st.dataframe(agreement_metric_summary(labels, stops), width="stretch", hide_index=True)
     majority = majority_label_table(labels)

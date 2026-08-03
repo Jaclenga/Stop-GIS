@@ -215,6 +215,8 @@ SHADE_SOURCE_CHART_ALIASES = {
     "manmade shade": "Incidental",
     "natural shade": "Natural",
 }
+DECK_DEVICE_PIXEL_RATIO = 2
+MARKER_ICON_SIZE = 128
 SHADE_COVERAGE_CHART_CODES = {
     "no shade": "No Shade",
     "limited": "Limited Shade",
@@ -623,7 +625,7 @@ def _marker_icon_png(
             width=width,
         )
 
-    image = image.resize((64, 64), Image.Resampling.LANCZOS)
+    image = image.resize((MARKER_ICON_SIZE, MARKER_ICON_SIZE), Image.Resampling.LANCZOS)
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
@@ -674,7 +676,11 @@ def marker_icon_atlas(
             for color in map_df.get("fill_color", pd.Series(dtype=object))
         }
     )
-    atlas = Image.new("RGBA", (64 * max(1, len(colors)), 64), (0, 0, 0, 0))
+    atlas = Image.new(
+        "RGBA",
+        (MARKER_ICON_SIZE * max(1, len(colors)), MARKER_ICON_SIZE),
+        (0, 0, 0, 0),
+    )
     mapping: dict[str, dict[str, Any]] = {}
     for index, color in enumerate(colors):
         icon = Image.open(
@@ -688,15 +694,15 @@ def marker_icon_atlas(
                 )
             )
         ).convert("RGBA")
-        x_offset = index * 64
+        x_offset = index * MARKER_ICON_SIZE
         atlas.paste(icon, (x_offset, 0))
         icon_name = "marker_" + "_".join(str(channel) for channel in color)
         mapping[icon_name] = {
             "x": x_offset,
             "y": 0,
-            "width": 64,
-            "height": 64,
-            "anchorY": 60 if shape == "Pin" else 32,
+            "width": MARKER_ICON_SIZE,
+            "height": MARKER_ICON_SIZE,
+            "anchorY": round((60 if shape == "Pin" else 32) * MARKER_ICON_SIZE / 64),
             "mask": False,
         }
     buffer = io.BytesIO()
@@ -763,12 +769,14 @@ def build_deck_chart(df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualiza
             pickable=True,
             auto_highlight=True,
         )
-    return pdk.Deck(
+    deck = pdk.Deck(
         initial_view_state=calculate_view_state(map_df),
         layers=[*build_gis_overlay_layers(visualization), layer],
         map_style=MAP_STYLES.get(visualization.get("map_style", "Light"), pdk.map_styles.CARTO_LIGHT),
         tooltip={"text": build_tooltip_text(map_df, visualization)},
     )
+    deck.use_device_pixels = DECK_DEVICE_PIXEL_RATIO
+    return deck
 
 
 def filter_unlabeled_stops(df: pd.DataFrame, show_unlabeled: bool) -> pd.DataFrame:

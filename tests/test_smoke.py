@@ -161,14 +161,19 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
     preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert '("Dataset", "Data")' in builder_source
-    assert '("Annotate", "Labels")' in builder_source
+    assert '("Labelling", "Labels")' in builder_source
     assert '("Preview", "Preview")' in builder_source
     assert '("Export", "Deploy")' in builder_source
     assert '"Dataset": [' in builder_source
     assert '("Quality", "Data Quality")' in builder_source
-    assert '"Annotate": [("Labels", "Labels"), ("Voting", "Voting")]' in builder_source
+    assert '("Dataset Review", "Labels")' in builder_source
+    assert '("Intercoder Review", "Blind Coding")' in builder_source
+    assert '("Community Voting", "Voting")' in builder_source
     assert 'key=f"primary_nav_{label.lower()}"' in builder_source
     assert 'key="header_project"' in builder_source
+    assert 'f"{selector_label} ▾"' not in builder_source
+    assert "gap: 0.5rem !important" in builder_source
+    assert "flex: 0 0 auto !important" in builder_source
     assert 'elif page == "Agreement"' not in builder_source
     assert 'agreement_enabled = "Agreement metrics" in selected_sections' in preview_source
     assert "render_agreement_analytics_section(" in preview_source
@@ -198,6 +203,53 @@ def test_builder_has_project_home_and_clickable_brand_navigation():
     assert ".st-key-nav_home button:hover" in source
     assert ".st-key-nav_home button:active" in source
     assert ".st-key-nav_home button:focus-visible" in source
+
+
+def test_labelling_workflow_uses_action_oriented_navigation():
+    source = Path("shade_gis/pages/labels_page.py").read_text(encoding="utf-8")
+
+    assert 'st.title("Dataset Review")' in source
+    assert '"+ Add Administrative Label"' in source
+    assert '"Review Queue"' in source
+    assert '"Audit History"' in source
+    assert "Review submitted labels, resolve conflicts" in source
+    assert 'st.subheader("Label Review Queue")' in source
+    assert "Stops awaiting moderator review, conflict resolution, or verification." in source
+    assert 'st.subheader("Summary")' not in source
+    assert '"Admin Review Queue"' not in source
+    assert '"+ Submit Label"' not in source
+    assert '"Submit raw label"' not in source
+
+
+def test_independent_review_uses_research_workflow_hierarchy():
+    source = Path("shade_gis/pages/blind_coding_page.py").read_text(encoding="utf-8")
+
+    assert 'st.title("Intercoder Review")' in source
+    assert 'st.subheader("Study Setup")' in source
+    assert 'st.subheader("Review Materials")' in source
+    assert 'st.subheader("Study Progress")' in source
+    assert '"Reviews per item"' in source
+    assert '"Agreement threshold"' in source
+    assert "Items below this agreement level are flagged for adjudication." in source
+    assert '"Add Review Image"' in source
+    assert '"Start Intercoder Review"' in source
+    assert 'st.expander("Advanced versioning", expanded=False)' in source
+    assert 'st.expander("Admin preview", expanded=False)' in source
+    assert '"Workspace role"' not in source
+    assert '"Open blind coding"' not in source
+
+
+def test_consensus_groups_configuration_and_hides_deployment_details():
+    source = Path("shade_gis/pages/voting_page.py").read_text(encoding="utf-8")
+
+    assert 'st.title("Community Voting")' in source
+    assert 'st.subheader("Configuration")' in source
+    assert 'st.subheader("Live Preview")' in source
+    for group in ["Visitor Experience", "Voting Options", "Abuse Prevention", "Result Display"]:
+        assert f'st.expander("{group}"' in source
+    assert 'st.expander("Advanced Deployment", expanded=False)' in source
+    assert "SHADE_GIS_VOTE_DATABASE_URL" in source
+    assert 'st.subheader("Deployment Storage")' not in source
 
 
 def test_data_page_uses_progress_dashboard_and_collapsed_dataset_preview():
