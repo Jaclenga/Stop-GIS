@@ -329,7 +329,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             playwright_api.expect(
                 page.get_by_role("button", name="Use manual entries", exact=True)
             ).to_be_disabled(timeout=30_000)
-            for tab_name in ["Dataset", "Labelling", "Preview", "Export"]:
+            for tab_name in ["Dataset", "Labelling", "Build", "Export"]:
                 playwright_api.expect(
                     page.get_by_role("button", name=tab_name, exact=True)
                 ).to_be_visible(timeout=30_000)
@@ -693,7 +693,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                     marker_size = page.get_by_role("slider", name="Marker size")
                     playwright_api.expect(marker_size).to_have_attribute(
-                        "aria-valuenow", "8", timeout=30_000
+                        "aria-valuetext", "8", timeout=30_000
                     )
 
                     map_chart = page.get_by_test_id("stDeckGlJsonChart").first
