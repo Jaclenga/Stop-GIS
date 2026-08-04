@@ -5,12 +5,16 @@ import hashlib
 import hmac
 import ipaddress
 import os
+import socket
 import sqlite3
+import threading
+import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import streamlit as st
 
@@ -87,18 +91,35 @@ DEFAULT_VOTING_CONFIG = {
     "submit_label": "Submit vote",
     "success_message": "Thank you. Your observation has been recorded.",
     "show_results": True,
+    "show_detailed_counts": False,
     "results_label": "Community result",
-    "minimum_votes_for_result": 5,
-    "allow_vote_changes": True,
+    "minimum_votes_for_result": 10,
+    "minimum_consensus_percent": 67,
+    "minimum_consensus_margin": 2,
+    "allow_vote_changes": False,
+    "require_authentication": False,
     "abuse_protection_enabled": True,
-    "vote_cooldown_seconds": 5,
-    "max_new_votes_per_hour": 20,
+    "enforce_network_vote_limit": True,
+    "vote_cooldown_seconds": 15,
+    "max_new_votes_per_hour": 10,
+    "max_new_votes_per_network_per_hour": 20,
+    "max_new_votes_per_stop_per_hour": 30,
 }
 
 VOTE_DATABASE_URL_ENV = "SHADE_GIS_VOTE_DATABASE_URL"
 VOTE_DB_PATH_ENV = "SHADE_GIS_VOTE_DB_PATH"
 VOTE_FINGERPRINT_SECRET_ENV = "SHADE_GIS_VOTE_FINGERPRINT_SECRET"
+ALLOW_PRIVATE_DATABASE_HOSTS_ENV = "SHADE_GIS_ALLOW_PRIVATE_DATABASE_HOSTS"
 DEFAULT_VOTE_DB_FILENAME = ".shade_gis_votes.sqlite3"
+POSTGRES_CONNECT_TIMEOUT_SECONDS = 5
+POSTGRES_STATEMENT_TIMEOUT_MS = 5_000
+POSTGRES_LOCK_TIMEOUT_MS = 5_000
+POSTGRES_POOL_MAX_SIZE = 5
+POSTGRES_MIN_VERSION = 140_000
+VOTE_SCHEMA_VERSION = 1
+_MIGRATION_LOCK_ID = 6_426_939_476_836_841_183
+_POSTGRES_POOLS: dict[str, Any] = {}
+_POSTGRES_POOLS_LOCK = threading.Lock()
 
 
 class VoteStorageError(RuntimeError):
@@ -111,6 +132,15 @@ class VoteRateLimitError(VoteStorageError):
     def __init__(self, message: str, *, retry_after_seconds: int = 0) -> None:
         super().__init__(message)
         self.retry_after_seconds = max(0, int(retry_after_seconds))
+
+
+@dataclass(frozen=True)
+class VoterIdentity:
+    """Server-derived identifiers used for vote uniqueness and abuse limits."""
+
+    voter_id: str
+    network_id: str = ""
+    authenticated: bool = False
 
 
 def normalize_vote_sources(value: Any) -> list[str]:
@@ -190,6 +220,28 @@ def coverage_taxonomy_help(
     return taxonomy_help_text(options, definitions)
 
 
+def _config_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return default
+
+
+def _config_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
 def normalize_voting_config(
     voting: dict[str, Any] | None,
     taxonomy: list[dict[str, Any]] | None = None,
@@ -218,29 +270,46 @@ def normalize_voting_config(
     normalized["options"] = configured_options or list(PUBLIC_COVERAGE_OPTIONS)
     normalized["source_question"] = str(normalized.get("source_question") or DEFAULT_VOTING_CONFIG["source_question"])
 
-    try:
-        minimum_votes = int(normalized.get("minimum_votes_for_result", 5))
-    except (TypeError, ValueError):
-        minimum_votes = 5
-    normalized["minimum_votes_for_result"] = max(1, min(100, minimum_votes))
-    normalized["enabled"] = bool(normalized.get("enabled", False))
-    normalized["show_results"] = bool(normalized.get("show_results", True))
-    normalized["allow_vote_changes"] = bool(normalized.get("allow_vote_changes", True))
-    normalized["abuse_protection_enabled"] = bool(normalized.get("abuse_protection_enabled", True))
-    try:
-        cooldown = int(normalized.get("vote_cooldown_seconds", 5))
-    except (TypeError, ValueError):
-        cooldown = 5
-    normalized["vote_cooldown_seconds"] = max(0, min(60, cooldown))
-    try:
-        hourly_limit = int(normalized.get("max_new_votes_per_hour", 20))
-    except (TypeError, ValueError):
-        hourly_limit = 20
-    normalized["max_new_votes_per_hour"] = max(1, min(100, hourly_limit))
+    normalized["minimum_votes_for_result"] = _config_int(
+        normalized.get("minimum_votes_for_result"), 10, 5, 100
+    )
+    normalized["minimum_consensus_percent"] = _config_int(
+        normalized.get("minimum_consensus_percent"), 67, 51, 100
+    )
+    normalized["minimum_consensus_margin"] = _config_int(
+        normalized.get("minimum_consensus_margin"), 2, 1, 25
+    )
+    for key, default in {
+        "enabled": False,
+        "show_results": True,
+        "show_detailed_counts": False,
+        "allow_vote_changes": False,
+        "require_authentication": False,
+        "abuse_protection_enabled": True,
+        "enforce_network_vote_limit": True,
+    }.items():
+        normalized[key] = _config_bool(normalized.get(key), default)
+    normalized["vote_cooldown_seconds"] = _config_int(
+        normalized.get("vote_cooldown_seconds"), 15, 0, 300
+    )
+    normalized["max_new_votes_per_hour"] = _config_int(
+        normalized.get("max_new_votes_per_hour"), 10, 1, 100
+    )
+    normalized["max_new_votes_per_network_per_hour"] = _config_int(
+        normalized.get("max_new_votes_per_network_per_hour"), 20, 1, 200
+    )
+    normalized["max_new_votes_per_stop_per_hour"] = _config_int(
+        normalized.get("max_new_votes_per_stop_per_hour"), 30, 5, 500
+    )
     return normalized
 
 
-def community_result(counts: dict[str, int], minimum_votes: int) -> dict[str, Any]:
+def community_result(
+    counts: dict[str, int],
+    minimum_votes: int,
+    minimum_consensus_percent: int = 51,
+    minimum_consensus_margin: int = 1,
+) -> dict[str, Any]:
     clean_counts = {str(label): max(0, int(count)) for label, count in counts.items()}
     total = sum(clean_counts.values())
     leaders: list[str] = []
@@ -249,16 +318,35 @@ def community_result(counts: dict[str, int], minimum_votes: int) -> dict[str, An
         if highest > 0:
             leaders = [label for label, count in clean_counts.items() if count == highest]
 
+    sorted_counts = sorted(clean_counts.values(), reverse=True)
+    leading_count = sorted_counts[0] if sorted_counts else 0
+    runner_up_count = sorted_counts[1] if len(sorted_counts) > 1 else 0
+    leading_percent = (100 * leading_count / total) if total else 0.0
+    margin = leading_count - runner_up_count
+
     if total < max(1, int(minimum_votes)):
         status = "pending"
         label = "More votes needed"
     elif len(leaders) != 1:
         status = "tied"
         label = "Tied"
+    elif (
+        leading_percent < max(51, min(100, int(minimum_consensus_percent)))
+        or margin < max(1, int(minimum_consensus_margin))
+    ):
+        status = "contested"
+        label = "No clear consensus"
     else:
         status = "consensus"
         label = leaders[0]
-    return {"status": status, "label": label, "total": total, "counts": clean_counts}
+    return {
+        "status": status,
+        "label": label,
+        "total": total,
+        "counts": clean_counts,
+        "leading_percent": leading_percent,
+        "margin": margin,
+    }
 
 
 def _secret_or_environment(name: str) -> str:
@@ -286,7 +374,7 @@ def vote_store_label(database_url: str | None = None) -> str:
     return "PostgreSQL" if (database_url or configured_vote_database_url()).strip() else "local SQLite"
 
 
-def _postgres_connection(database_url: str):
+def _postgres_connection(database_url: str, *, hostaddr: str = ""):
     scheme = urlparse(database_url).scheme.lower()
     if scheme not in {"postgres", "postgresql"}:
         raise VoteStorageError(
@@ -296,10 +384,89 @@ def _postgres_connection(database_url: str):
         import psycopg
     except ImportError as exc:
         raise VoteStorageError("PostgreSQL voting requires the psycopg package from requirements.txt.") from exc
+    connect_kwargs: dict[str, Any] = {
+        "connect_timeout": POSTGRES_CONNECT_TIMEOUT_SECONDS,
+        "options": (
+            f"-c statement_timeout={POSTGRES_STATEMENT_TIMEOUT_MS} "
+            f"-c lock_timeout={POSTGRES_LOCK_TIMEOUT_MS}"
+        ),
+    }
+    if hostaddr:
+        connect_kwargs["hostaddr"] = hostaddr
+    for attempt in range(3):
+        try:
+            return psycopg.connect(database_url, **connect_kwargs)
+        except psycopg.OperationalError as exc:
+            if attempt == 2:
+                raise VoteStorageError(
+                    "The configured PostgreSQL voting database could not be reached."
+                ) from exc
+            time.sleep(0.1 * (2**attempt))
+        except Exception as exc:
+            raise VoteStorageError(
+                "The configured PostgreSQL voting database could not be reached."
+            ) from exc
+    raise VoteStorageError("The configured PostgreSQL voting database could not be reached.")
+
+
+class _PooledPostgresConnection:
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+        try:
+            self._connection = pool.getconn(timeout=POSTGRES_CONNECT_TIMEOUT_SECONDS)
+        except Exception as exc:
+            raise VoteStorageError(
+                "The configured PostgreSQL voting database could not be reached."
+            ) from exc
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+    def close(self) -> None:
+        if self._connection is not None:
+            connection, self._connection = self._connection, None
+            self._pool.putconn(connection)
+
+
+def _postgres_pooled_connection(database_url: str):
+    scheme = urlparse(database_url).scheme.lower()
+    if scheme not in {"postgres", "postgresql"}:
+        raise VoteStorageError(
+            f"{VOTE_DATABASE_URL_ENV} must use a postgres:// or postgresql:// connection URL."
+        )
     try:
-        return psycopg.connect(database_url)
-    except Exception as exc:
-        raise VoteStorageError("The configured PostgreSQL voting database could not be reached.") from exc
+        from psycopg_pool import ConnectionPool
+    except ImportError as exc:
+        raise VoteStorageError(
+            "PostgreSQL connection pooling requires psycopg_pool from requirements.txt."
+        ) from exc
+
+    pool_key = hashlib.sha256(database_url.encode("utf-8")).hexdigest()
+    with _POSTGRES_POOLS_LOCK:
+        pool = _POSTGRES_POOLS.get(pool_key)
+        if pool is None:
+            try:
+                pool = ConnectionPool(
+                    conninfo=database_url,
+                    min_size=0,
+                    max_size=POSTGRES_POOL_MAX_SIZE,
+                    timeout=POSTGRES_CONNECT_TIMEOUT_SECONDS,
+                    reconnect_timeout=POSTGRES_CONNECT_TIMEOUT_SECONDS,
+                    kwargs={
+                        "connect_timeout": POSTGRES_CONNECT_TIMEOUT_SECONDS,
+                        "options": (
+                            f"-c statement_timeout={POSTGRES_STATEMENT_TIMEOUT_MS} "
+                            f"-c lock_timeout={POSTGRES_LOCK_TIMEOUT_MS}"
+                        ),
+                    },
+                    open=True,
+                )
+            except Exception as exc:
+                raise VoteStorageError(
+                    "The configured PostgreSQL voting database pool could not be started."
+                ) from exc
+            _POSTGRES_POOLS[pool_key] = pool
+    return _PooledPostgresConnection(pool)
 
 
 def _sqlite_connection(path: Path):
@@ -315,11 +482,210 @@ def _sqlite_connection(path: Path):
 def _connect(database_url: str | None = None, sqlite_path: Path | None = None):
     resolved_url = (database_url if database_url is not None else configured_vote_database_url()).strip()
     if resolved_url:
-        return _postgres_connection(resolved_url), "postgres"
+        return _postgres_pooled_connection(resolved_url), "postgres"
     return _sqlite_connection(sqlite_path or configured_vote_db_path()), "sqlite"
 
 
-def _ensure_vote_table(connection: Any, dialect: str) -> None:
+def validate_vote_database_setup_url(database_url: str) -> str:
+    """Validate a transient setup URL and return a DNS-pinned public address.
+
+    The returned address is passed to psycopg as ``hostaddr`` so validation and
+    connection do not perform separate DNS resolutions. Private targets are
+    rejected unless a self-hosted builder explicitly opts in.
+    """
+    value = str(database_url or "").strip()
+    parsed = urlparse(value)
+    if parsed.scheme.lower() not in {"postgres", "postgresql"}:
+        raise ValueError("Use a postgres:// or postgresql:// connection URL.")
+    if not parsed.hostname or not parsed.username or not parsed.path.strip("/"):
+        raise ValueError("The PostgreSQL URL must include a user, host, and database name.")
+
+    allow_private = _config_bool(os.environ.get(ALLOW_PRIVATE_DATABASE_HOSTS_ENV), False)
+    sslmode = str(parse_qs(parsed.query).get("sslmode", [""])[0]).strip().lower()
+    if not allow_private and sslmode not in {"require", "verify-ca", "verify-full"}:
+        raise ValueError("Remote PostgreSQL setup requires sslmode=require or stronger.")
+
+    try:
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(
+                parsed.hostname,
+                parsed.port or 5432,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except (OSError, socket.gaierror) as exc:
+        raise ValueError("The PostgreSQL hostname could not be resolved.") from exc
+    if not addresses:
+        raise ValueError("The PostgreSQL hostname did not resolve to an address.")
+
+    public_addresses: list[str] = []
+    for address in sorted(addresses):
+        try:
+            parsed_address = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if allow_private or not (
+            parsed_address.is_private
+            or parsed_address.is_loopback
+            or parsed_address.is_link_local
+            or parsed_address.is_multicast
+            or parsed_address.is_reserved
+            or parsed_address.is_unspecified
+        ):
+            public_addresses.append(parsed_address.compressed)
+    if not public_addresses:
+        raise ValueError(
+            "Private, loopback, link-local, and reserved database hosts are blocked. "
+            f"Self-hosted builders may explicitly set {ALLOW_PRIVATE_DATABASE_HOSTS_ENV}=true."
+        )
+    return public_addresses[0]
+
+
+def check_vote_database_connection(database_url: str) -> None:
+    """Verify connectivity and the supported PostgreSQL version."""
+    hostaddr = validate_vote_database_setup_url(database_url)
+    connection = _postgres_connection(database_url, hostaddr=hostaddr)
+    try:
+        row = connection.execute("SELECT 1").fetchone()
+        if not row or int(row[0]) != 1:
+            raise VoteStorageError("The PostgreSQL connection test did not return a valid response.")
+        _require_postgres_version(connection)
+    except VoteStorageError:
+        raise
+    except Exception as exc:
+        raise VoteStorageError("The PostgreSQL connection test failed.") from exc
+    finally:
+        connection.close()
+
+
+def initialize_vote_database(database_url: str) -> None:
+    """Run locked, idempotent, versioned voting-schema migrations."""
+    hostaddr = validate_vote_database_setup_url(database_url)
+    connection = _postgres_connection(database_url, hostaddr=hostaddr)
+    try:
+        _require_postgres_version(connection)
+        _migrate_vote_schema(connection, "postgres")
+    except Exception as exc:
+        connection.rollback()
+        if isinstance(exc, VoteStorageError):
+            raise
+        raise VoteStorageError("The voting database could not be initialized.") from exc
+    finally:
+        connection.close()
+
+
+def confirm_vote_database_read_write(database_url: str) -> None:
+    """Verify runtime-role CRUD access and always remove the probe record."""
+    hostaddr = validate_vote_database_setup_url(database_url)
+    connection = _postgres_connection(database_url, hostaddr=hostaddr)
+    placeholder = "%s"
+    probe = f"setup-probe-{uuid.uuid4().hex}"
+    timestamp = datetime.now(timezone.utc).isoformat()
+    try:
+        _require_postgres_version(connection)
+        _require_vote_schema(connection, "postgres")
+        connection.execute(
+            f"""
+            INSERT INTO shade_votes
+                (study_id, stop_id, voter_id, network_id, coverage_status, shade_sources, created_at, updated_at)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, '', 'No Shade', '', {placeholder}, {placeholder})
+            """,
+            (probe, probe, probe, timestamp, timestamp),
+        )
+        row = connection.execute(
+            f"SELECT coverage_status FROM shade_votes WHERE study_id = {placeholder} AND stop_id = {placeholder} AND voter_id = {placeholder}",
+            (probe, probe, probe),
+        ).fetchone()
+        if not row or str(row[0]) != "No Shade":
+            raise VoteStorageError("The temporary voting record could not be read back.")
+        connection.execute(
+            f"UPDATE shade_votes SET coverage_status = 'Limited Shade', updated_at = {placeholder} "
+            f"WHERE study_id = {placeholder} AND stop_id = {placeholder} AND voter_id = {placeholder}",
+            (timestamp, probe, probe, probe),
+        )
+        updated_row = connection.execute(
+            f"SELECT coverage_status FROM shade_votes WHERE study_id = {placeholder} "
+            f"AND stop_id = {placeholder} AND voter_id = {placeholder}",
+            (probe, probe, probe),
+        ).fetchone()
+        if not updated_row or str(updated_row[0]) != "Limited Shade":
+            raise VoteStorageError("The temporary voting record could not be updated.")
+        connection.execute(
+            f"DELETE FROM shade_votes WHERE study_id = {placeholder} AND stop_id = {placeholder} AND voter_id = {placeholder}",
+            (probe, probe, probe),
+        )
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        if isinstance(exc, VoteStorageError):
+            raise
+        raise VoteStorageError(
+            "The runtime database role could not insert, read, update, and delete a test vote."
+        ) from exc
+    finally:
+        try:
+            connection.execute(
+                f"DELETE FROM shade_votes WHERE study_id = {placeholder} AND stop_id = {placeholder} AND voter_id = {placeholder}",
+                (probe, probe, probe),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+        connection.close()
+
+
+def _require_postgres_version(connection: Any) -> int:
+    try:
+        row = connection.execute("SHOW server_version_num").fetchone()
+        version = int(row[0]) if row else 0
+    except Exception as exc:
+        raise VoteStorageError("The PostgreSQL server version could not be verified.") from exc
+    if version < POSTGRES_MIN_VERSION:
+        raise VoteStorageError("Shade-GIS voting requires PostgreSQL 14 or newer.")
+    return version
+
+
+def _schema_version(connection: Any, dialect: str) -> int | None:
+    placeholder = "%s" if dialect == "postgres" else "?"
+    row = connection.execute(
+        f"SELECT setting_value FROM shade_vote_settings WHERE setting_key = {placeholder}",
+        ("schema_version",),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        return int(row[0])
+    except (TypeError, ValueError) as exc:
+        raise VoteStorageError("The voting schema version is invalid.") from exc
+
+
+def _require_vote_schema(connection: Any, dialect: str) -> None:
+    try:
+        version = _schema_version(connection, dialect)
+    except VoteStorageError:
+        raise
+    except Exception as exc:
+        raise VoteStorageError(
+            "The PostgreSQL voting schema is not initialized. Run the generated migration command."
+        ) from exc
+    if version is None:
+        raise VoteStorageError(
+            "The PostgreSQL voting schema is not initialized. Run the generated migration command."
+        )
+    if version > VOTE_SCHEMA_VERSION:
+        raise VoteStorageError(
+            "The database schema is newer than this app. Upgrade the generated app; automatic downgrade is refused."
+        )
+    if version < VOTE_SCHEMA_VERSION:
+        raise VoteStorageError(
+            "The database schema requires migration before voting can continue."
+        )
+
+
+def _migrate_vote_schema(connection: Any, dialect: str) -> None:
+    if dialect == "postgres":
+        connection.execute("SELECT pg_advisory_xact_lock(%s)", (_MIGRATION_LOCK_ID,))
     if dialect == "postgres":
         statement = """
             CREATE TABLE IF NOT EXISTS shade_votes (
@@ -327,6 +693,7 @@ def _ensure_vote_table(connection: Any, dialect: str) -> None:
                 study_id TEXT NOT NULL,
                 stop_id TEXT NOT NULL,
                 voter_id TEXT NOT NULL,
+                network_id TEXT NOT NULL DEFAULT '',
                 coverage_status TEXT NOT NULL,
                 shade_sources TEXT NOT NULL DEFAULT '',
                 created_at TIMESTAMPTZ NOT NULL,
@@ -341,6 +708,7 @@ def _ensure_vote_table(connection: Any, dialect: str) -> None:
                 study_id TEXT NOT NULL,
                 stop_id TEXT NOT NULL,
                 voter_id TEXT NOT NULL,
+                network_id TEXT NOT NULL DEFAULT '',
                 coverage_status TEXT NOT NULL,
                 shade_sources TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
@@ -357,17 +725,54 @@ def _ensure_vote_table(connection: Any, dialect: str) -> None:
         )
         """
     )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS shade_votes_rate_limit_idx "
-        "ON shade_votes (study_id, voter_id, created_at)"
-    )
+    existing_version = _schema_version(connection, dialect)
+    if existing_version is not None and existing_version > VOTE_SCHEMA_VERSION:
+        connection.rollback()
+        raise VoteStorageError(
+            "The database schema is newer than this app. Upgrade the generated app; automatic downgrade is refused."
+        )
     if dialect == "postgres":
         connection.execute("ALTER TABLE shade_votes ADD COLUMN IF NOT EXISTS shade_sources TEXT NOT NULL DEFAULT ''")
+        connection.execute("ALTER TABLE shade_votes ADD COLUMN IF NOT EXISTS network_id TEXT NOT NULL DEFAULT ''")
     else:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(shade_votes)").fetchall()}
         if "shade_sources" not in columns:
             connection.execute("ALTER TABLE shade_votes ADD COLUMN shade_sources TEXT NOT NULL DEFAULT ''")
+        if "network_id" not in columns:
+            connection.execute("ALTER TABLE shade_votes ADD COLUMN network_id TEXT NOT NULL DEFAULT ''")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS shade_votes_rate_limit_idx "
+        "ON shade_votes (study_id, voter_id, created_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS shade_votes_network_rate_limit_idx "
+        "ON shade_votes (study_id, network_id, created_at)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS shade_votes_stop_rate_limit_idx "
+        "ON shade_votes (study_id, stop_id, created_at)"
+    )
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS shade_votes_network_unique_idx "
+        "ON shade_votes (study_id, stop_id, network_id) WHERE network_id <> ''"
+    )
+    placeholder = "%s" if dialect == "postgres" else "?"
+    connection.execute(
+        f"""
+        INSERT INTO shade_vote_settings (setting_key, setting_value)
+        VALUES ({placeholder}, {placeholder})
+        ON CONFLICT (setting_key) DO UPDATE SET setting_value = excluded.setting_value
+        """,
+        ("schema_version", str(VOTE_SCHEMA_VERSION)),
+    )
     connection.commit()
+
+
+def _ensure_vote_table(connection: Any, dialect: str) -> None:
+    if dialect == "postgres":
+        _require_vote_schema(connection, dialect)
+    else:
+        _migrate_vote_schema(connection, dialect)
 
 
 def _fingerprint_secret(connection: Any, dialect: str) -> str:
@@ -398,6 +803,8 @@ def privacy_preserving_voter_id(
     headers: Any,
     secret: str,
     fallback_voter_id: str,
+    *,
+    client_ip: str | None = None,
 ) -> str:
     """Return a stable pseudonym without persisting an IP address or browser headers."""
     normalized_headers = {
@@ -405,7 +812,7 @@ def privacy_preserving_voter_id(
         for key, value in dict(headers or {}).items()
         if str(value).strip()
     }
-    raw_ip = (
+    raw_ip = str(client_ip or "").strip() or (
         normalized_headers.get("cf-connecting-ip")
         or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
         or normalized_headers.get("x-real-ip")
@@ -423,22 +830,108 @@ def privacy_preserving_voter_id(
     return f"visitor_{digest}"
 
 
+def privacy_preserving_network_id(
+    headers: Any,
+    secret: str,
+    *,
+    client_ip: str | None = None,
+) -> str:
+    """Return a keyed network pseudonym independent of mutable browser headers."""
+    normalized_headers = {
+        str(key).strip().lower(): str(value).strip()
+        for key, value in dict(headers or {}).items()
+        if str(value).strip()
+    }
+    raw_ip = str(client_ip or "").strip() or (
+        normalized_headers.get("cf-connecting-ip")
+        or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+        or normalized_headers.get("x-real-ip")
+    )
+    try:
+        parsed_ip = ipaddress.ip_address(raw_ip)
+    except ValueError:
+        return ""
+    # IPv6 privacy addresses commonly rotate within a /64. Treat that prefix as
+    # one network so rotation does not create unlimited voting identities.
+    network_scope = (
+        str(ipaddress.ip_network(f"{parsed_ip}/64", strict=False))
+        if parsed_ip.version == 6
+        else parsed_ip.compressed
+    )
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        f"network\n{network_scope}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"network_{digest}"
+
+
+def privacy_preserving_account_id(user_info: Any, secret: str) -> str:
+    """Return a stable keyed ID for an authenticated OIDC subject."""
+    normalized = {str(key): value for key, value in dict(user_info or {}).items()}
+    if not _config_bool(normalized.get("is_logged_in"), False):
+        return ""
+    subject = str(normalized.get("sub") or normalized.get("email") or "").strip()
+    if not subject:
+        return ""
+    issuer = str(normalized.get("iss") or normalized.get("provider") or "default").strip()
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        f"account\n{issuer}\n{subject}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"account_{digest}"
+
+
+def _request_voter_identity(
+    *,
+    database_url: str | None = None,
+    sqlite_path: Path | None = None,
+) -> VoterIdentity:
+    fallback = _browser_voter_id()
+    try:
+        headers = st.context.headers
+    except Exception:
+        headers = {}
+    try:
+        client_ip = st.context.ip_address
+    except Exception:
+        client_ip = None
+    try:
+        user_info = st.user.to_dict()
+    except Exception:
+        user_info = {}
+
+    connection, dialect = _connect(database_url, sqlite_path)
+    try:
+        _ensure_vote_table(connection, dialect)
+        secret = _fingerprint_secret(connection, dialect)
+        account_id = privacy_preserving_account_id(user_info, secret)
+        if account_id:
+            return VoterIdentity(account_id, authenticated=True)
+        return VoterIdentity(
+            privacy_preserving_voter_id(
+                headers,
+                secret,
+                fallback,
+                client_ip=client_ip,
+            ),
+            privacy_preserving_network_id(headers, secret, client_ip=client_ip),
+            authenticated=False,
+        )
+    finally:
+        connection.close()
+
+
 def _request_voter_id(
     *,
     database_url: str | None = None,
     sqlite_path: Path | None = None,
 ) -> str:
-    fallback = _browser_voter_id()
-    try:
-        headers = st.context.headers
-    except Exception:
-        return fallback
-    connection, dialect = _connect(database_url, sqlite_path)
-    try:
-        _ensure_vote_table(connection, dialect)
-        return privacy_preserving_voter_id(headers, _fingerprint_secret(connection, dialect), fallback)
-    finally:
-        connection.close()
+    return _request_voter_identity(
+        database_url=database_url,
+        sqlite_path=sqlite_path,
+    ).voter_id
 
 
 def _as_utc_datetime(value: Any) -> datetime | None:
@@ -502,6 +995,27 @@ def get_existing_vote_details(
         connection.close()
 
 
+def _advisory_lock_id(value: str) -> int:
+    return int.from_bytes(
+        hashlib.sha256(value.encode("utf-8")).digest()[:8],
+        byteorder="big",
+        signed=True,
+    )
+
+
+def _begin_vote_transaction(
+    connection: Any,
+    dialect: str,
+    lock_scopes: list[str],
+) -> None:
+    """Serialize all rate checks and the following write for the relevant scopes."""
+    if dialect == "sqlite":
+        connection.execute("BEGIN IMMEDIATE")
+        return
+    for lock_id in sorted({_advisory_lock_id(scope) for scope in lock_scopes}):
+        connection.execute("SELECT pg_advisory_xact_lock(%s)", (lock_id,))
+
+
 def save_vote(
     study_id: str,
     stop_id: str,
@@ -510,8 +1024,12 @@ def save_vote(
     *,
     shade_sources: list[str] | str | None = None,
     allow_vote_changes: bool = True,
+    network_id: str = "",
+    enforce_network_vote_limit: bool = False,
     cooldown_seconds: int = 0,
     max_new_votes_per_hour: int | None = None,
+    max_new_votes_per_network_per_hour: int | None = None,
+    max_new_votes_per_stop_per_hour: int | None = None,
     database_url: str | None = None,
     sqlite_path: Path | None = None,
     now: datetime | None = None,
@@ -520,6 +1038,13 @@ def save_vote(
     if not all(values):
         raise ValueError("study_id, stop_id, voter_id, and coverage_status are required")
     study_id, stop_id, voter_id, coverage_status = values
+    if len(study_id) > 256 or len(stop_id) > 256 or len(voter_id) > 256:
+        raise ValueError("study_id, stop_id, and voter_id must not exceed 256 characters")
+    network_id = str(network_id or "").strip()
+    if len(network_id) > 256:
+        raise ValueError("network_id must not exceed 256 characters")
+    if not enforce_network_vote_limit:
+        network_id = ""
     coverage_status = _PUBLIC_COVERAGE_ALIASES.get(coverage_status.lower(), "")
     if not coverage_status:
         raise ValueError(f"coverage_status must be one of: {', '.join(PUBLIC_COVERAGE_OPTIONS)}")
@@ -531,11 +1056,28 @@ def save_vote(
     placeholder = "%s" if dialect == "postgres" else "?"
     try:
         _ensure_vote_table(connection, dialect)
+        lock_scopes = [f"voter:{study_id}:{voter_id}"]
+        if network_id:
+            lock_scopes.append(f"network:{study_id}:{network_id}")
+        if max_new_votes_per_stop_per_hour is not None:
+            lock_scopes.append(f"stop:{study_id}:{stop_id}")
+        _begin_vote_transaction(connection, dialect, lock_scopes)
         existing_row = connection.execute(
             f"SELECT 1 FROM shade_votes WHERE study_id = {placeholder} AND stop_id = {placeholder} AND voter_id = {placeholder}",
             (study_id, stop_id, voter_id),
         ).fetchone()
-        cooldown_seconds = max(0, min(60, int(cooldown_seconds or 0)))
+        if existing_row and not allow_vote_changes:
+            connection.rollback()
+            return False
+        if network_id and not existing_row:
+            network_vote = connection.execute(
+                f"SELECT 1 FROM shade_votes WHERE study_id = {placeholder} AND stop_id = {placeholder} AND network_id = {placeholder}",
+                (study_id, stop_id, network_id),
+            ).fetchone()
+            if network_vote:
+                connection.rollback()
+                return False
+        cooldown_seconds = max(0, min(300, int(cooldown_seconds or 0)))
         if cooldown_seconds:
             latest_row = connection.execute(
                 f"SELECT MAX(updated_at) FROM shade_votes WHERE study_id = {placeholder} AND voter_id = {placeholder}",
@@ -562,12 +1104,37 @@ def save_vote(
                     "This visitor has reached the hourly voting limit. Please try again later.",
                     retry_after_seconds=3600,
                 )
+        if max_new_votes_per_network_per_hour is not None and network_id and not existing_row:
+            network_hourly_limit = max(1, min(200, int(max_new_votes_per_network_per_hour)))
+            cutoff = (timestamp_dt - timedelta(hours=1)).isoformat()
+            recent_network_row = connection.execute(
+                f"SELECT COUNT(*) FROM shade_votes WHERE study_id = {placeholder} AND network_id = {placeholder} AND created_at >= {placeholder}",
+                (study_id, network_id, cutoff),
+            ).fetchone()
+            if recent_network_row and int(recent_network_row[0]) >= network_hourly_limit:
+                raise VoteRateLimitError(
+                    "This network has reached the hourly voting limit. Please try again later.",
+                    retry_after_seconds=3600,
+                )
+        if max_new_votes_per_stop_per_hour is not None and not existing_row:
+            stop_hourly_limit = max(5, min(500, int(max_new_votes_per_stop_per_hour)))
+            cutoff = (timestamp_dt - timedelta(hours=1)).isoformat()
+            recent_stop_row = connection.execute(
+                f"SELECT COUNT(*) FROM shade_votes WHERE study_id = {placeholder} AND stop_id = {placeholder} AND created_at >= {placeholder}",
+                (study_id, stop_id, cutoff),
+            ).fetchone()
+            if recent_stop_row and int(recent_stop_row[0]) >= stop_hourly_limit:
+                raise VoteRateLimitError(
+                    "This stop is receiving votes unusually quickly. Please try again later.",
+                    retry_after_seconds=3600,
+                )
         if allow_vote_changes:
             statement = f"""
                 INSERT INTO shade_votes
-                    (study_id, stop_id, voter_id, coverage_status, shade_sources, created_at, updated_at)
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+                    (study_id, stop_id, voter_id, network_id, coverage_status, shade_sources, created_at, updated_at)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
                 ON CONFLICT (study_id, stop_id, voter_id) DO UPDATE SET
+                    network_id = excluded.network_id,
                     coverage_status = excluded.coverage_status,
                     shade_sources = excluded.shade_sources,
                     updated_at = excluded.updated_at
@@ -575,13 +1142,22 @@ def save_vote(
         else:
             statement = f"""
                 INSERT INTO shade_votes
-                    (study_id, stop_id, voter_id, coverage_status, shade_sources, created_at, updated_at)
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+                    (study_id, stop_id, voter_id, network_id, coverage_status, shade_sources, created_at, updated_at)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
                 ON CONFLICT (study_id, stop_id, voter_id) DO NOTHING
             """
         cursor = connection.execute(
             statement,
-            (study_id, stop_id, voter_id, coverage_status, serialized_sources, timestamp, timestamp),
+            (
+                study_id,
+                stop_id,
+                voter_id,
+                network_id,
+                coverage_status,
+                serialized_sources,
+                timestamp,
+                timestamp,
+            ),
         )
         connection.commit()
         return cursor.rowcount != 0
@@ -666,15 +1242,29 @@ def render_voting_panel(
         database_url = None
         sqlite_path = None
         voter_id = ""
+        identity = VoterIdentity("")
         existing_vote = None
         if not preview:
             database_url = configured_vote_database_url()
             sqlite_path = configured_vote_db_path(app_dir)
-            voter_id = (
-                _request_voter_id(database_url=database_url, sqlite_path=sqlite_path)
-                if config["abuse_protection_enabled"]
-                else _browser_voter_id()
+            st.caption(f"Voting storage: {vote_store_label(database_url)}")
+            identity = (
+                _request_voter_identity(database_url=database_url, sqlite_path=sqlite_path)
+                if config["abuse_protection_enabled"] or config["require_authentication"]
+                else VoterIdentity(_browser_voter_id())
             )
+            if config["require_authentication"] and not identity.authenticated:
+                st.info("Sign in with an approved account before voting.")
+                if st.button("Sign in to vote", key=f"public_vote_login_{key_token}"):
+                    try:
+                        st.login()
+                    except Exception:
+                        st.error(
+                            "Authentication is not configured for this deployment. "
+                            "The app administrator must configure Streamlit OIDC secrets."
+                        )
+                return
+            voter_id = identity.voter_id
             existing_vote = get_existing_vote_details(
                 study_id,
                 stop_id,
@@ -743,11 +1333,29 @@ def render_voting_panel(
                 selected_status,
                 shade_sources=selected_sources,
                 allow_vote_changes=config["allow_vote_changes"],
+                network_id=identity.network_id,
+                enforce_network_vote_limit=(
+                    config["abuse_protection_enabled"]
+                    and config["enforce_network_vote_limit"]
+                    and not identity.authenticated
+                ),
                 cooldown_seconds=(
                     config["vote_cooldown_seconds"] if config["abuse_protection_enabled"] else 0
                 ),
                 max_new_votes_per_hour=(
                     config["max_new_votes_per_hour"] if config["abuse_protection_enabled"] else None
+                ),
+                max_new_votes_per_network_per_hour=(
+                    config["max_new_votes_per_network_per_hour"]
+                    if config["abuse_protection_enabled"]
+                    and config["enforce_network_vote_limit"]
+                    and not identity.authenticated
+                    else None
+                ),
+                max_new_votes_per_stop_per_hour=(
+                    config["max_new_votes_per_stop_per_hour"]
+                    if config["abuse_protection_enabled"]
+                    else None
                 ),
                 database_url=database_url,
                 sqlite_path=sqlite_path,
@@ -755,9 +1363,9 @@ def render_voting_panel(
             if saved:
                 st.success(str(config["success_message"]))
             else:
-                st.info("A vote from this browser session has already been recorded for this stop.")
+                st.info("A vote associated with this visitor or network has already been recorded for this stop.")
         elif changes_disabled and not preview:
-            st.caption("A vote from this browser session has already been recorded for this stop.")
+            st.caption("A vote associated with this visitor has already been recorded for this stop.")
 
         if config["show_results"]:
             if preview:
@@ -771,12 +1379,24 @@ def render_voting_panel(
                     database_url=database_url,
                     sqlite_path=sqlite_path,
                 )
-                result = community_result(counts, config["minimum_votes_for_result"])
+                result = community_result(
+                    counts,
+                    config["minimum_votes_for_result"],
+                    config["minimum_consensus_percent"],
+                    config["minimum_consensus_margin"],
+                )
                 st.markdown(f"**{config['results_label']}: {result['label']}**")
-                st.caption(" | ".join(f"{label}: {counts[label]}" for label in options))
+                if config["show_detailed_counts"] and result["status"] != "pending":
+                    st.caption(" | ".join(f"{label}: {counts[label]}" for label in options))
                 if result["status"] == "pending":
-                    remaining = config["minimum_votes_for_result"] - result["total"]
-                    st.caption(f"{remaining} more vote{'s' if remaining != 1 else ''} needed before a result is reported.")
+                    st.caption(
+                        f"Totals remain hidden until at least {config['minimum_votes_for_result']} "
+                        "verified votes have been recorded."
+                    )
+                elif result["status"] == "contested":
+                    st.caption(
+                        "The leading choice has not met the configured consensus share and margin."
+                    )
     except VoteRateLimitError as exc:
         st.warning(str(exc))
     except (VoteStorageError, OSError, sqlite3.Error) as exc:

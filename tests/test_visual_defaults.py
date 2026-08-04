@@ -70,8 +70,11 @@ def test_public_voting_is_off_by_default_but_fully_configured():
 
     assert voting["enabled"] is False
     assert voting["options"] == ["No Shade", "Limited Shade", "Significant Shade"]
-    assert voting["minimum_votes_for_result"] == 5
-    assert voting["allow_vote_changes"] is True
+    assert voting["minimum_votes_for_result"] == 10
+    assert voting["minimum_consensus_percent"] == 67
+    assert voting["minimum_consensus_margin"] == 2
+    assert voting["allow_vote_changes"] is False
+    assert voting["enforce_network_vote_limit"] is True
 
 
 def test_default_custom_charts_count_sources_and_coverage():

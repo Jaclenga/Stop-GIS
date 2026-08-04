@@ -155,28 +155,38 @@ The `Preview` page renders the public-facing study experience for the active pro
 - `requirements.txt`, `.streamlit/config.toml`, generated `README.md`, and `deploy_to_github.ps1`.
 
 The dedicated `Community Voting` page places grouped visitor-voting configuration beside a responsive live
-preview. An admin can enable or hide contributions, choose the
-coverage categories visitors may submit, edit all visible voting copy including the separate shade-source
-checkbox prompt, control whether a visitor may change an existing vote, show or hide totals, and set the minimum vote count
-before a unique leading status is reported. Community results stay separate from the reviewed stop
+preview. An admin can enable or hide contributions, choose the coverage categories visitors may submit,
+edit all visible voting copy including the separate shade-source checkbox prompt, require OIDC account
+sign-in, control whether a visitor may change an existing vote, hide detailed totals, and set the minimum
+vote count, winning share, and margin required for consensus. Community results stay separate from the reviewed stop
 dataset so public input does not silently overwrite an admin-approved classification.
 Abuse prevention, result display, and deployment storage guidance are retained in collapsed groups;
 environment-variable instructions no longer dominate the ordinary configuration workflow.
 
-Robustness controls are enabled by default. The deployed app uses a server-keyed, one-way visitor
-pseudonym to make session resets less useful, enforces a short cooldown, and caps how many new stops
-the same pseudonymous visitor can vote on per hour. Raw IP addresses and browser headers are never stored.
+Robustness controls are enabled by default. The deployed app uses separate server-keyed visitor and
+network pseudonyms, limits anonymous networks to one vote per stop, applies visitor/network/stop velocity
+limits, and serializes rate checks with database writes. Raw IP addresses and browser headers are never
+stored. Interim totals are hidden by default and close results remain contested instead of being reported
+as consensus. OIDC account mode provides a substantially stronger identity boundary when configured.
 
-Generated apps use a local `.shade_gis_votes.sqlite3` file by default. That is useful for local
-testing, but hosted deployments should set the Streamlit secret
-`SHADE_GIS_VOTE_DATABASE_URL = "postgresql://..."` because Streamlit Community Cloud local files
-are ephemeral. The generated bundle README contains the complete setup note, and the app creates its
-`shade_votes` table automatically. When request metadata is available, voter identifiers are keyed
-HMAC pseudonyms derived from network/browser signals; those raw signals are not retained. The database
-creates a private fingerprint key automatically, or deployments can provide a stable random
-`SHADE_GIS_VOTE_FINGERPRINT_SECRET`. If request metadata is unavailable, the app falls back to a random
-browser-session identifier. These controls raise the cost of casual manipulation but do not replace
-authentication, CAPTCHA, or external abuse monitoring for high-stakes binding polls.
+Generated apps use `.shade_gis_votes.sqlite3` for local evaluation. Durable hosted voting uses a
+PostgreSQL 14+ database owned by the researcher and configured only through server-side host secrets.
+PostgreSQL schema changes run explicitly through a locked, versioned migration command, never during
+normal vote requests. The runtime uses bounded pooling and timeouts and fails closed if configured
+PostgreSQL is unavailable instead of silently switching to SQLite. When request metadata is available,
+visitor and network identifiers are keyed HMAC pseudonyms; raw signals are not retained. Keep
+`SHADE_GIS_VOTE_FINGERPRINT_SECRET` stable because rotating it changes pseudonymous identities. Network
+rotation can still bypass anonymous controls. High-stakes polls should require OIDC authentication and
+add an edge CAPTCHA/WAF, eligibility rules, and external abuse monitoring.
+
+The Deploy page includes a no-custody **Persistent voting storage** wizard for Neon, Supabase,
+existing PostgreSQL, manual configuration, or local SQLite. Transient PostgreSQL actions verify the
+server version, initialize the schema, and confirm runtime CRUD access while immediately clearing the
+URL. Hosted actions require authentication, enforce a server-side rate limit and CSRF nonce, and block
+private/reserved targets to prevent SSRF. A browser-only generator creates the fingerprint secret
+without sending it to the Streamlit server. Bundles include locked migrations, least-privilege role
+guidance, sanitized migration/verification scripts, `DEPLOYMENT.md`, `.env.example`, and Streamlit
+secret placeholders. Real values go directly into the user's application host secret manager.
 
 ## Getting Started
 

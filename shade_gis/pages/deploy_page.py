@@ -21,7 +21,6 @@ from platform_store import list_images
 from shade_gis.data_quality import evaluate_data_quality
 from shade_gis.deploy import deploy_launcher_script, github_new_repo_url, slugify_repo_name
 from shade_gis.deployment import (
-    DEFAULT_DEPLOY_COMMIT_MESSAGE,
     STREAMLIT_WORKSPACE_URL,
     DeploymentTarget,
     PublishResult,
@@ -38,6 +37,7 @@ from shade_gis.deployment import (
     unpublish_website,
     verify_website,
 )
+from shade_gis.pages.voting_deployment import render_voting_deployment_wizard
 
 
 DEPLOYMENT_RESULT_KEY = "deploy_page_result"
@@ -56,6 +56,13 @@ BUNDLE_FILE_CATALOG = [
     ("shade_study_config.json", "Project display settings"),
     ("deployment_manifest.json", "Validated project snapshot and file hashes"),
     ("requirements.txt", "Website runtime"),
+    ("migrations/001_public_voting.sql", "Idempotent PostgreSQL voting schema"),
+    ("migrations/least_privilege_roles.sql.example", "Recommended owner/runtime role grants"),
+    ("scripts/verify_database.py", "Sanitized connection and read/write verification"),
+    ("scripts/migrate_database.py", "Versioned migration command"),
+    (".streamlit/secrets.toml.example", "Credential placeholders only; never real secrets"),
+    (".env.example", "Provider-neutral environment placeholders"),
+    ("DEPLOYMENT.md", "No-custody provider and hosting guide"),
     ("README.md", "Manual deployment documentation"),
     ("deploy_to_github.ps1", "Manual publishing fallback"),
 ]
@@ -571,15 +578,24 @@ def render_deploy_page() -> None:
     project_id = str(st.session_state.get("active_project_id") or "")
     images = list_images(project_id) if project_id else pd.DataFrame()
     quality_report = evaluate_data_quality(stops, images)
-    if quality_report.publication_ready and target.repository:
-        freshness_issue = deployment_session_freshness_issue()
-        if freshness_issue:
-            bundle_error = freshness_issue
+    if quality_report.publication_ready:
+        detected_freshness_issue = deployment_session_freshness_issue()
+        if detected_freshness_issue:
+            # A stale tab must block publishing to a configured target. When no
+            # target exists yet, preserve the normal settings guidance; the
+            # self-hosting download simply remains unavailable until refreshed.
+            if target.repository:
+                freshness_issue = detected_freshness_issue
+                bundle_error = detected_freshness_issue
         else:
             try:
+                bundle_repository = target.repository or (
+                    "self-hosted/"
+                    + slugify_repo_name(project.get("name", "shade-study"))
+                )
                 bundle_data = build_github_deploy_bundle(
-                    target.repository,
-                    target.mode,
+                    bundle_repository,
+                    target.mode if target.repository else "create",
                     target.commit_message,
                 )
             except Exception as exc:  # Builder validation errors are converted into one actionable readiness issue.
@@ -609,6 +625,15 @@ def render_deploy_page() -> None:
     if bundle_data:
         manifest = deployment_bundle_manifest(bundle_data)
         bundle_name = f"{bundle_stem}-{manifest['bundle_id'][:12]}.zip"
+    voting_enabled = bool(
+        st.session_state.get("visualization", {}).get("voting", {}).get("enabled", False)
+    )
+    if voting_enabled:
+        render_voting_deployment_wizard(
+            bundle_data,
+            bundle_name,
+            voting_enabled=True,
+        )
     # A previous successful deployment must not bypass checks after the active
     # dataset changes. Keep its result for a later clean rerun, but surface the
     # current blocker until the dashboard passes again.

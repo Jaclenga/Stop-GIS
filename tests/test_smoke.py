@@ -260,8 +260,12 @@ def test_voting_groups_configuration_and_hides_deployment_details():
     assert 'st.subheader("Live Preview")' in source
     for group in ["Visitor Experience", "Voting Options", "Abuse Prevention", "Result Display"]:
         assert f'st.expander("{group}"' in source
-    assert 'st.expander("Advanced Deployment", expanded=False)' in source
-    assert "SHADE_GIS_VOTE_DATABASE_URL" in source
+    assert 'if not voting["enabled"]:' in source
+    assert 'return voting' in source
+    assert 'if voting["enabled"]:' in source
+    assert 'st.markdown("#### Persistent voting storage")' in source
+    assert 'st.button("Open deployment setup"' in source
+    assert "SHADE_GIS_VOTE_DATABASE_URL" not in source
     assert "render_voting_panel(" in source
     assert "preview=True" in source
     assert 'st.subheader("Deployment Storage")' not in source

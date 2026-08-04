@@ -1,0 +1,20 @@
+-- Run as a PostgreSQL administrator after creating shade_gis_owner and shade_gis_app.
+-- Role creation and passwords are intentionally not automated or bundled.
+-- Recommended role attributes:
+--   shade_gis_owner: NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE
+--   shade_gis_app:   LOGIN,   NOSUPERUSER, NOCREATEDB, NOCREATEROLE
+-- Run migrations while SET ROLE shade_gis_owner, then grant only runtime access below.
+
+GRANT CONNECT ON DATABASE YOUR_DATABASE TO shade_gis_app;
+GRANT USAGE ON SCHEMA public TO shade_gis_app;
+REVOKE CREATE ON SCHEMA public FROM shade_gis_app;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE shade_votes TO shade_gis_app;
+GRANT SELECT ON TABLE shade_vote_settings TO shade_gis_app;
+GRANT USAGE, SELECT ON SEQUENCE shade_votes_id_seq TO shade_gis_app;
+
+-- Preserve runtime permissions if the owner recreates application objects later.
+ALTER DEFAULT PRIVILEGES FOR ROLE shade_gis_owner IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO shade_gis_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE shade_gis_owner IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO shade_gis_app;

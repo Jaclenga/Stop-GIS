@@ -103,11 +103,47 @@ def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, me
         bundle_names = set(bundle.namelist())
         assert "public_voting.py" in bundle_names
         assert "deployment_manifest.json" in bundle_names
+        assert "migrations/001_public_voting.sql" in bundle_names
+        assert "migrations/least_privilege_roles.sql.example" in bundle_names
+        assert "scripts/verify_database.py" in bundle_names
+        assert "scripts/migrate_database.py" in bundle_names
+        assert ".streamlit/secrets.toml.example" in bundle_names
+        assert ".env.example" in bundle_names
+        assert "DEPLOYMENT.md" in bundle_names
         assert "builder_app.py" not in bundle_names
         assert "platform_store.py" not in bundle_names
         assert not any(name.startswith("shade_gis/") for name in bundle_names)
         assert "psycopg[binary]>=3.2,<4" in bundle.read("requirements.txt").decode("utf-8")
+        assert "psycopg_pool>=3.2,<4" in bundle.read("requirements.txt").decode("utf-8")
+        assert "Authlib>=1.3.2,<2" in bundle.read("requirements.txt").decode("utf-8")
+        secrets_example = bundle.read(".streamlit/secrets.toml.example").decode("utf-8")
+        assert 'SHADE_GIS_VOTE_DATABASE_URL = "postgresql://RUNTIME_USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"' in secrets_example
+        assert 'SHADE_GIS_VOTE_FINGERPRINT_SECRET = "YOUR_BROWSER_GENERATED_SECRET"' in secrets_example
+        assert "postgresql://user:password@" not in secrets_example.lower()
+        assert "CREATE UNIQUE INDEX IF NOT EXISTS shade_votes_network_unique_idx" in bundle.read(
+            "migrations/001_public_voting.sql"
+        ).decode("utf-8")
+        migration = bundle.read("migrations/001_public_voting.sql").decode("utf-8")
+        assert "pg_advisory_xact_lock" in migration
+        assert "schema_version" in migration
+        assert "DROP TABLE" not in migration.upper()
+        roles = bundle.read("migrations/least_privilege_roles.sql.example").decode("utf-8")
+        assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE shade_votes" in roles
+        assert "GRANT SELECT ON TABLE shade_vote_settings" in roles
+        assert "CREATE ROLE" not in roles.upper()
+        assert "not create, own, centrally store" in bundle.read(
+            "DEPLOYMENT.md"
+        ).decode("utf-8")
         assert "*.sqlite3" in bundle.read(".gitignore").decode("utf-8")
+        gitignore = bundle.read(".gitignore").decode("utf-8")
+        assert ".env.*" in gitignore
+        assert ".streamlit/secrets.toml" in gitignore
+        assert "enableXsrfProtection = true" in bundle.read(
+            ".streamlit/config.toml"
+        ).decode("utf-8")
+        assert "confirm_vote_database_read_write" in bundle.read(
+            "scripts/verify_database.py"
+        ).decode("utf-8")
         bundle_readme = bundle.read("README.md").decode("utf-8")
         assert bundle_readme.count("& {") >= 1
         assert "[string]::IsNullOrWhiteSpace($RepositoryName)" in bundle_readme
@@ -509,7 +545,7 @@ def test_deploy_readme_documents_existing_private_repo_flow(project):
     assert "-AllowPublicTarget" in readme
     assert ".env*" in readme
     assert "SHADE_GIS_VOTE_DATABASE_URL" in readme
-    assert "local SQLite fallback" in readme
+    assert "Local SQLite remains suitable only for local evaluation" in readme
     assert "only the public preview" in readme
     assert "protects a repository-root Shade-GIS builder" in readme
     assert "upgrades that active runtime in place" in readme

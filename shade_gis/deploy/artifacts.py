@@ -54,6 +54,34 @@ def public_voting_source() -> str:
     return PUBLIC_VOTING_SOURCE_PATH.read_text(encoding="utf-8")
 
 
+def postgres_vote_schema() -> str:
+    return (TEMPLATES_DIR / "postgres_vote_schema.sql").read_text(encoding="utf-8")
+
+
+def secrets_example() -> str:
+    return (TEMPLATES_DIR / "secrets.toml.example").read_text(encoding="utf-8")
+
+
+def deployment_guide() -> str:
+    return (TEMPLATES_DIR / "DEPLOYMENT.md").read_text(encoding="utf-8")
+
+
+def least_privilege_roles() -> str:
+    return (TEMPLATES_DIR / "least_privilege_roles.sql.example").read_text(encoding="utf-8")
+
+
+def verify_database_script() -> str:
+    return (TEMPLATES_DIR / "verify_database.py").read_text(encoding="utf-8")
+
+
+def migrate_database_script() -> str:
+    return (TEMPLATES_DIR / "migrate_database.py").read_text(encoding="utf-8")
+
+
+def dotenv_example() -> str:
+    return (TEMPLATES_DIR / ".env.example").read_text(encoding="utf-8")
+
+
 def powershell_literal(value: Any) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 

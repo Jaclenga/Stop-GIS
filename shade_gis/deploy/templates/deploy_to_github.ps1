@@ -182,6 +182,13 @@ function Copy-SafeBundleFiles {
         "shade_study_raw_labels.csv",
         "shade_study_config.json",
         "deployment_manifest.json",
+        "DEPLOYMENT.md",
+        "migrations/001_public_voting.sql",
+        "migrations/least_privilege_roles.sql.example",
+        "scripts/verify_database.py",
+        "scripts/migrate_database.py",
+        ".streamlit/secrets.toml.example",
+        ".env.example",
         "requirements.txt"
     )
     Show-ProtectedFileWarnings
@@ -191,6 +198,10 @@ function Copy-SafeBundleFiles {
     foreach ($item in $items) {
         if (Test-Path $item -PathType Leaf) {
             $destinationPath = Join-Path $previewDirectory $item
+            $destinationParent = Split-Path -Parent $destinationPath
+            if (-not (Test-Path -LiteralPath $destinationParent -PathType Container)) {
+                New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+            }
             if (Test-Path $destinationPath) {
                 Write-Host "Updating generated preview file: @@PREVIEW_DIRECTORY@@/$item"
             } else {
@@ -357,6 +368,13 @@ $newRepoFiles = @(
     "shade_study_raw_labels.csv",
     "shade_study_config.json",
     "deployment_manifest.json",
+    "DEPLOYMENT.md",
+    "migrations/001_public_voting.sql",
+    "migrations/least_privilege_roles.sql.example",
+    "scripts/verify_database.py",
+    "scripts/migrate_database.py",
+    ".streamlit/secrets.toml.example",
+    ".env.example",
     "requirements.txt",
     "README.md",
     "deploy_to_github.ps1",

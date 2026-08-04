@@ -652,16 +652,20 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     playwright_api.expect(
                         page.get_by_role("heading", name="Live Preview", exact=True)
                     ).to_be_visible(timeout=30_000)
-                    playwright_api.expect(
-                        page.get_by_text("Visitor Experience", exact=True)
-                    ).to_be_visible(timeout=30_000)
                     voting_toggle_container = page.get_by_test_id("stCheckbox").filter(
                         has_text="Enable visitor voting"
                     )
                     voting_toggle = voting_toggle_container.get_by_role("checkbox")
                     if not voting_toggle.is_checked():
+                        playwright_api.expect(
+                            page.get_by_text("Visitor Experience", exact=True)
+                        ).to_have_count(0, timeout=30_000)
+                    if not voting_toggle.is_checked():
                         voting_toggle_container.click()
                     playwright_api.expect(voting_toggle).to_be_checked(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_text("Visitor Experience", exact=True)
+                    ).to_be_visible(timeout=30_000)
                     playwright_api.expect(
                         page.get_by_text(
                             "Community voting is currently hidden in the deployed app. Enable it to publish this interface.",

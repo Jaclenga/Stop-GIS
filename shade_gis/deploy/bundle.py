@@ -13,12 +13,19 @@ import pandas as pd
 
 from shade_gis.builder_imports import calculate_priority_scores
 from shade_gis.deploy.artifacts import (
+    deployment_guide,
     deploy_readme,
     deploy_script,
+    dotenv_example,
+    least_privilege_roles,
+    migrate_database_script,
+    postgres_vote_schema,
     public_voting_source,
     published_app_source,
+    secrets_example,
     slugify_repo_name,
     streamlit_entrypoint_path,
+    verify_database_script,
 )
 from shade_gis.deployment import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
@@ -28,17 +35,30 @@ from shade_gis.deployment import (
 
 RUNTIME_REQUIREMENTS = (
     "streamlit>=1.57,<2\n"
+    "Authlib>=1.3.2,<2\n"
     "pandas>=2.2,<3\n"
     "pyarrow>=24,<25\n"
     "pydeck>=0.8,<1\n"
     "psycopg[binary]>=3.2,<4\n"
+    "psycopg_pool>=3.2,<4\n"
 )
-STREAMLIT_CONFIG = "[server]\nheadless = true\n\n[browser]\ngatherUsageStats = false\n"
+STREAMLIT_CONFIG = (
+    "[server]\nheadless = true\nenableXsrfProtection = true\n\n"
+    "[browser]\ngatherUsageStats = false\n"
+)
 DEPLOY_GITIGNORE = (
     "__pycache__/\n"
     "*.pyc\n"
     "*.sqlite3\n"
+    "*.sqlite3-*\n"
+    ".env\n"
+    ".env.*\n"
+    "!.env.example\n"
     ".streamlit/secrets.toml\n"
+    "credentials.json\n"
+    "*-credentials.json\n"
+    "*.secret\n"
+    "secret-output*\n"
     "_shade_gis_publish_*/\n"
 )
 
@@ -77,6 +97,13 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         "shade_study_config.json": spec.config_json.encode("utf-8"),
         "requirements.txt": RUNTIME_REQUIREMENTS.encode("utf-8"),
         ".streamlit/config.toml": STREAMLIT_CONFIG.encode("utf-8"),
+        ".streamlit/secrets.toml.example": secrets_example().encode("utf-8"),
+        ".env.example": dotenv_example().encode("utf-8"),
+        "migrations/001_public_voting.sql": postgres_vote_schema().encode("utf-8"),
+        "migrations/least_privilege_roles.sql.example": least_privilege_roles().encode("utf-8"),
+        "scripts/verify_database.py": verify_database_script().encode("utf-8"),
+        "scripts/migrate_database.py": migrate_database_script().encode("utf-8"),
+        "DEPLOYMENT.md": deployment_guide().encode("utf-8"),
         ".gitignore": DEPLOY_GITIGNORE.encode("utf-8"),
         "deploy_to_github.ps1": deploy_script(spec.repository, commit_message).encode("utf-8"),
     }
