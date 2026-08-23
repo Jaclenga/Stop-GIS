@@ -62,6 +62,23 @@ class ObservationCodecTest {
     }
 
     @Test
+    fun preservesCorrectedDuplicateLegacyLinesWithUniqueStableIds() {
+        val original = """{"stopId":"1001","stopName":"Main St","photoUri":"content://photo","shadeCoverage":"Limited Shade","shadeSources":["Natural"],"notes":"first","capturedAt":"2026-08-08T15:30:00Z"}"""
+        val corrected = """{"stopId":"1001","stopName":"Main St","photoUri":"content://photo","shadeCoverage":"Limited Shade","shadeSources":["Natural"],"notes":"corrected","capturedAt":"2026-08-08T15:30:00Z"}"""
+
+        val firstLoad = codec.decode("$original\n$corrected")
+        val secondLoad = codec.decode("$original\n$corrected")
+
+        assertEquals(2, firstLoad.observations.size)
+        assertEquals(setOf("first", "corrected"), firstLoad.observations.map { it.notes }.toSet())
+        assertEquals(2, firstLoad.observations.map { it.observationId }.toSet().size)
+        assertEquals(
+            firstLoad.observations.map { it.observationId },
+            secondLoad.observations.map { it.observationId },
+        )
+    }
+
+    @Test
     fun rejectsUnknownStoreSchema() {
         val futureStore = """{"schema_version":99,"observations":[]}"""
 

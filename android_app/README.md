@@ -18,8 +18,8 @@ and JDK 17 for Android Gradle Plugin 8.1.
 - Writes use Android's `AtomicFile`, so an interrupted save does not replace a valid store with a partial file.
 - Android backup is disabled because observations and photos may contain field-sensitive data.
 - The previous camelCase JSON-lines file is upgraded on first read. If a legacy record is unreadable, the original
-  file is left untouched and saving is blocked rather than silently deleting that record. A malformed versioned
-  store is also left untouched.
+  file is preserved as app-private `shade_gis_observations.legacy-backup.jsonl`, readable records are migrated,
+  and future saves continue normally. A malformed versioned store is still left untouched.
 
 ## Observation schema (version 1)
 

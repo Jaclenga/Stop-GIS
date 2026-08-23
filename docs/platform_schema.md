@@ -73,8 +73,8 @@ Supported import paths:
 | --- | --- |
 | GTFS ZIP | Requires `stops.txt`; optional `stop_times.txt`, `trips.txt`, and `routes.txt` enrich route labels. |
 | CSV or `stops.txt` | Uses the field-mapping panel before import. |
-| GeoJSON | Converts feature geometry into `stop_lon` and `stop_lat`, preserves feature properties as mappable fields, and records geometry metadata in the import log. |
-| Zipped Shapefile | Reads `.shp`/`.dbf` bundles through `pyshp`, converts geometry into `stop_lon` and `stop_lat`, and preserves attributes as mappable fields. |
+| GeoJSON | Converts feature geometry into an on-geometry representative `stop_lon` and `stop_lat`, preserves feature properties as mappable fields, and records geometry metadata in the import log. |
+| Zipped Shapefile | Reads matching `.shp`/`.dbf` bundles through `pyshp`, reprojects a matching `.prj` coordinate system to WGS84, derives an on-geometry representative point, and preserves attributes as mappable fields. Files without `.prj` metadata are treated as WGS84. |
 | API URL | Fetches CSV or GeoJSON from a URL, then uses the same field-mapping panel. |
 | Manual entry | Provides an editable table for adding individual stop records. |
 

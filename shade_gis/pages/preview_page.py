@@ -52,6 +52,9 @@ def render_preview_page() -> None:
         filters,
     )
 
+    with st.expander("Map and analytics filters", expanded=False):
+        published_app.render_map_filter_controls(stops, "preview")
+
     tabs = st.tabs(
         ["Map", "Analytics", "Methodology", "Exports"],
         key="preview_tabs",
@@ -93,11 +96,11 @@ def render_preview_page() -> None:
                             taxonomy,
                             voting,
                             app_dir=published_app.APP_DIR,
+                            preview=True,
                         )
             st.caption(
                 f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters."
             )
-            published_app.render_map_filter_controls(stops, "preview")
             if visualization.get("show_legend", True):
                 published_app.render_taxonomy_legend(taxonomy)
     elif tabs[1].open:

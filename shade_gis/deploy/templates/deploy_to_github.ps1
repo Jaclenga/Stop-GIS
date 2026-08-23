@@ -67,6 +67,21 @@ function Assert-DeploymentBundle {
     if ([string]$manifest.commit_message -ne $CommitMessage) {
         throw "This bundle was created with a different commit message. Download a package using the current deployment settings."
     }
+    $requiredFiles = @(
+        "app.py", "public_voting.py", "shade_study_stops.csv",
+        "shade_study_config.json", "requirements.txt", "README.md",
+        "deploy_to_github.ps1", ".gitignore", ".streamlit/config.toml",
+        ".streamlit/secrets.toml.example", ".env.example",
+        "migrations/001_public_voting.sql",
+        "migrations/least_privilege_roles.sql.example",
+        "scripts/verify_database.py", "scripts/migrate_database.py",
+        "DEPLOYMENT.md", "static/shade_gis_identity.json"
+    )
+    foreach ($requiredFile in $requiredFiles) {
+        if (-not $manifest.files.PSObject.Properties[$requiredFile]) {
+            throw "The deployment package manifest is incomplete; '$requiredFile' is not content-addressed."
+        }
+    }
     foreach ($fileProperty in $manifest.files.PSObject.Properties) {
         $relativePath = [string]$fileProperty.Name
         if ([IO.Path]::IsPathRooted($relativePath) -or $relativePath -match '(^|[\/])\.\.([\/]|$)') {
@@ -80,6 +95,55 @@ function Assert-DeploymentBundle {
         if ($actualHash -ne $expectedHash) {
             throw "The deployment package is stale or damaged; '$relativePath' does not match its manifest hash."
         }
+    }
+    if (-not (Test-StreamlitStaticServing -ConfigPath ".streamlit/config.toml")) {
+        throw "The deployment package must enable Streamlit static file serving."
+    }
+    if ([string]$manifest.bundle_id -notmatch '^[0-9a-f]{64}$') {
+        throw "The deployment package has an invalid bundle identity."
+    }
+    $identityJson = [string]$manifest.identity_json
+    if (-not $identityJson.Trim()) {
+        throw "The deployment package has no canonical bundle identity."
+    }
+    try {
+        $identity = $identityJson | ConvertFrom-Json
+    } catch {
+        throw "The deployment package canonical bundle identity is invalid: $($_.Exception.Message)"
+    }
+    foreach ($propertyName in @("schema_version", "study_id", "project_name", "repository", "deploy_mode", "commit_message", "entrypoint")) {
+        if ([string]$identity.$propertyName -ne [string]$manifest.$propertyName) {
+            throw "The deployment package canonical identity does not match '$propertyName'."
+        }
+    }
+    if (
+        [string]$identity.dataset.file -ne [string]$manifest.dataset.file -or
+        [string]$identity.dataset.rows -ne [string]$manifest.dataset.rows -or
+        [string]$identity.dataset.sha256 -ne [string]$manifest.dataset.sha256 -or
+        (@($identity.dataset.columns) -join "`n") -ne (@($manifest.dataset.columns) -join "`n")
+    ) {
+        throw "The deployment package canonical identity does not match its dataset."
+    }
+    foreach ($fileProperty in $identity.files.PSObject.Properties) {
+        $manifestFile = $manifest.files.PSObject.Properties[[string]$fileProperty.Name]
+        if ($null -eq $manifestFile -or [string]$manifestFile.Value -ne [string]$fileProperty.Value) {
+            throw "The deployment package canonical identity does not match file '$($fileProperty.Name)'."
+        }
+    }
+    $identityFileCount = @($identity.files.PSObject.Properties).Count
+    $manifestIdentityFileCount = @($manifest.files.PSObject.Properties | Where-Object Name -ne "README.md").Count
+    if ($identityFileCount -ne $manifestIdentityFileCount) {
+        throw "The deployment package canonical identity has a different file set."
+    }
+    $identityBytes = [Text.Encoding]::UTF8.GetBytes($identityJson)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        $calculatedBundleId = ([BitConverter]::ToString($sha256.ComputeHash($identityBytes))).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+    }
+    if ($calculatedBundleId -ne [string]$manifest.bundle_id) {
+        throw "The deployment package bundle identity does not match its manifest."
     }
     Write-Host "Validated deployment bundle $($manifest.bundle_id) for $($manifest.repository)."
     Write-Host "Project snapshot: $($manifest.project_name) [$($manifest.study_id)]"
@@ -95,25 +159,39 @@ function Get-RemoteUrl {
     return "https://github.com/$RepositoryName.git"
 }
 
-function Get-RepositorySlug {
-    $candidate = $RepositoryName
-    if ($RepositoryUrl.Trim()) {
-        $candidate = $RepositoryUrl.Trim()
-    }
-    if ($candidate -match "github\.com[:/](?<owner>[^/]+)/(?<repo>[^/]+?)(\.git)?$") {
+function Get-RepositorySlugFromValue {
+    param(
+        [string]$Candidate,
+        [switch]$AllowBare
+    )
+    $candidate = $Candidate.Trim()
+    if ($candidate -match "^(?:(?:https?|ssh)://(?:[^@/]+@)?|git@)?github\.com[:/](?<owner>[A-Za-z0-9_.-]+)/(?<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$") {
         return "$($Matches.owner)/$($Matches.repo)"
     }
-    if ($candidate -match "^[^/]+/[^/]+$") {
-        return $candidate
+    if ($AllowBare -and $candidate -match "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$") {
+        return ($candidate -replace "\.git$", "")
     }
     return ""
 }
 
+function Get-RepositorySlug {
+    if ($RepositoryUrl.Trim()) {
+        return Get-RepositorySlugFromValue -Candidate $RepositoryUrl
+    }
+    return Get-RepositorySlugFromValue -Candidate $RepositoryName -AllowBare
+}
+
 function Assert-PrivateExistingRepository {
+    $expectedSlug = Get-RepositorySlugFromValue -Candidate $RepositoryName -AllowBare
+    if (-not $expectedSlug) {
+        throw "RepositoryName must identify one GitHub repository as OWNER/REPO."
+    }
     $repoSlug = Get-RepositorySlug
     if (-not $repoSlug) {
-        Write-Warning "Could not verify repository visibility from '$RepositoryName'. Repository visibility controls who can see the published app files."
-        return
+        throw "RepositoryUrl must identify a GitHub repository when it is provided."
+    }
+    if ($repoSlug -ne $expectedSlug) {
+        throw "RepositoryUrl targets '$repoSlug', but this bundle is configured for '$expectedSlug'."
     }
     try {
         $repoVisibility = (Invoke-NativeOutput "gh" @("repo", "view", $repoSlug, "--json", "visibility", "--jq", ".visibility") | Out-String).Trim().ToLowerInvariant()
@@ -141,7 +219,6 @@ function Show-ProtectedFileWarnings {
     $protectedPaths = @(
         ".git",
         ".github",
-        ".streamlit",
         "README.md",
         "LICENSE",
         ".env",
@@ -168,13 +245,120 @@ function Test-LegacyRootPublishedApp {
     if ($source -match '(?m)^\s*(from\s+builder_app\s+import|import\s+builder_app\b)' -or $source -match 'builder_app\.main') {
         return $false
     }
-    return $source.Contains("shade_study_config.json") -and $source.Contains("shade_study_stops.csv")
+    if (-not $source.Contains("shade_study_config.json") -or -not $source.Contains("shade_study_stops.csv")) {
+        return $false
+    }
+    $manifestPaths = @(
+        (Join-Path $Destination "deployment_manifest.json"),
+        (Join-Path $Destination "@@PREVIEW_DIRECTORY@@/deployment_manifest.json")
+    )
+    foreach ($manifestPath in $manifestPaths) {
+        if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            continue
+        }
+        try {
+            $candidate = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $appHash = $candidate.files.PSObject.Properties["app.py"]
+            if (
+                [int]$candidate.schema_version -eq 1 -and
+                -not [string]::IsNullOrWhiteSpace([string]$candidate.study_id) -and
+                -not [string]::IsNullOrWhiteSpace([string]$candidate.repository) -and
+                [string]$candidate.deploy_mode -in @("create", "existing") -and
+                $null -ne $appHash
+            ) {
+                $actualHash = (Get-FileHash -LiteralPath $rootApp -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($actualHash -eq ([string]$appHash.Value).ToLowerInvariant()) {
+                    return $true
+                }
+            }
+        } catch {
+            continue
+        }
+    }
+    return $false
+}
+
+function Test-StreamlitStaticServing {
+    param([string]$ConfigPath)
+    if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
+        return $false
+    }
+    $section = ""
+    foreach ($line in Get-Content -LiteralPath $ConfigPath) {
+        if ($line -match '^\s*\[([^]]+)\]\s*(?:#.*)?$') {
+            $section = $Matches[1].Trim().ToLowerInvariant()
+            continue
+        }
+        if ($section -eq "server" -and $line -match '^\s*enableStaticServing\s*=\s*(true|false)\s*(?:#.*)?$') {
+            return $Matches[1].ToLowerInvariant() -eq "true"
+        }
+        if (-not $section -and $line -match '^\s*server\.enableStaticServing\s*=\s*(true|false)\s*(?:#.*)?$') {
+            return $Matches[1].ToLowerInvariant() -eq "true"
+        }
+    }
+    return $false
 }
 
 function Copy-SafeBundleFiles {
     param([string]$Destination)
     $previewDirectory = Join-Path $Destination "@@PREVIEW_DIRECTORY@@"
     $refreshLegacyRootRuntime = Test-LegacyRootPublishedApp -Destination $Destination
+    $oldManifest = $null
+    $oldManifestPath = Join-Path $previewDirectory "deployment_manifest.json"
+    if (Test-Path -LiteralPath $oldManifestPath -PathType Leaf) {
+        try {
+            $candidateManifest = Get-Content -LiteralPath $oldManifestPath -Raw | ConvertFrom-Json
+            $expectedRepository = ($RepositoryName.Trim() -replace "\.git$", "")
+            if (
+                [int]$candidateManifest.schema_version -eq 1 -and
+                [string]$candidateManifest.repository -eq $expectedRepository -and
+                [string]$candidateManifest.deploy_mode -eq "existing"
+            ) {
+                $oldManifest = $candidateManifest
+            }
+        } catch {
+            $oldManifest = $null
+        }
+    }
+    $rootConfigName = ".streamlit/config.toml"
+    $rootConfigPath = Join-Path $Destination $rootConfigName
+    $rootConfigOwned = $false
+    if ($null -ne $oldManifest -and @($oldManifest.deployed_paths) -contains $rootConfigName) {
+        $rootConfigHash = $oldManifest.files.PSObject.Properties[$rootConfigName]
+        if ($null -ne $rootConfigHash -and (Test-Path -LiteralPath $rootConfigPath -PathType Leaf)) {
+            $actualRootConfigHash = (Get-FileHash -LiteralPath $rootConfigPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $rootConfigOwned = $actualRootConfigHash -eq ([string]$rootConfigHash.Value).ToLowerInvariant()
+        }
+    }
+    $manageRootConfig = -not (Test-Path -LiteralPath $rootConfigPath -PathType Leaf) -or $rootConfigOwned
+    if (-not $manageRootConfig -and -not (Test-StreamlitStaticServing -ConfigPath $rootConfigPath)) {
+        throw "The repository's .streamlit/config.toml does not enable static file serving. Set server.enableStaticServing = true there before publishing so Shade-GIS can verify the hosted study."
+    }
+    function Assert-OwnedDestination {
+        param(
+            [string]$DestinationPath,
+            [string]$BundlePath,
+            [switch]$AllowLegacy
+        )
+        if (-not (Test-Path -LiteralPath $DestinationPath -PathType Leaf) -or $AllowLegacy) {
+            return
+        }
+        if ($BundlePath -eq "deployment_manifest.json" -and $null -ne $oldManifest) {
+            return
+        }
+        $hashProperty = if ($null -ne $oldManifest) {
+            $oldManifest.files.PSObject.Properties[$BundlePath]
+        } else {
+            $null
+        }
+        if ($null -ne $hashProperty) {
+            $actualHash = (Get-FileHash -LiteralPath $DestinationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -eq ([string]$hashProperty.Value).ToLowerInvariant()) {
+                return
+            }
+        }
+        throw "Publishing would overwrite repository file '$DestinationPath' that is not owned by this Shade-GIS deployment."
+    }
     $items = @(
         "app.py",
         "public_voting.py",
@@ -182,22 +366,17 @@ function Copy-SafeBundleFiles {
         "shade_study_raw_labels.csv",
         "shade_study_config.json",
         "deployment_manifest.json",
-        "DEPLOYMENT.md",
-        "migrations/001_public_voting.sql",
-        "migrations/least_privilege_roles.sql.example",
-        "scripts/verify_database.py",
-        "scripts/migrate_database.py",
-        ".streamlit/secrets.toml.example",
-        ".env.example",
-        "requirements.txt"
+        "requirements.txt",
+        "static/shade_gis_identity.json"
     )
     Show-ProtectedFileWarnings
     if (-not (Test-Path $previewDirectory)) {
         New-Item -ItemType Directory -Path $previewDirectory -Force | Out-Null
     }
     foreach ($item in $items) {
+        $destinationPath = Join-Path $previewDirectory $item
+        Assert-OwnedDestination -DestinationPath $destinationPath -BundlePath $item
         if (Test-Path $item -PathType Leaf) {
-            $destinationPath = Join-Path $previewDirectory $item
             $destinationParent = Split-Path -Parent $destinationPath
             if (-not (Test-Path -LiteralPath $destinationParent -PathType Container)) {
                 New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
@@ -212,6 +391,7 @@ function Copy-SafeBundleFiles {
     }
     $optionalRawLabels = Join-Path $previewDirectory "shade_study_raw_labels.csv"
     if (-not (Test-Path "shade_study_raw_labels.csv" -PathType Leaf) -and (Test-Path $optionalRawLabels)) {
+        Assert-OwnedDestination -DestinationPath $optionalRawLabels -BundlePath "shade_study_raw_labels.csv"
         Remove-Item -LiteralPath $optionalRawLabels -Force
         Write-Host "Removed stale generated preview file: @@PREVIEW_DIRECTORY@@/shade_study_raw_labels.csv"
     }
@@ -221,8 +401,9 @@ function Copy-SafeBundleFiles {
         "shade_study_config.json"
     )
     foreach ($item in $rootDataItems) {
+        $destinationPath = Join-Path $Destination $item
+        Assert-OwnedDestination -DestinationPath $destinationPath -BundlePath $item -AllowLegacy:$refreshLegacyRootRuntime
         if (Test-Path $item -PathType Leaf) {
-            $destinationPath = Join-Path $Destination $item
             if (Test-Path $destinationPath) {
                 Write-Host "Updating generated root data file: $item"
             } else {
@@ -233,17 +414,57 @@ function Copy-SafeBundleFiles {
     }
     $rootRawLabels = Join-Path $Destination "shade_study_raw_labels.csv"
     if (-not (Test-Path "shade_study_raw_labels.csv" -PathType Leaf) -and (Test-Path $rootRawLabels)) {
+        Assert-OwnedDestination -DestinationPath $rootRawLabels -BundlePath "shade_study_raw_labels.csv" -AllowLegacy:$refreshLegacyRootRuntime
         Remove-Item -LiteralPath $rootRawLabels -Force
         Write-Host "Removed stale generated root data file: shade_study_raw_labels.csv"
     }
     if ($refreshLegacyRootRuntime) {
-        foreach ($item in @("app.py", "public_voting.py", "requirements.txt")) {
+        foreach ($item in @("app.py", "public_voting.py", "requirements.txt", "static/shade_gis_identity.json")) {
             if (Test-Path $item -PathType Leaf) {
-                Copy-Item -LiteralPath $item -Destination (Join-Path $Destination $item) -Force
+                $destinationPath = Join-Path $Destination $item
+                $destinationParent = Split-Path -Parent $destinationPath
+                if (-not (Test-Path -LiteralPath $destinationParent -PathType Container)) {
+                    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+                }
+                Copy-Item -LiteralPath $item -Destination $destinationPath -Force
                 Write-Host "Updated active legacy root runtime: $item"
             }
         }
     }
+    if ($manageRootConfig) {
+        $rootConfigParent = Split-Path -Parent $rootConfigPath
+        if (-not (Test-Path -LiteralPath $rootConfigParent -PathType Container)) {
+            New-Item -ItemType Directory -Path $rootConfigParent -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $rootConfigName -Destination $rootConfigPath -Force
+        Write-Host "Installed generated Streamlit static-serving configuration."
+    }
+    $deployedPaths = [Collections.Generic.List[string]]::new()
+    foreach ($item in $items) {
+        if (Test-Path -LiteralPath (Join-Path $previewDirectory $item) -PathType Leaf) {
+            $deployedPaths.Add("@@PREVIEW_DIRECTORY@@/$item")
+        }
+    }
+    foreach ($item in $rootDataItems) {
+        if (Test-Path -LiteralPath (Join-Path $Destination $item) -PathType Leaf) {
+            $deployedPaths.Add($item)
+        }
+    }
+    if ($refreshLegacyRootRuntime) {
+        foreach ($item in @("app.py", "public_voting.py", "requirements.txt", "static/shade_gis_identity.json")) {
+            if (Test-Path -LiteralPath (Join-Path $Destination $item) -PathType Leaf) {
+                $deployedPaths.Add($item)
+            }
+        }
+    }
+    if ($manageRootConfig) {
+        $deployedPaths.Add($rootConfigName)
+    }
+    $publishedManifestPath = Join-Path $previewDirectory "deployment_manifest.json"
+    $publishedManifest = Get-Content -LiteralPath $publishedManifestPath -Raw | ConvertFrom-Json
+    $publishedManifest | Add-Member -NotePropertyName "deployed_paths" -NotePropertyValue ($deployedPaths.ToArray()) -Force
+    $publishedManifestJson = $publishedManifest | ConvertTo-Json -Depth 20
+    [IO.File]::WriteAllText($publishedManifestPath, $publishedManifestJson, [Text.UTF8Encoding]::new($false))
 }
 
 function Stage-PublishFiles {
@@ -305,7 +526,9 @@ if ($Mode -eq "existing") {
         "shade_study_config.json",
         "app.py",
         "public_voting.py",
-        "requirements.txt"
+        "requirements.txt",
+        "static",
+        ".streamlit/config.toml"
     )
     try {
         if ($RepositoryUrl.Trim() -or $RepositoryName -match "^https?://") {
@@ -379,7 +602,8 @@ $newRepoFiles = @(
     "README.md",
     "deploy_to_github.ps1",
     ".gitignore",
-    ".streamlit/config.toml"
+    ".streamlit/config.toml",
+    "static/shade_gis_identity.json"
 )
 $createdCommit = Commit-And-Push -TargetBranch $Branch -Paths $newRepoFiles -SkipPush
 if (-not $createdCommit) {

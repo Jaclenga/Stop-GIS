@@ -18,7 +18,7 @@ pd.options.future.infer_string = False
 import published_app
 from public_voting import normalize_voting_config
 from platform_store import (
-    add_review_event,
+    ProjectConflictError,
     add_shade_label,
     create_project,
     database_status,
@@ -451,6 +451,12 @@ def load_project_into_session(project_id: str) -> None:
     else:
         stops = prepare_stop_dataset(stops, project, taxonomy)
 
+    for key in list(st.session_state):
+        if key.startswith("api_import_") or key.startswith("manual_entry_"):
+            st.session_state.pop(key, None)
+    for key in ("manual_import_entries", "manual_import_source"):
+        st.session_state.pop(key, None)
+
     st.session_state["active_project_id"] = project_id
     st.session_state["loaded_project_id"] = project_id
     st.session_state["project"] = project
@@ -463,21 +469,29 @@ def load_project_into_session(project_id: str) -> None:
     ensure_visualization_defaults()
 
 
-def save_active_project_to_store() -> None:
+def save_active_project_to_store(review_event: dict[str, Any] | None = None) -> bool:
     if os.environ.get("SHADE_GIS_TEST_DISABLE_AUTO_SAVE", "").strip() == "1":
-        return
+        return True
     project_id = st.session_state.get("active_project_id")
     if not project_id:
-        return
-    save_project_bundle(
-        project_id,
-        st.session_state.get("project", DEFAULT_PROJECT.copy()),
-        st.session_state.get("taxonomy", [item.copy() for item in DEFAULT_TAXONOMY]),
-        st.session_state.get("methodology", DEFAULT_METHODOLOGY.copy()),
-        st.session_state.get("visualization", json.loads(json.dumps(DEFAULT_VISUALIZATION))),
-        st.session_state.get("stops", empty_stop_dataset()),
-        st.session_state.get("import_log", []),
-    )
+        return True
+    try:
+        event_id = save_project_bundle(
+            project_id,
+            st.session_state.get("project", DEFAULT_PROJECT.copy()),
+            st.session_state.get("taxonomy", [item.copy() for item in DEFAULT_TAXONOMY]),
+            st.session_state.get("methodology", DEFAULT_METHODOLOGY.copy()),
+            st.session_state.get("visualization", json.loads(json.dumps(DEFAULT_VISUALIZATION))),
+            st.session_state.get("stops", empty_stop_dataset()),
+            st.session_state.get("import_log", []),
+            review_event=review_event,
+        )
+        if review_event is not None:
+            review_event["_saved_event_id"] = event_id
+        return True
+    except ProjectConflictError as error:
+        st.error(str(error))
+        return False
 
 
 def create_blank_project(name: str) -> str:
@@ -565,6 +579,8 @@ def study_config_payload() -> dict[str, Any]:
     taxonomy = normalize_coverage_taxonomy(st.session_state["taxonomy"])
     public_project = with_default_project_values(st.session_state["project"])
     public_project.pop("deployment", None)
+    public_project.pop("_store_updated_at", None)
+    public_project.pop("_store_loaded_at", None)
     methodology = with_default_methodology_values(st.session_state["methodology"])
     terminology = normalize_terminology(methodology.pop("terminology", None))
     source_taxonomy = normalize_source_taxonomy(methodology.pop("shade_source_taxonomy", None))
@@ -600,6 +616,8 @@ def _canonical_deployment_state(
 ) -> str:
     normalized_project = with_default_project_values(project)
     normalized_project.pop("deployment", None)
+    normalized_project.pop("_store_updated_at", None)
+    normalized_project.pop("_store_loaded_at", None)
     normalized_taxonomy = normalize_coverage_taxonomy(taxonomy)
     normalized_methodology = with_default_methodology_values(methodology)
     normalized_visualization = normalized_visualization_values(visualization, normalized_taxonomy)
@@ -703,14 +721,16 @@ def set_page(page: str) -> None:
     st.session_state["page"] = page
 
 
-def open_project(project_id: str) -> None:
+def open_project(project_id: str) -> bool:
     current_project_id = st.session_state.get("active_project_id")
     if current_project_id and current_project_id != project_id:
-        save_active_project_to_store()
+        if not save_active_project_to_store():
+            return False
         load_project_into_session(project_id)
     elif st.session_state.get("loaded_project_id") != project_id:
         load_project_into_session(project_id)
     set_page("Data")
+    return True
 
 
 def request_open_project(project_id: str, project_name: str) -> None:
@@ -739,6 +759,7 @@ def request_project_settings(project_id: str) -> None:
 
 
 def request_project_delete(project_id: str, project_name: str) -> None:
+    clear_pending_project_open()
     clear_pending_project_settings()
     st.session_state["pending_project_delete"] = {
         "id": project_id,
@@ -787,9 +808,9 @@ def render_open_project_confirmation() -> None:
             st.rerun()
     with open_column:
         if st.button("Open Project", type="primary", width="stretch"):
-            clear_pending_project_open()
-            open_project(project_id)
-            st.rerun()
+            if open_project(project_id):
+                clear_pending_project_open()
+                st.rerun()
 
 
 @st.dialog("Project settings", on_dismiss=clear_pending_project_settings)
@@ -855,26 +876,21 @@ def render_project_settings() -> None:
         if not name.strip():
             st.error("Project name is required.")
         else:
-            update_project_details(
-                project_id,
-                name=name,
-                agency=agency,
-                region=region,
-                description=description,
-                visibility=visibility,
-            )
+            try:
+                update_project_details(
+                    project_id,
+                    name=name,
+                    agency=agency,
+                    region=region,
+                    description=description,
+                    visibility=visibility,
+                    expected_revision=str(project.get("_store_updated_at") or ""),
+                )
+            except ProjectConflictError as error:
+                st.error(str(error))
+                return
             if st.session_state.get("active_project_id") == project_id:
-                session_project = st.session_state.get("project")
-                if isinstance(session_project, dict):
-                    session_project.update(
-                        {
-                            "name": name.strip(),
-                            "agency": agency,
-                            "region": region,
-                            "description": description,
-                            "visibility": visibility,
-                        }
-                    )
+                load_project_into_session(project_id)
             clear_pending_project_settings()
             st.session_state["project_settings_notice"] = f"Saved settings for {name.strip()}."
             st.rerun()
@@ -1333,8 +1349,6 @@ def render_home_page() -> None:
             render_project_delete_confirmation()
         elif st.session_state.get("pending_project_settings"):
             render_project_settings()
-        elif st.session_state.get("pending_project_open"):
-            render_open_project_confirmation()
 
 
 def render_header() -> str:
@@ -1632,5 +1646,7 @@ def main() -> None:
         render_deploy_page()
     else:
         render_data_page()
+    if st.session_state.get("pending_project_open"):
+        render_open_project_confirmation()
     save_active_project_to_store()
 

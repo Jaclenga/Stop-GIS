@@ -1,3 +1,4 @@
+import hashlib
 import re
 from typing import Any
 
@@ -16,10 +17,10 @@ from builder_app import (
     REVIEW_STATUS_COLORS,
     SHADE_COVERAGE_OPTIONS,
     SHADE_SOURCE_OPTIONS,
+    load_project_into_session,
     save_active_project_to_store,
 )
 from platform_store import (
-    add_review_event,
     add_shade_label,
     list_review_history,
     list_shade_labels,
@@ -392,22 +393,26 @@ def render_admin_review_decision(
     except (TypeError, ValueError):
         confidence_default = 0.85
     confidence_default = max(0.0, min(1.0, confidence_default))
+    decision_scope = hashlib.sha256(f"{project_id}:{selected_stop_id}".encode("utf-8")).hexdigest()[:16]
 
-    with st.form("admin_review_decision_form", clear_on_submit=False):
+    def decision_key(name: str) -> str:
+        return f"review_{decision_scope}_{name}"
+
+    with st.form(decision_key("admin_review_decision_form"), clear_on_submit=False):
         st.markdown("#### Admin Review Decision")
         render_label_code_helper(taxonomy, "Review label/code definitions")
         top_cols = st.columns([1, 1, 1])
         with top_cols[0]:
-            action = st.selectbox("Decision type", REVIEW_ACTION_OPTIONS, key="review_action")
+            action = st.selectbox("Decision type", REVIEW_ACTION_OPTIONS, key=decision_key("action"))
         default_status = REVIEW_ACTION_STATUS_DEFAULTS.get(action, "Needs Review")
         with top_cols[1]:
-            actor_id = st.text_input("Reviewer or admin ID", key="review_actor_id")
+            actor_id = st.text_input("Reviewer or admin ID", key=decision_key("actor_id"))
         with top_cols[2]:
             actor_role = st.selectbox(
                 "Reviewer role",
                 LABELER_ROLE_OPTIONS,
                 index=LABELER_ROLE_OPTIONS.index("Project Admin") if "Project Admin" in LABELER_ROLE_OPTIONS else 0,
-                key="review_actor_role",
+                key=decision_key("actor_role"),
             )
 
         decision_cols = st.columns([1, 1])
@@ -416,13 +421,13 @@ def render_admin_review_decision(
                 "Final review status",
                 list(REVIEW_STATUS_COLORS),
                 index=list(REVIEW_STATUS_COLORS).index(default_status),
-                key="review_final_status",
+                key=decision_key("final_status"),
             )
         with decision_cols[1]:
             _, final_confidence = render_confidence_level_buttons(
                 "Decision confidence",
                 confidence_default,
-                "review_final_confidence",
+                decision_key("final_confidence"),
             )
 
         lower_cols = st.columns([1, 1])
@@ -431,7 +436,7 @@ def render_admin_review_decision(
                 "Final shade coverage",
                 coverage_options,
                 index=coverage_index,
-                key="review_final_coverage",
+                key=decision_key("final_coverage"),
                 format_func=lambda option: coverage_labels.get(option, option),
             )
         with lower_cols[1]:
@@ -443,17 +448,19 @@ def render_admin_review_decision(
                     if st.checkbox(
                         source_labels.get(source, source),
                         value=source in current_sources and final_coverage != "No Shade",
-                        key=f"review_final_source_{source.lower()}",
+                        key=decision_key(f"final_source_{source.lower()}"),
                         disabled=final_coverage == "No Shade",
                     ):
                         final_sources.append(source)
-        notes = st.text_area("Decision notes", key="review_notes", height=110)
+        notes = st.text_area("Decision notes", key=decision_key("notes"), height=110)
         decision_submitted = st.form_submit_button("Apply review decision", type="primary")
 
     if decision_submitted:
         if not selected_stop_id.strip():
             st.error("Selected stop is missing a stop ID.")
         else:
+            if final_coverage == "No Shade":
+                final_sources = []
             final_sources_text = "; ".join(final_sources)
             final_category = shade_category_from_coverage_and_sources(final_coverage, final_sources)
             apply_review_decision_to_stop(
@@ -464,30 +471,30 @@ def render_admin_review_decision(
                 final_confidence,
                 final_status,
             )
-            save_active_project_to_store()
-            event_id = add_review_event(
-                project_id,
-                {
-                    "stop_id": selected_stop_id,
-                    "actor_id": actor_id,
-                    "actor_role": actor_role,
-                    "action": action,
-                    "from_status": previous["review_status"],
-                    "to_status": final_status,
-                    "from_label": previous["shade_category"],
-                    "to_label": final_category,
-                    "from_coverage": previous["shade_coverage"],
-                    "to_coverage": final_coverage,
-                    "from_sources": previous["shade_sources"],
-                    "to_sources": final_sources_text,
-                    "from_confidence": previous["confidence"],
-                    "to_confidence": final_confidence,
-                    "majority_label": selected_stop.get("majority_label", ""),
-                    "agreement_pct": selected_stop.get("agreement_pct", ""),
-                    "label_count": selected_stop.get("label_count", 0),
-                    "notes": notes,
-                },
-            )
+            review_event = {
+                "stop_id": selected_stop_id,
+                "actor_id": actor_id,
+                "actor_role": actor_role,
+                "action": action,
+                "from_status": previous["review_status"],
+                "to_status": final_status,
+                "from_label": previous["shade_category"],
+                "to_label": final_category,
+                "from_coverage": previous["shade_coverage"],
+                "to_coverage": final_coverage,
+                "from_sources": previous["shade_sources"],
+                "to_sources": final_sources_text,
+                "from_confidence": previous["confidence"],
+                "to_confidence": final_confidence,
+                "majority_label": selected_stop.get("majority_label", ""),
+                "agreement_pct": selected_stop.get("agreement_pct", ""),
+                "label_count": selected_stop.get("label_count", 0),
+                "notes": notes,
+            }
+            if not save_active_project_to_store(review_event=review_event):
+                load_project_into_session(project_id)
+                return
+            event_id = review_event["_saved_event_id"]
             st.success(f"Applied review decision and saved audit event {event_id}.")
             st.rerun()
 
@@ -1007,29 +1014,29 @@ def render_raw_label_collection(
             if apply_current:
                 previous = stop_review_snapshot(selected_stop)
                 apply_label_to_current_stop(selected_stop_id, shade_category, shade_coverage, shade_sources_text, confidence)
-                save_active_project_to_store()
-                add_review_event(
-                    project_id,
-                    {
-                        "stop_id": selected_stop_id,
-                        "actor_id": labeler_id,
-                        "actor_role": labeler_role,
-                        "action": "Raw label applied to map",
-                        "from_status": previous["review_status"],
-                        "to_status": "Needs Review",
-                        "from_label": previous["shade_category"],
-                        "to_label": shade_category,
-                        "from_coverage": previous["shade_coverage"],
-                        "to_coverage": shade_coverage,
-                        "from_sources": previous["shade_sources"],
-                        "to_sources": shade_sources_text,
-                        "from_confidence": previous["confidence"],
-                        "to_confidence": confidence,
-                        "source": source_label,
-                        "label_id": label_id,
-                        "notes": notes,
-                    },
-                )
+                review_event = {
+                    "stop_id": selected_stop_id,
+                    "actor_id": labeler_id,
+                    "actor_role": labeler_role,
+                    "action": "Raw label applied to map",
+                    "from_status": previous["review_status"],
+                    "to_status": "Needs Review",
+                    "from_label": previous["shade_category"],
+                    "to_label": shade_category,
+                    "from_coverage": previous["shade_coverage"],
+                    "to_coverage": shade_coverage,
+                    "from_sources": previous["shade_sources"],
+                    "to_sources": shade_sources_text,
+                    "from_confidence": previous["confidence"],
+                    "to_confidence": confidence,
+                    "source": source_label,
+                    "label_id": label_id,
+                    "notes": notes,
+                }
+                if not save_active_project_to_store(review_event=review_event):
+                    load_project_into_session(project_id)
+                    st.warning(f"Saved raw label {label_id}, but the stale map snapshot was not updated.")
+                    return
             st.success(f"Saved raw label {label_id}.")
             st.rerun()
 

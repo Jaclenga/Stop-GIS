@@ -21,6 +21,7 @@ DB_PASS = os.environ.get("PGPASSWORD", "postgres")
 
 HERE = Path(__file__).parent.parent
 STOPS_FILE = HERE / "stops.txt"
+MIGRATIONS_DIR = HERE / "sql" / "migrations"
 
 SCHEMA = "public"
 PROJECT_ID = os.environ.get("SHADE_GIS_PROJECT_ID", "seed-tampa-shade-study")
@@ -50,19 +51,24 @@ def load_stops_csv(path: Path):
 
 
 def main():
-    if not STOPS_FILE.exists():
-        print("stops.txt not found at", STOPS_FILE)
-        return
-
-    rows = load_stops_csv(STOPS_FILE)
-    if not rows:
-        print("No stops found in stops.txt")
-        return
+    rows = load_stops_csv(STOPS_FILE) if STOPS_FILE.exists() else []
 
     with connect() as conn:
         with conn.cursor() as cur:
             # ensure schema (tables) exist; schema.sql is executed by docker init, but double-check
-            cur.execute(open(HERE / "sql" / "schema.sql", "r").read())
+            cur.execute((HERE / "sql" / "schema.sql").read_text(encoding="utf-8"))
+            for migration_path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+                cur.execute(migration_path.read_text(encoding="utf-8"))
+
+            # Schema creation and migrations are required even when this optional
+            # sample file is absent or empty.
+            if not rows:
+                conn.commit()
+                if STOPS_FILE.exists():
+                    print("No stops found in stops.txt; database schema is up to date.")
+                else:
+                    print("stops.txt not found at", STOPS_FILE, "- database schema is up to date.")
+                return
 
             cur.execute(
                 """

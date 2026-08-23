@@ -146,6 +146,37 @@ def test_raw_labels_conflict_and_majority_are_queryable(db_path, project, taxono
     assert queue.loc[queue["stop_id"] == "1001", "label_count"].iloc[0] == 2
 
 
+def test_majority_uses_only_latest_label_from_each_rater():
+    labels = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "labeler_id": "a",
+                "shade_category": "No Shade",
+                "created_at": "2026-08-01T10:00:00Z",
+            },
+            {
+                "stop_id": "1001",
+                "labeler_id": "a",
+                "shade_category": "Limited Shade",
+                "created_at": "2026-08-01T11:00:00Z",
+            },
+            {
+                "stop_id": "1001",
+                "labeler_id": "b",
+                "shade_category": "Limited Shade",
+                "created_at": "2026-08-01T12:00:00Z",
+            },
+        ]
+    )
+
+    majority = majority_label_table(labels)
+
+    assert majority.loc[0, "label_count"] == 2
+    assert majority.loc[0, "agreement_pct"] == 100.0
+    assert not bool(majority.loc[0, "disagreement_flag"])
+
+
 def test_review_queue_excludes_stops_without_submitted_labels(minimal_stops):
     queue = review_queue_table(minimal_stops, pd.DataFrame())
 

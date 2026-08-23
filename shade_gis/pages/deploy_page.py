@@ -93,9 +93,26 @@ def cached_repository_metadata(repository: str, repository_url: str, branch: str
     )
 
 
+def website_identity_markers(bundle_data: bytes) -> tuple[str, str, str]:
+    manifest = deployment_bundle_manifest(bundle_data)
+    dataset = manifest.get("dataset") if isinstance(manifest.get("dataset"), dict) else {}
+    return (
+        str(manifest.get("study_id") or ""),
+        str(manifest.get("repository") or ""),
+        str(dataset.get("sha256") or ""),
+    )
+
+
 @st.cache_data(ttl=45, show_spinner=False)
-def cached_website_check(url: str) -> tuple[bool, str]:
-    return verify_website(url, attempts=1, interval=0)
+def cached_website_check(
+    url: str, study_id: str, repository: str, dataset_sha256: str
+) -> tuple[bool, str]:
+    return verify_website(
+        url,
+        attempts=1,
+        interval=0,
+        expected_markers=(study_id, repository, dataset_sha256),
+    )
 
 
 def render_deploy_styles() -> None:
@@ -290,6 +307,7 @@ def _initialize_target_state(detected: DeploymentTarget, project: dict) -> None:
     st.session_state["deploy_public_url"] = str(
         saved.get("public_url") or detected.public_url or ""
     )
+    st.session_state["deploy_allow_public_target"] = False
     st.session_state[DEPLOYMENT_SESSION_PROJECT_KEY] = project_id
 
 
@@ -332,8 +350,10 @@ def _current_target(detected: DeploymentTarget, project: dict) -> DeploymentTarg
             st.session_state.get("deploy_commit_message")
         ),
         detected=detected.detected and repository == detected.repository,
+        allow_public_target=bool(st.session_state.get("deploy_allow_public_target", False)),
     )
-    if not target.public_url and target.repository:
+    metadata = {}
+    if target.repository:
         metadata = cached_repository_metadata(
             target.repository,
             target.repository_url,
@@ -348,6 +368,13 @@ def _current_target(detected: DeploymentTarget, project: dict) -> DeploymentTarg
         if default_branch and not st.session_state.get("deploy_branch"):
             st.session_state["deploy_branch"] = default_branch
             target = replace(target, branch=default_branch)
+        actual_visibility = str(metadata.get("visibility") or "").strip().lower()
+        if target.mode == "existing" and actual_visibility in {"private", "public"}:
+            target = replace(
+                target,
+                visibility=actual_visibility,
+                visibility_verified=True,
+            )
     return target
 
 
@@ -418,7 +445,9 @@ def _render_publish_error(result: PublishResult) -> None:
         st.code("\n\n".join(result.logs), language="text")
 
 
-def _render_optional_website_setup(target: DeploymentTarget, result: PublishResult) -> None:
+def _render_optional_website_setup(
+    target: DeploymentTarget, result: PublishResult, bundle_data: bytes
+) -> None:
     st.markdown(
         """
         <div class="deploy-almost">
@@ -448,7 +477,10 @@ def _render_optional_website_setup(target: DeploymentTarget, result: PublishResu
     if verify_clicked:
         normalized_url = normalize_public_url(website_url)
         with st.spinner("Checking the website…"):
-            verified, message = verify_website(normalized_url)
+            verified, message = verify_website(
+                normalized_url,
+                expected_markers=website_identity_markers(bundle_data),
+            )
         if verified:
             st.session_state["deploy_public_url"] = normalized_url
             verified_target = replace(target, public_url=normalized_url)
@@ -486,6 +518,18 @@ def _render_settings(
             placeholder="github-user",
             help="Required. Enter the GitHub account or organization that owns the repository.",
         )
+        confirmation_needed = (
+            target.mode == "create" and target.visibility == "public"
+        ) or (
+            target.mode == "existing"
+            and (target.visibility == "public" or not target.visibility_verified)
+        )
+        if confirmation_needed:
+            st.checkbox(
+                "I understand this may publish study data and raw label history to a public repository",
+                key="deploy_allow_public_target",
+                help="Required each session for public repositories or when existing-repository visibility cannot be verified.",
+            )
         st.text_input(
             "Destination repository",
             key="deploy_destination_repository",
@@ -639,7 +683,10 @@ def render_deploy_page() -> None:
     # current blocker until the dashboard passes again.
     result = _stored_result(target) if readiness.ready else None
     if result is None and readiness.ready and target.public_url:
-        verified, verification_message = cached_website_check(target.public_url)
+        verified, verification_message = cached_website_check(
+            target.public_url,
+            *website_identity_markers(bundle_data),
+        )
         if verified:
             result = PublishResult(
                 True,
@@ -726,7 +773,7 @@ def render_deploy_page() -> None:
 
     if result and result.needs_host_setup:
         render_stages("", set(STAGES[:3]))
-        _render_optional_website_setup(target, result)
+        _render_optional_website_setup(target, result, bundle_data)
         _render_technical_details(target, result, bundle_data)
         _render_settings(project, target, bundle_data, bundle_name)
         return
@@ -773,7 +820,7 @@ def render_deploy_page() -> None:
 
     result = _stored_result(target)
     if result and result.needs_host_setup:
-        _render_optional_website_setup(target, result)
+        _render_optional_website_setup(target, result, bundle_data)
 
     if result:
         _render_technical_details(target, result, bundle_data)

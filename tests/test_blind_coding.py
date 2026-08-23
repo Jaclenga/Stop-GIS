@@ -175,6 +175,8 @@ def test_agreement_adjudication_and_exports_preserve_raw_ratings(
     assert queue.loc[0, "shade_source"] == "1 shelter, 2 tree"
     assert "rater_id" not in queue
     assert "coder_id" not in queue
+    with pytest.raises(BlindCodingError, match="1 required decision remains"):
+        advance_blind_phase(project_id, db_path)
 
     blind_image_id = queue.loc[0, "blind_image_id"]
     decision = standard_rating(location_recognized="no", confidence=5)

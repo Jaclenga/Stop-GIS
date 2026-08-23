@@ -29,6 +29,8 @@ from shade_gis.deploy.artifacts import (
 )
 from shade_gis.deployment import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
+    WEBSITE_IDENTITY_FILE,
+    github_repository_slug,
     normalize_deploy_commit_message,
 )
 
@@ -43,7 +45,7 @@ RUNTIME_REQUIREMENTS = (
     "psycopg_pool>=3.2,<4\n"
 )
 STREAMLIT_CONFIG = (
-    "[server]\nheadless = true\nenableXsrfProtection = true\n\n"
+    "[server]\nheadless = true\nenableXsrfProtection = true\nenableStaticServing = true\n\n"
     "[browser]\ngatherUsageStats = false\n"
 )
 DEPLOY_GITIGNORE = (
@@ -87,6 +89,10 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         raise ValueError("Import project data before creating a deployment package.")
 
     commit_message = normalize_deploy_commit_message(spec.commit_message)
+    repository = (
+        github_repository_slug(spec.repository)
+        or spec.repository.strip().removesuffix(".git")
+    )
     stops = spec.stops.copy()
     stops["priority_score"] = calculate_priority_scores(stops, spec.priority_weights)
 
@@ -105,10 +111,20 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         "scripts/migrate_database.py": migrate_database_script().encode("utf-8"),
         "DEPLOYMENT.md": deployment_guide().encode("utf-8"),
         ".gitignore": DEPLOY_GITIGNORE.encode("utf-8"),
-        "deploy_to_github.ps1": deploy_script(spec.repository, commit_message).encode("utf-8"),
+        "deploy_to_github.ps1": deploy_script(repository, commit_message).encode("utf-8"),
     }
     if not spec.raw_labels.empty:
         files["shade_study_raw_labels.csv"] = spec.raw_labels.to_csv(index=False).encode("utf-8")
+    files[WEBSITE_IDENTITY_FILE] = json.dumps(
+        {
+            "schema_version": 1,
+            "study_id": spec.study_id,
+            "repository": repository,
+            "dataset_sha256": hashlib.sha256(files["shade_study_stops.csv"]).hexdigest(),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
 
     file_hashes = {
         name: hashlib.sha256(content).hexdigest()
@@ -118,7 +134,7 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         "schema_version": 1,
         "study_id": spec.study_id,
         "project_name": str(spec.project.get("name", "Shade Study")),
-        "repository": spec.repository.strip().removesuffix(".git"),
+        "repository": repository,
         "deploy_mode": spec.deploy_mode,
         "commit_message": commit_message,
         "entrypoint": streamlit_entrypoint_path(spec.deploy_mode),
@@ -130,24 +146,32 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         },
         "files": file_hashes,
     }
-    bundle_id = hashlib.sha256(
-        json.dumps(manifest_core, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-    manifest = {**manifest_core, "bundle_id": bundle_id}
-    files["deployment_manifest.json"] = json.dumps(
-        manifest,
-        indent=2,
-        sort_keys=True,
-    ).encode("utf-8")
-
-    repository_name = spec.repository.rstrip("/").split("/")[-1].replace(".git", "")
+    identity_json = json.dumps(manifest_core, sort_keys=True, separators=(",", ":"))
+    bundle_id = hashlib.sha256(identity_json.encode("utf-8")).hexdigest()
+    repository_name = repository.rstrip("/").split("/")[-1].replace(".git", "")
     bundle_name = f"{slugify_repo_name(repository_name)}-{bundle_id[:12]}.zip"
     files["README.md"] = deploy_readme(
-        spec.repository,
+        repository,
         spec.project,
         spec.deploy_mode,
         bundle_name=bundle_name,
         commit_message=commit_message,
+    ).encode("utf-8")
+    # README depends on bundle_id, so it is excluded from the identity hash but
+    # included in the ownership hashes used for safe unpublishing.
+    manifest = {
+        **manifest_core,
+        "files": {
+            **file_hashes,
+            "README.md": hashlib.sha256(files["README.md"]).hexdigest(),
+        },
+        "identity_json": identity_json,
+        "bundle_id": bundle_id,
+    }
+    files["deployment_manifest.json"] = json.dumps(
+        manifest,
+        indent=2,
+        sort_keys=True,
     ).encode("utf-8")
 
     buffer = io.BytesIO()

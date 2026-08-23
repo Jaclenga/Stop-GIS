@@ -95,7 +95,7 @@ def clean_label_values(labels: pd.DataFrame, label_column: str = "shade_category
 
 
 def majority_label_table(labels: pd.DataFrame, label_column: str = "shade_category") -> pd.DataFrame:
-    clean = clean_label_values(labels, label_column)
+    clean = latest_labels_by_rater(labels, label_column)
     if clean.empty:
         return pd.DataFrame(
             columns=[
@@ -128,13 +128,23 @@ def majority_label_table(labels: pd.DataFrame, label_column: str = "shade_catego
     return pd.DataFrame(rows)
 
 
+def optional_identifier(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
 def label_rater_key(row: pd.Series) -> str:
-    labeler_id = str(row.get("labeler_id", "") or "").strip()
+    labeler_id = optional_identifier(row.get("labeler_id", ""))
     if labeler_id:
         return labeler_id
-    role = str(row.get("labeler_role", "") or "").strip()
-    source = str(row.get("source", "") or "").strip()
-    return f"{role or 'unknown'}:{source or 'manual'}"
+    record_id = optional_identifier(row.get("id", ""))
+    return f"anonymous-record:{record_id}" if record_id else f"anonymous-row:{row.name}"
 
 
 def latest_labels_by_rater(labels: pd.DataFrame, label_column: str = "shade_category") -> pd.DataFrame:
@@ -144,7 +154,13 @@ def latest_labels_by_rater(labels: pd.DataFrame, label_column: str = "shade_cate
     clean = clean.copy()
     clean["rater"] = clean.apply(label_rater_key, axis=1)
     if "created_at" in clean.columns:
-        clean = clean.sort_values("created_at")
+        clean["_created_at_sort"] = pd.to_datetime(
+            clean["created_at"], errors="coerce", utc=True
+        )
+        clean["_label_order"] = range(len(clean))
+        clean = clean.sort_values(
+            ["_created_at_sort", "_label_order"], na_position="first"
+        ).drop(columns=["_created_at_sort", "_label_order"])
     return clean.drop_duplicates(subset=["stop_id", "rater"], keep="last")
 
 
@@ -184,7 +200,7 @@ def average_pairwise_cohen_kappa(labels: pd.DataFrame, label_column: str = "shad
 
 
 def category_count_matrix(labels: pd.DataFrame, label_column: str = "shade_category") -> pd.DataFrame:
-    clean = clean_label_values(labels, label_column)
+    clean = latest_labels_by_rater(labels, label_column)
     if clean.empty:
         return pd.DataFrame()
     return pd.crosstab(clean["stop_id"], clean[label_column])

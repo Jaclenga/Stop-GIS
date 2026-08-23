@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
 import tempfile
 import uuid
@@ -115,21 +114,41 @@ def project_ids_at(path: Path) -> set[str]:
         return set()
 
 
+def sqlite_database_has_user_rows(path: Path) -> bool:
+    """Return whether a fallback contains data that must not be overwritten."""
+    if not path.exists():
+        return False
+    ignored_tables = {"app_metadata", "storage_healthcheck", "sqlite_sequence"}
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+            table_names = [
+                str(row[0])
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                )
+                if str(row[0]) not in ignored_tables
+            ]
+            for table_name in table_names:
+                quoted_name = '"' + table_name.replace('"', '""') + '"'
+                if conn.execute(f"SELECT 1 FROM {quoted_name} LIMIT 1").fetchone():
+                    return True
+    except sqlite3.Error:
+        return False
+    return False
+
+
 def fallback_needs_source_copy(source: Path, target: Path) -> bool:
     source_ids = project_ids_at(source)
     if not source_ids:
         return False
-    if not target.exists():
-        return True
-    target_ids = project_ids_at(target)
-    return not source_ids.issubset(target_ids)
+    # Once users have written to a fallback it is the authoritative working
+    # copy. A schema-only database (including initialization metadata and
+    # health-check rows) is safe to seed from the readable source.
+    return not sqlite_database_has_user_rows(target)
 
 
 def copy_readonly_source_to_fallback(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() and fallback_needs_source_copy(source, target):
-        backup = target.with_name(f"{target.stem}.backup-{utc_timestamp().replace(':', '').replace('-', '').replace('T', '-')}{target.suffix}")
-        shutil.copy2(target, backup)
     if fallback_needs_source_copy(source, target):
         with sqlite3.connect(f"file:{source}?mode=ro", uri=True) as source_conn:
             with sqlite3.connect(target) as target_conn:
@@ -268,7 +287,11 @@ NUMERIC_STOP_FIELDS = {
 
 
 def utc_timestamp() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+    return datetime.now().astimezone().isoformat(timespec="microseconds")
+
+
+class ProjectConflictError(RuntimeError):
+    """Raised when a stale project snapshot attempts to replace newer data."""
 
 
 def database_path() -> Path:
@@ -285,13 +308,15 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 
 def migrate_shade_source_labels(conn: sqlite3.Connection) -> None:
-    """Replace retired source labels in persisted project data and audit metadata."""
-    label_columns = [
+    """Replace exact retired enum values without rewriting arbitrary prose."""
+    text_columns = [
         ("stops", "shading"),
         ("stops", "shade_sources"),
-        ("stops", "extra_json"),
         ("shade_labels", "shade_category"),
         ("shade_labels", "shade_sources"),
+    ]
+    json_columns = [
+        ("stops", "extra_json"),
         ("shade_labels", "metadata_json"),
         ("review_history", "metadata_json"),
         ("images", "metadata_json"),
@@ -300,16 +325,59 @@ def migrate_shade_source_labels(conn: sqlite3.Connection) -> None:
         ("project_settings", "methodology_json"),
         ("project_settings", "visualization_json"),
     ]
-    for table, column in label_columns:
-        replacement = (
-            f'''REPLACE(REPLACE("{column}", 'Constructed', 'Purpose-built'), '''
-            "'Manmade', 'Incidental')"
-        )
-        conn.execute(
-            f'''UPDATE "{table}"
-                SET "{column}" = {replacement}
+
+    replacements = {
+        "constructed": "Purpose-built",
+        "constructed shade": "Purpose-built Shade",
+        "manmade": "Incidental",
+        "manmade shade": "Incidental Shade",
+    }
+
+    def migrate_text(value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        parts = value.split(";")
+        migrated = [replacements.get(part.strip().lower(), part.strip()) for part in parts]
+        return "; ".join(migrated) if len(parts) > 1 else migrated[0]
+
+    def migrate_json(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: migrate_json(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [migrate_json(item) for item in value]
+        if isinstance(value, str):
+            return replacements.get(value.strip().lower(), value)
+        return value
+
+    for table, column in text_columns:
+        rows = conn.execute(
+            f'''SELECT rowid, "{column}" FROM "{table}"
                 WHERE "{column}" LIKE '%Constructed%' OR "{column}" LIKE '%Manmade%' '''
-        )
+        ).fetchall()
+        for rowid, value in rows:
+            migrated = migrate_text(value)
+            if migrated != value:
+                conn.execute(
+                    f'''UPDATE "{table}" SET "{column}" = ? WHERE rowid = ?''',
+                    (migrated, rowid),
+                )
+
+    for table, column in json_columns:
+        rows = conn.execute(
+            f'''SELECT rowid, "{column}" FROM "{table}"
+                WHERE "{column}" LIKE '%Constructed%' OR "{column}" LIKE '%Manmade%' '''
+        ).fetchall()
+        for rowid, value in rows:
+            try:
+                decoded = json.loads(value or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            migrated = migrate_json(decoded)
+            if migrated != decoded:
+                conn.execute(
+                    f'''UPDATE "{table}" SET "{column}" = ? WHERE rowid = ?''',
+                    (json.dumps(migrated, ensure_ascii=True), rowid),
+                )
 
 
 def init_database(path: Path | None = None) -> Path:
@@ -411,8 +479,9 @@ def update_project_details(
     region: str = "",
     description: str = "",
     visibility: str = "Private",
+    expected_revision: str | None = None,
     path: Path | None = None,
-) -> None:
+) -> str:
     clean_name = str(clean_scalar(name) or "").strip()
     clean_visibility = str(clean_scalar(visibility) or "Private").strip().title()
     if not clean_name:
@@ -424,27 +493,46 @@ def update_project_details(
     for attempt in range(2):
         try:
             init_database(db_path)
+            now = utc_timestamp()
             with connect(db_path) as conn:
-                cursor = conn.execute(
-                    """
-                    UPDATE projects
-                    SET name = ?, agency = ?, region = ?, description = ?, visibility = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        clean_name,
-                        clean_scalar(agency),
-                        clean_scalar(region),
-                        clean_scalar(description),
-                        clean_visibility,
-                        utc_timestamp(),
-                        project_id,
-                    ),
+                parameters = (
+                    clean_name,
+                    clean_scalar(agency),
+                    clean_scalar(region),
+                    clean_scalar(description),
+                    clean_visibility,
+                    now,
+                    project_id,
                 )
+                if expected_revision is None:
+                    cursor = conn.execute(
+                        """
+                        UPDATE projects
+                        SET name = ?, agency = ?, region = ?, description = ?, visibility = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        parameters,
+                    )
+                else:
+                    cursor = conn.execute(
+                        """
+                        UPDATE projects
+                        SET name = ?, agency = ?, region = ?, description = ?, visibility = ?, updated_at = ?
+                        WHERE id = ? AND updated_at = ?
+                        """,
+                        (*parameters, str(expected_revision)),
+                    )
                 if cursor.rowcount == 0:
+                    exists = conn.execute(
+                        "SELECT 1 FROM projects WHERE id = ?", (project_id,)
+                    ).fetchone()
+                    if exists:
+                        raise ProjectConflictError(
+                            "This project was updated in another session. Reload it before saving settings."
+                        )
                     raise KeyError(f"Project {project_id} was not found")
                 conn.commit()
-            return
+            return now
         except sqlite3.OperationalError as error:
             if path is None and attempt == 0 and is_readonly_database_error(error):
                 mark_database_path_unusable(db_path, error)
@@ -554,7 +642,7 @@ def add_image(
     image_id = str(image.get("id", "") or uuid.uuid4())
     now = utc_timestamp()
     metadata = {
-        key: clean_scalar(value)
+        str(key): clean_json_value(value)
         for key, value in image.items()
         if key
         not in {
@@ -622,7 +710,7 @@ def _add_shade_label_once(
     label_id = str(uuid.uuid4())
     now = utc_timestamp()
     metadata = {
-        key: clean_scalar(value)
+        str(key): clean_json_value(value)
         for key, value in label.items()
         if key
         not in {
@@ -730,19 +818,7 @@ def _add_review_event_once(
     init_database(path)
     event_id = str(uuid.uuid4())
     now = utc_timestamp()
-    metadata = {
-        key: clean_scalar(value)
-        for key, value in event.items()
-        if key
-        not in {
-            "stop_id",
-            "actor_id",
-            "action",
-            "from_status",
-            "to_status",
-            "notes",
-        }
-    }
+    values = review_event_values(project_id, event, event_id, now)
     with connect(path) as conn:
         conn.execute(
             """
@@ -752,21 +828,35 @@ def _add_review_event_once(
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                event_id,
-                project_id,
-                clean_scalar(event.get("stop_id", "")),
-                clean_scalar(event.get("actor_id", "")),
-                clean_scalar(event.get("action", "")),
-                clean_scalar(event.get("from_status", "")),
-                clean_scalar(event.get("to_status", "")),
-                clean_scalar(event.get("notes", "")),
-                json.dumps(metadata, ensure_ascii=True),
-                now,
-            ),
+            values,
         )
         conn.commit()
     return event_id
+
+
+def review_event_values(
+    project_id: str,
+    event: dict[str, Any],
+    event_id: str,
+    now: str,
+) -> tuple[Any, ...]:
+    metadata = {
+        str(key): clean_json_value(value)
+        for key, value in event.items()
+        if key not in {"stop_id", "actor_id", "action", "from_status", "to_status", "notes"}
+    }
+    return (
+        event_id,
+        project_id,
+        clean_scalar(event.get("stop_id", "")),
+        clean_scalar(event.get("actor_id", "")),
+        clean_scalar(event.get("action", "")),
+        clean_scalar(event.get("from_status", "")),
+        clean_scalar(event.get("to_status", "")),
+        clean_scalar(event.get("notes", "")),
+        json.dumps(metadata, ensure_ascii=True),
+        now,
+    )
 
 
 def create_project(
@@ -785,6 +875,7 @@ def create_project(
 
 def load_project_bundle(project_id: str, path: Path | None = None) -> dict[str, Any]:
     init_database(path)
+    loaded_at = utc_timestamp()
     with connect(path) as conn:
         project_row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if project_row is None:
@@ -827,6 +918,8 @@ def load_project_bundle(project_id: str, path: Path | None = None) -> dict[str, 
         ).fetchall()
 
     project = {field: project_row[field] for field in PROJECT_FIELDS}
+    project["_store_updated_at"] = str(project_row["updated_at"])
+    project["_store_loaded_at"] = loaded_at
     project["deployment"] = json.loads(settings_row["deployment_json"] or "{}") if settings_row else {}
     methodology = json.loads(settings_row["methodology_json"]) if settings_row else {}
     visualization = json.loads(settings_row["visualization_json"]) if settings_row else {}
@@ -862,18 +955,120 @@ def save_project_bundle(
     stops: pd.DataFrame,
     import_log: list[dict[str, Any]],
     path: Path | None = None,
-) -> None:
+    review_event: dict[str, Any] | None = None,
+) -> str | None:
     db_path = Path(path) if path is not None else database_path()
     for attempt in range(2):
         try:
-            _save_project_bundle_once(project_id, project, taxonomy, methodology, visualization, stops, import_log, db_path)
-            return
+            return _save_project_bundle_once(
+                project_id, project, taxonomy, methodology, visualization, stops,
+                import_log, db_path, review_event,
+            )
         except sqlite3.OperationalError as error:
             if path is None and attempt == 0 and is_readonly_database_error(error):
                 mark_database_path_unusable(db_path, error)
                 db_path = database_path()
                 continue
             raise
+
+
+def stop_has_newer_evidence(
+    conn: sqlite3.Connection,
+    project_id: str,
+    stop_id: str,
+    expected_revision: str,
+) -> bool:
+    """Protect stop deletion from evidence written after a bundle was loaded."""
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM (
+            SELECT created_at AS evidence_at
+            FROM images
+            WHERE project_id = ? AND stop_id = ?
+            UNION ALL
+            SELECT created_at
+            FROM shade_labels
+            WHERE project_id = ? AND stop_id = ?
+            UNION ALL
+            SELECT created_at
+            FROM review_history
+            WHERE project_id = ? AND stop_id = ?
+            UNION ALL
+            SELECT blind_stop.created_at
+            FROM blind_stops AS blind_stop
+            WHERE blind_stop.project_id = ? AND blind_stop.stop_id = ?
+            UNION ALL
+            SELECT assignment.assigned_at
+            FROM blind_stop_assignments AS assignment
+            JOIN blind_stops AS blind_stop ON blind_stop.id = assignment.blind_stop_id
+            WHERE blind_stop.project_id = ? AND blind_stop.stop_id = ?
+            UNION ALL
+            SELECT rating.submitted_at
+            FROM blind_stop_ratings AS rating
+            JOIN blind_stop_assignments AS assignment ON assignment.id = rating.assignment_id
+            JOIN blind_stops AS blind_stop ON blind_stop.id = assignment.blind_stop_id
+            WHERE blind_stop.project_id = ? AND blind_stop.stop_id = ?
+            UNION ALL
+            SELECT adjudication.created_at
+            FROM blind_stop_adjudications AS adjudication
+            JOIN blind_stops AS blind_stop ON blind_stop.id = adjudication.blind_stop_id
+            WHERE blind_stop.project_id = ? AND blind_stop.stop_id = ?
+            UNION ALL
+            SELECT blind_image.created_at
+            FROM blind_images AS blind_image
+            JOIN images AS image ON image.id = blind_image.image_id
+            WHERE image.project_id = ? AND image.stop_id = ?
+            UNION ALL
+            SELECT assignment.assigned_at
+            FROM blind_assignments AS assignment
+            JOIN blind_images AS blind_image ON blind_image.id = assignment.blind_image_id
+            JOIN images AS image ON image.id = blind_image.image_id
+            WHERE image.project_id = ? AND image.stop_id = ?
+            UNION ALL
+            SELECT rating.submitted_at
+            FROM blind_ratings AS rating
+            JOIN blind_assignments AS assignment ON assignment.id = rating.assignment_id
+            JOIN blind_images AS blind_image ON blind_image.id = assignment.blind_image_id
+            JOIN images AS image ON image.id = blind_image.image_id
+            WHERE image.project_id = ? AND image.stop_id = ?
+            UNION ALL
+            SELECT adjudication.created_at
+            FROM blind_adjudications AS adjudication
+            JOIN blind_images AS blind_image ON blind_image.id = adjudication.blind_image_id
+            JOIN images AS image ON image.id = blind_image.image_id
+            WHERE image.project_id = ? AND image.stop_id = ?
+        ) AS evidence
+        WHERE COALESCE(julianday(evidence_at), 1.0e20) > julianday(?)
+        LIMIT 1
+        """,
+        (
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            project_id,
+            stop_id,
+            expected_revision,
+        ),
+    ).fetchone()
+    return row is not None
 
 
 def _save_project_bundle_once(
@@ -885,7 +1080,8 @@ def _save_project_bundle_once(
     stops: pd.DataFrame,
     import_log: list[dict[str, Any]],
     path: Path,
-) -> None:
+    review_event: dict[str, Any] | None = None,
+) -> str | None:
     init_database(path)
     now = utc_timestamp()
     project_values = {field: clean_scalar(project.get(field, "")) for field in PROJECT_FIELDS}
@@ -896,45 +1092,57 @@ def _save_project_bundle_once(
         project_values["visibility"] = "Private"
 
     with connect(path) as conn:
-        conn.execute(
-            """
-            INSERT INTO projects (
-                id, name, agency, region, description, owners, visibility,
-                dataset_version, methodology_version, source_name, source_license,
-                source_url, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name,
-                agency = excluded.agency,
-                region = excluded.region,
-                description = excluded.description,
-                owners = excluded.owners,
-                visibility = excluded.visibility,
-                dataset_version = excluded.dataset_version,
-                methodology_version = excluded.methodology_version,
-                source_name = excluded.source_name,
-                source_license = excluded.source_license,
-                source_url = excluded.source_url,
-                updated_at = excluded.updated_at
-            """,
-            (
-                project_id,
-                project_values["name"],
-                project_values["agency"],
-                project_values["region"],
-                project_values["description"],
-                project_values["owners"],
-                project_values["visibility"],
-                project_values["dataset_version"],
-                project_values["methodology_version"],
-                project_values["source_name"],
-                project_values["source_license"],
-                project_values["source_url"],
-                now,
-                now,
-            ),
+        # Reserve the writer before reading the revision so child evidence cannot
+        # slip between the optimistic-lock check and stop deletion.
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            "SELECT updated_at FROM projects WHERE id = ?", (project_id,)
+        ).fetchone()
+        project_parameters = (
+            project_values["name"],
+            project_values["agency"],
+            project_values["region"],
+            project_values["description"],
+            project_values["owners"],
+            project_values["visibility"],
+            project_values["dataset_version"],
+            project_values["methodology_version"],
+            project_values["source_name"],
+            project_values["source_license"],
+            project_values["source_url"],
         )
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO projects (
+                    id, name, agency, region, description, owners, visibility,
+                    dataset_version, methodology_version, source_name, source_license,
+                    source_url, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (project_id, *project_parameters, now, now),
+            )
+        else:
+            expected_revision = str(project.get("_store_updated_at") or "").strip()
+            if not expected_revision:
+                raise ProjectConflictError(
+                    "This project snapshot has no storage revision. Reload it before saving."
+                )
+            cursor = conn.execute(
+                """
+                UPDATE projects SET
+                    name = ?, agency = ?, region = ?, description = ?, owners = ?,
+                    visibility = ?, dataset_version = ?, methodology_version = ?,
+                    source_name = ?, source_license = ?, source_url = ?, updated_at = ?
+                WHERE id = ? AND updated_at = ?
+                """,
+                (*project_parameters, now, project_id, expected_revision),
+            )
+            if cursor.rowcount != 1:
+                raise ProjectConflictError(
+                    "This project was updated in another session. Reload it before saving."
+                )
         conn.execute(
             """
             INSERT INTO project_settings (
@@ -974,7 +1182,7 @@ def _save_project_bundle_once(
             ],
         )
 
-        conn.execute("DELETE FROM stops WHERE project_id = ?", (project_id,))
+        stop_records = [stop_record(project_id, row, now) for row in dataframe_records(stops)]
         conn.executemany(
             """
             INSERT INTO stops (
@@ -983,9 +1191,65 @@ def _save_project_bundle_once(
                 confidence, ridership, priority_score, extra_json, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project_id, stop_id) DO UPDATE SET
+                stop_name = excluded.stop_name,
+                stop_lat = excluded.stop_lat,
+                stop_lon = excluded.stop_lon,
+                agency = excluded.agency,
+                routes = excluded.routes,
+                municipality = excluded.municipality,
+                shading = excluded.shading,
+                shade_coverage = excluded.shade_coverage,
+                shade_sources = excluded.shade_sources,
+                review_status = excluded.review_status,
+                confidence = excluded.confidence,
+                ridership = excluded.ridership,
+                priority_score = excluded.priority_score,
+                extra_json = excluded.extra_json,
+                updated_at = excluded.updated_at
             """,
-            [stop_record(project_id, row, now) for row in dataframe_records(stops)],
+            stop_records,
         )
+        retained_stop_ids = {str(record[1]) for record in stop_records}
+        existing_stop_ids = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT stop_id FROM stops WHERE project_id = ?", (project_id,)
+            ).fetchall()
+        }
+        removed_stop_ids = sorted(existing_stop_ids - retained_stop_ids)
+        evidence_cutoff = str(project.get("_store_loaded_at") or "").strip()
+        for removed_stop_id in removed_stop_ids:
+            if not evidence_cutoff:
+                raise ProjectConflictError(
+                    "This project snapshot has no load revision. Reload it before deleting stops."
+                )
+            if stop_has_newer_evidence(
+                conn,
+                project_id,
+                removed_stop_id,
+                evidence_cutoff,
+            ):
+                raise ProjectConflictError(
+                    f"Stop {removed_stop_id} received new evidence in another session. Reload before deleting it."
+                )
+        conn.executemany(
+            "DELETE FROM stops WHERE project_id = ? AND stop_id = ?",
+            [(project_id, stop_id) for stop_id in removed_stop_ids],
+        )
+
+        review_event_id: str | None = None
+        if review_event is not None:
+            review_event_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO review_history (
+                    id, project_id, stop_id, actor_id, action, from_status,
+                    to_status, notes, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                review_event_values(project_id, review_event, review_event_id, now),
+            )
 
         conn.execute("DELETE FROM import_logs WHERE project_id = ?", (project_id,))
         conn.executemany(
@@ -996,6 +1260,9 @@ def _save_project_bundle_once(
             [import_log_record(project_id, entry) for entry in import_log],
         )
         conn.commit()
+    project["_store_updated_at"] = now
+    project.setdefault("_store_loaded_at", now)
+    return review_event_id
 
 
 def stops_dataframe(rows: list[sqlite3.Row]) -> pd.DataFrame:
@@ -1022,11 +1289,23 @@ def dataframe_records(df: pd.DataFrame) -> list[dict[str, Any]]:
     if df is None or df.empty:
         return []
     records = df.where(pd.notna(df), None).to_dict("records")
-    return [{str(key): clean_scalar(value) for key, value in record.items()} for record in records]
+    return [
+        {
+            str(key): clean_json_value(value)
+            if isinstance(value, (dict, list, tuple, set))
+            else clean_scalar(value)
+            for key, value in record.items()
+        }
+        for record in records
+    ]
 
 
 def stop_record(project_id: str, row: dict[str, Any], now: str) -> tuple[Any, ...]:
-    extra = {key: value for key, value in row.items() if key not in STOP_FIELDS}
+    extra = {
+        str(key): clean_json_value(value)
+        for key, value in row.items()
+        if key not in STOP_FIELDS
+    }
     values = [row.get(field) for field in STOP_FIELDS]
     return (
         project_id,
@@ -1052,7 +1331,7 @@ def stop_record(project_id: str, row: dict[str, Any], now: str) -> tuple[Any, ..
 
 def import_log_record(project_id: str, entry: dict[str, Any]) -> tuple[Any, ...]:
     metadata = {
-        key: clean_scalar(value)
+        str(key): clean_json_value(value)
         for key, value in entry.items()
         if key not in {"source", "format", "rows", "imported_at"}
     }
@@ -1377,6 +1656,235 @@ CREATE TABLE IF NOT EXISTS import_logs (
     imported_at TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}'
 );
+
+-- SQLite cannot add composite foreign keys to installed tables without a
+-- destructive rebuild. These triggers enforce the project boundary for both
+-- fresh and existing databases, even for connections that omit PRAGMA
+-- foreign_keys.
+CREATE TRIGGER IF NOT EXISTS tenant_images_insert
+BEFORE INSERT ON images
+WHEN NEW.stop_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM stops WHERE project_id = NEW.project_id AND stop_id = NEW.stop_id
+)
+BEGIN SELECT RAISE(ABORT, 'image stop must belong to the same project'); END;
+
+DROP TRIGGER IF EXISTS tenant_images_update;
+CREATE TRIGGER tenant_images_update
+BEFORE UPDATE OF id, project_id, stop_id ON images
+WHEN (NEW.stop_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM stops WHERE project_id = NEW.project_id AND stop_id = NEW.stop_id
+)) OR EXISTS (
+    SELECT 1 FROM shade_labels AS label
+    WHERE label.image_id = OLD.id
+      AND (
+        NEW.id <> OLD.id
+        OR label.project_id <> NEW.project_id
+        OR (NEW.stop_id IS NOT NULL AND label.stop_id <> NEW.stop_id)
+      )
+)
+BEGIN SELECT RAISE(ABORT, 'image update would invalidate linked labels'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_labels_insert
+BEFORE INSERT ON shade_labels
+WHEN NOT EXISTS (
+    SELECT 1 FROM stops WHERE project_id = NEW.project_id AND stop_id = NEW.stop_id
+) OR (NEW.image_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM images
+    WHERE id = NEW.image_id AND project_id = NEW.project_id
+      AND (stop_id IS NULL OR stop_id = NEW.stop_id)
+))
+BEGIN SELECT RAISE(ABORT, 'label references must belong to the same project and stop'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_labels_update
+BEFORE UPDATE OF project_id, stop_id, image_id ON shade_labels
+WHEN NOT EXISTS (
+    SELECT 1 FROM stops WHERE project_id = NEW.project_id AND stop_id = NEW.stop_id
+) OR (NEW.image_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM images
+    WHERE id = NEW.image_id AND project_id = NEW.project_id
+      AND (stop_id IS NULL OR stop_id = NEW.stop_id)
+))
+BEGIN SELECT RAISE(ABORT, 'label references must belong to the same project and stop'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_images_insert
+BEFORE INSERT ON blind_images
+WHEN NOT EXISTS (
+    SELECT 1 FROM images WHERE id = NEW.image_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind image must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_images_update
+BEFORE UPDATE OF project_id, image_id ON blind_images
+WHEN NOT EXISTS (
+    SELECT 1 FROM images WHERE id = NEW.image_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind image must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stops_insert
+BEFORE INSERT ON blind_stops
+WHEN NOT EXISTS (
+    SELECT 1 FROM stops WHERE stop_id = NEW.stop_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stops_update
+BEFORE UPDATE OF project_id, stop_id ON blind_stops
+WHEN NOT EXISTS (
+    SELECT 1 FROM stops WHERE stop_id = NEW.stop_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_assignments_insert
+BEFORE INSERT ON blind_assignments
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_images WHERE id = NEW.blind_image_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind assignment must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_assignments_update
+BEFORE UPDATE OF project_id, blind_image_id ON blind_assignments
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_images WHERE id = NEW.blind_image_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind assignment must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_ratings_insert
+BEFORE INSERT ON blind_ratings
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_assignments WHERE id = NEW.assignment_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind rating must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_ratings_update
+BEFORE UPDATE OF project_id, assignment_id ON blind_ratings
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_assignments WHERE id = NEW.assignment_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind rating must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stop_assignments_insert
+BEFORE INSERT ON blind_stop_assignments
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_stops WHERE id = NEW.blind_stop_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop assignment must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stop_assignments_update
+BEFORE UPDATE OF project_id, blind_stop_id ON blind_stop_assignments
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_stops WHERE id = NEW.blind_stop_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop assignment must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stop_ratings_insert
+BEFORE INSERT ON blind_stop_ratings
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_stop_assignments WHERE id = NEW.assignment_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop rating must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stop_ratings_update
+BEFORE UPDATE OF project_id, assignment_id ON blind_stop_ratings
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_stop_assignments WHERE id = NEW.assignment_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop rating must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_adjudications_insert
+BEFORE INSERT ON blind_adjudications
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_images WHERE id = NEW.blind_image_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind adjudication must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_adjudications_update
+BEFORE UPDATE OF project_id, blind_image_id ON blind_adjudications
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_images WHERE id = NEW.blind_image_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind adjudication must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stop_adjudications_insert
+BEFORE INSERT ON blind_stop_adjudications
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_stops WHERE id = NEW.blind_stop_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop adjudication must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_blind_stop_adjudications_update
+BEFORE UPDATE OF project_id, blind_stop_id ON blind_stop_adjudications
+WHEN NOT EXISTS (
+    SELECT 1 FROM blind_stops WHERE id = NEW.blind_stop_id AND project_id = NEW.project_id
+)
+BEGIN SELECT RAISE(ABORT, 'blind stop adjudication must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_review_history_insert
+BEFORE INSERT ON review_history
+WHEN NOT EXISTS (
+    SELECT 1 FROM stops WHERE project_id = NEW.project_id AND stop_id = NEW.stop_id
+)
+BEGIN SELECT RAISE(ABORT, 'review history stop must belong to the same project'); END;
+
+CREATE TRIGGER IF NOT EXISTS tenant_review_history_update
+BEFORE UPDATE OF project_id, stop_id ON review_history
+WHEN NOT EXISTS (
+    SELECT 1 FROM stops WHERE project_id = NEW.project_id AND stop_id = NEW.stop_id
+)
+BEGIN SELECT RAISE(ABORT, 'review history stop must belong to the same project'); END;
+
+DROP TRIGGER IF EXISTS cascade_stop_evidence_delete;
+CREATE TRIGGER cascade_stop_evidence_delete
+AFTER DELETE ON stops
+BEGIN
+    DELETE FROM blind_ratings
+    WHERE project_id = OLD.project_id AND assignment_id IN (
+        SELECT assignment.id
+        FROM blind_assignments AS assignment
+        JOIN blind_images AS blind_image ON blind_image.id = assignment.blind_image_id
+        JOIN images AS image ON image.id = blind_image.image_id
+        WHERE image.project_id = OLD.project_id AND image.stop_id = OLD.stop_id
+    );
+    DELETE FROM blind_assignments
+    WHERE project_id = OLD.project_id AND blind_image_id IN (
+        SELECT blind_image.id
+        FROM blind_images AS blind_image
+        JOIN images AS image ON image.id = blind_image.image_id
+        WHERE image.project_id = OLD.project_id AND image.stop_id = OLD.stop_id
+    );
+    DELETE FROM blind_adjudications
+    WHERE project_id = OLD.project_id AND blind_image_id IN (
+        SELECT blind_image.id
+        FROM blind_images AS blind_image
+        JOIN images AS image ON image.id = blind_image.image_id
+        WHERE image.project_id = OLD.project_id AND image.stop_id = OLD.stop_id
+    );
+    DELETE FROM blind_images
+    WHERE project_id = OLD.project_id AND image_id IN (
+        SELECT id FROM images
+        WHERE project_id = OLD.project_id AND stop_id = OLD.stop_id
+    );
+    DELETE FROM blind_stop_ratings
+    WHERE project_id = OLD.project_id AND assignment_id IN (
+        SELECT assignment.id
+        FROM blind_stop_assignments AS assignment
+        JOIN blind_stops AS blind_stop ON blind_stop.id = assignment.blind_stop_id
+        WHERE blind_stop.project_id = OLD.project_id AND blind_stop.stop_id = OLD.stop_id
+    );
+    DELETE FROM blind_stop_assignments
+    WHERE project_id = OLD.project_id AND blind_stop_id IN (
+        SELECT id FROM blind_stops
+        WHERE project_id = OLD.project_id AND stop_id = OLD.stop_id
+    );
+    DELETE FROM blind_stop_adjudications
+    WHERE project_id = OLD.project_id AND blind_stop_id IN (
+        SELECT id FROM blind_stops
+        WHERE project_id = OLD.project_id AND stop_id = OLD.stop_id
+    );
+    DELETE FROM blind_stops WHERE project_id = OLD.project_id AND stop_id = OLD.stop_id;
+    DELETE FROM shade_labels WHERE project_id = OLD.project_id AND stop_id = OLD.stop_id;
+    DELETE FROM images WHERE project_id = OLD.project_id AND stop_id = OLD.stop_id;
+    DELETE FROM review_history WHERE project_id = OLD.project_id AND stop_id = OLD.stop_id;
+END;
 
 CREATE INDEX IF NOT EXISTS idx_stops_project ON stops(project_id);
 CREATE INDEX IF NOT EXISTS idx_images_project_stop ON images(project_id, stop_id);

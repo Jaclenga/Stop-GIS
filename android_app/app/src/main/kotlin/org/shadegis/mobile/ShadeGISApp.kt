@@ -162,7 +162,7 @@ private fun ObservationScreen() {
             observations = result.observations
             if (result.migratedLegacyData) {
                 val suffix = if (result.skippedLegacyRecords == 0) "" else {
-                    " ${result.skippedLegacyRecords} unreadable record(s) were skipped."
+                    " ${result.skippedLegacyRecords} unreadable record(s) were preserved in a legacy backup."
                 }
                 snackbar.showSnackbar("Saved observations were upgraded.$suffix")
             }

@@ -1,12 +1,12 @@
 import io
+import http.client
 import ipaddress
 import json
 import os
 import re
 import socket
-import urllib.error
+import ssl
 import urllib.parse
-import urllib.request
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +29,7 @@ DEFAULT_MAX_ZIP_MEMBER_BYTES = 80 * 1024 * 1024
 DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES = 150 * 1024 * 1024
 DEFAULT_PRIORITY_WEIGHTS = {"ridership": 0.5, "low_shade": 0.5}
 API_FETCH_TIMEOUT_SECONDS = 30
+API_MAX_REDIRECTS = 5
 
 REVIEW_STATUS_NAMES = {
     "Unlabeled",
@@ -177,56 +178,145 @@ def api_host_matches(host: str, allowed_host: str) -> bool:
 
 def is_private_network_address(value: str) -> bool:
     address = ipaddress.ip_address(value)
-    return (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_multicast
-        or address.is_reserved
-        or address.is_unspecified
+    return not address.is_global
+
+
+def _validated_web_target(
+    url: str,
+    *,
+    label: str,
+    allow_private_env: str,
+    allowed_hosts: list[str] | None = None,
+) -> tuple[str, list[str]]:
+    clean_url = url.strip()
+    parsed = urllib.parse.urlparse(clean_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"{label} URL must use http or https")
+    if parsed.username or parsed.password:
+        raise ValueError(f"{label} URL must not include embedded credentials")
+    if not parsed.hostname:
+        raise ValueError(f"{label} URL must include a host")
+
+    host = parsed.hostname.lower().rstrip(".")
+    if allowed_hosts and not any(api_host_matches(host, allowed_host) for allowed_host in allowed_hosts):
+        raise ValueError("API URL host is not in SHADE_GIS_ALLOWED_API_HOSTS")
+
+    allow_private = env_flag(allow_private_env)
+    if not allow_private and (host == "localhost" or host.endswith(".localhost")):
+        raise ValueError(f"Private or localhost {label.lower()} URLs are disabled by default")
+    try:
+        literal_address = ipaddress.ip_address(host)
+    except ValueError:
+        literal_address = None
+    if literal_address is not None and not allow_private and is_private_network_address(host):
+        raise ValueError(f"Private or localhost {label.lower()} URLs are disabled by default")
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        addresses = sorted(
+            {
+                ipaddress.ip_address(result[4][0]).compressed
+                for result in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            }
+        )
+    except (ValueError, OSError, socket.gaierror) as error:
+        raise ValueError(f"Could not resolve {label} URL host: {host}") from error
+    if not addresses:
+        raise ValueError(f"Could not resolve {label} URL host: {host}")
+    if not allow_private and any(is_private_network_address(address) for address in addresses):
+        raise ValueError(f"Private or localhost {label.lower()} URLs are disabled by default")
+    return clean_url, addresses
+
+
+def _validated_api_target(url: str) -> tuple[str, list[str]]:
+    return _validated_web_target(
+        url,
+        label="API",
+        allow_private_env="SHADE_GIS_ALLOW_PRIVATE_API_URLS",
+        allowed_hosts=allowed_api_hosts(),
     )
 
 
 def validate_api_url(url: str) -> str:
-    clean_url = url.strip()
-    parsed = urllib.parse.urlparse(clean_url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError("API URL must use http or https")
-    if parsed.username or parsed.password:
-        raise ValueError("API URL must not include embedded credentials")
-    if not parsed.hostname:
-        raise ValueError("API URL must include a host")
-
-    host = parsed.hostname.lower().rstrip(".")
-    allowed_hosts = allowed_api_hosts()
-    if allowed_hosts and not any(api_host_matches(host, allowed_host) for allowed_host in allowed_hosts):
-        raise ValueError("API URL host is not in SHADE_GIS_ALLOWED_API_HOSTS")
-
-    if not env_flag("SHADE_GIS_ALLOW_PRIVATE_API_URLS"):
-        if host == "localhost" or host.endswith(".localhost"):
-            raise ValueError("Private or localhost API URLs are disabled by default")
-        try:
-            if is_private_network_address(host):
-                raise ValueError("Private or localhost API URLs are disabled by default")
-        except ValueError as error:
-            if "disabled by default" in str(error):
-                raise
-        try:
-            addresses = {
-                result[4][0]
-                for result in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
-            }
-        except socket.gaierror as error:
-            raise ValueError(f"Could not resolve API URL host: {host}") from error
-        for address in addresses:
-            try:
-                if is_private_network_address(address):
-                    raise ValueError("Private or localhost API URLs are disabled by default")
-            except ValueError as error:
-                if "disabled by default" in str(error):
-                    raise
-
+    clean_url, _addresses = _validated_api_target(url)
     return clean_url
+
+
+def public_source_url(url: str) -> str:
+    """Return provenance-safe URL text without credentials, query, or fragment."""
+    parsed = urllib.parse.urlsplit(str(url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return ""
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    try:
+        port = f":{parsed.port}" if parsed.port else ""
+    except ValueError:
+        return ""
+    return urllib.parse.urlunsplit((parsed.scheme, f"{host}{port}", parsed.path, "", ""))
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, host: str, address: str, port: int, timeout: int) -> None:
+        super().__init__(host, port=port, timeout=timeout)
+        self._pinned_address = address
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection(
+            (self._pinned_address, self.port),
+            self.timeout,
+            self.source_address,
+        )
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, host: str, address: str, port: int, timeout: int) -> None:
+        super().__init__(host, port=port, timeout=timeout, context=ssl.create_default_context())
+        self._pinned_address = address
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection(
+            (self._pinned_address, self.port),
+            self.timeout,
+            self.source_address,
+        )
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+def _open_pinned_api_response(
+    url: str, addresses: list[str]
+) -> tuple[http.client.HTTPConnection, http.client.HTTPResponse]:
+    parsed = urllib.parse.urlparse(url)
+    host = str(parsed.hostname or "")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    default_port = 443 if parsed.scheme == "https" else 80
+    host_label = f"[{host}]" if ":" in host else host
+    host_header = host_label if port == default_port else f"{host_label}:{port}"
+    request_target = parsed.path or "/"
+    if parsed.params:
+        request_target += f";{parsed.params}"
+    if parsed.query:
+        request_target += f"?{parsed.query}"
+    last_error: BaseException | None = None
+    for address in addresses:
+        connection_class = (
+            _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
+        )
+        connection = connection_class(host, address, port, API_FETCH_TIMEOUT_SECONDS)
+        try:
+            connection.request(
+                "GET",
+                request_target,
+                headers={
+                    "Host": host_header,
+                    "User-Agent": "Shade-GIS/0.1 (+https://github.com/)",
+                    "Accept-Encoding": "identity",
+                },
+            )
+            return connection, connection.getresponse()
+        except (OSError, ssl.SSLError, http.client.HTTPException) as error:
+            last_error = error
+            connection.close()
+    raise RuntimeError(f"Could not connect to API URL host: {host}") from last_error
 
 
 def read_limited_response(response: Any, limit: int) -> bytes:
@@ -322,12 +412,112 @@ def geometry_coordinate_pairs(geometry: dict[str, Any] | None) -> list[tuple[flo
 
 
 def geometry_centroid(geometry: dict[str, Any] | None) -> tuple[float | None, float | None]:
-    pairs = geometry_coordinate_pairs(geometry)
-    if not pairs:
+    if not geometry or not geometry_coordinate_pairs(geometry):
         return None, None
-    lon = sum(pair[0] for pair in pairs) / len(pairs)
-    lat = sum(pair[1] for pair in pairs) / len(pairs)
-    return lon, lat
+    try:
+        from shapely.geometry import shape  # type: ignore[import-not-found]
+    except ImportError as error:
+        raise RuntimeError(
+            "Install Shapely to derive representative points from GIS geometry: pip install shapely"
+        ) from error
+
+    try:
+        geometry_object = shape(geometry)
+        if geometry_object.is_empty:
+            return None, None
+        # A mathematical centroid can lie in the empty area of a concave
+        # polygon. representative_point() is guaranteed to lie on or inside
+        # the geometry and is therefore safer for a mapped stop location.
+        point = geometry_object if geometry_object.geom_type == "Point" else geometry_object.representative_point()
+        return float(point.x), float(point.y)
+    except (AttributeError, TypeError, ValueError) as error:
+        raise ValueError("GIS geometry could not be converted into a representative point") from error
+
+
+def transform_geometry_coordinates(geometry: dict[str, Any], transformer: Any) -> dict[str, Any]:
+    def transform(value: Any) -> Any:
+        if (
+            isinstance(value, (list, tuple))
+            and len(value) >= 2
+            and not isinstance(value[0], (list, tuple))
+        ):
+            lon, lat = transformer.transform(float(value[0]), float(value[1]))
+            return [lon, lat, *value[2:]]
+        if isinstance(value, (list, tuple)):
+            return [transform(item) for item in value]
+        return value
+
+    transformed = dict(geometry)
+    if str(geometry.get("type", "")).lower() == "geometrycollection":
+        transformed["geometries"] = [
+            transform_geometry_coordinates(child, transformer)
+            for child in geometry.get("geometries", [])
+            if isinstance(child, dict)
+        ]
+    else:
+        transformed["coordinates"] = transform(geometry.get("coordinates"))
+    return transformed
+
+
+def shapefile_reader_and_transformer(contents: bytes) -> tuple[Any, Any | None, dict[str, Any]]:
+    try:
+        import shapefile  # type: ignore[import-not-found]
+    except ImportError as error:
+        raise RuntimeError("Install pyshp to import zipped Shapefiles: pip install pyshp") from error
+
+    with zipfile.ZipFile(io.BytesIO(contents)) as archive:
+        member_names = archive.namelist()
+        shp_member = next((name for name in member_names if name.lower().endswith(".shp")), None)
+        if not shp_member:
+            raise ValueError("Shapefile ZIP must include at least .shp and .dbf files")
+        base_name = shp_member.rsplit(".", 1)[0].lower()
+
+        def matching_member(extension: str) -> str | None:
+            return next(
+                (
+                    name
+                    for name in member_names
+                    if name.rsplit(".", 1)[0].lower() == base_name
+                    and name.lower().endswith(extension)
+                ),
+                None,
+            )
+
+        dbf_member = matching_member(".dbf")
+        shx_member = matching_member(".shx")
+        prj_member = matching_member(".prj")
+        if not dbf_member:
+            raise ValueError("Shapefile ZIP must include matching .shp and .dbf files")
+        shp = io.BytesIO(archive.read(shp_member))
+        dbf = io.BytesIO(archive.read(dbf_member))
+        shx = io.BytesIO(archive.read(shx_member)) if shx_member else None
+        projection = archive.read(prj_member).decode("utf-8-sig").strip() if prj_member else ""
+
+    reader_kwargs = {"shp": shp, "dbf": dbf}
+    if shx is not None:
+        reader_kwargs["shx"] = shx
+    reader = shapefile.Reader(**reader_kwargs)
+    if not projection:
+        return reader, None, {"source_crs": "assumed EPSG:4326", "reprojected": False}
+
+    try:
+        from pyproj import CRS, Transformer  # type: ignore[import-not-found]
+    except ImportError as error:
+        raise RuntimeError(
+            "Install pyproj to read and reproject Shapefile coordinate systems: pip install pyproj"
+        ) from error
+    try:
+        source_crs = CRS.from_wkt(projection)
+    except Exception as error:
+        raise ValueError("Shapefile .prj does not contain a valid coordinate reference system") from error
+    target_crs = CRS.from_epsg(4326)
+    source_name = source_crs.to_string()
+    if source_crs.equals(target_crs):
+        return reader, None, {"source_crs": source_name, "reprojected": False}
+    return reader, Transformer.from_crs(source_crs, target_crs, always_xy=True), {
+        "source_crs": source_name,
+        "reprojected": True,
+    }
 
 
 def geojson_features(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -336,7 +526,15 @@ def geojson_features(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return [feature for feature in payload.get("features", []) if isinstance(feature, dict)]
     if payload_type == "feature":
         return [payload]
-    if payload_type in {"point", "multipoint", "linestring", "multilinestring", "polygon", "multipolygon"}:
+    if payload_type in {
+        "point",
+        "multipoint",
+        "linestring",
+        "multilinestring",
+        "polygon",
+        "multipolygon",
+        "geometrycollection",
+    }:
         return [{"type": "Feature", "properties": {}, "geometry": payload}]
     raise ValueError("GeoJSON must be a FeatureCollection, Feature, or geometry object")
 
@@ -366,8 +564,10 @@ def parse_geojson_bytes(
         if lon is None or lat is None:
             missing_geometry += 1
         else:
-            record.setdefault("stop_lon", lon)
-            record.setdefault("stop_lat", lat)
+            if blank_tabular_value(record.get("stop_lon")):
+                record["stop_lon"] = lon
+            if blank_tabular_value(record.get("stop_lat")):
+                record["stop_lat"] = lat
         record["geometry_type"] = str((geometry or {}).get("type", ""))
         records.append(record)
     if not records:
@@ -392,6 +592,15 @@ def json_safe_value(value: Any) -> Any:
     if isinstance(value, (datetime, Path)):
         return str(value)
     return str(value)
+
+
+def blank_tabular_value(value: Any) -> bool:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def clean_geojson_feature(feature: dict[str, Any]) -> dict[str, Any] | None:
@@ -447,26 +656,7 @@ def detect_zip_import_format(contents: bytes) -> str:
 
 def parse_shapefile_zip(contents: bytes) -> tuple[pd.DataFrame, dict[str, Any]]:
     validate_zip_bytes(contents, "Shapefile ZIP upload")
-    try:
-        import shapefile  # type: ignore[import-not-found]
-    except ImportError as error:
-        raise RuntimeError("Install pyshp to import zipped Shapefiles: pip install pyshp") from error
-
-    with zipfile.ZipFile(io.BytesIO(contents)) as archive:
-        members = {member.lower(): member for member in archive.namelist()}
-        shp_member = next((member for member in members.values() if member.lower().endswith(".shp")), None)
-        dbf_member = next((member for member in members.values() if member.lower().endswith(".dbf")), None)
-        shx_member = next((member for member in members.values() if member.lower().endswith(".shx")), None)
-        if not shp_member or not dbf_member:
-            raise ValueError("Shapefile ZIP must include at least .shp and .dbf files")
-        shp = io.BytesIO(archive.read(shp_member))
-        dbf = io.BytesIO(archive.read(dbf_member))
-        shx = io.BytesIO(archive.read(shx_member)) if shx_member else None
-
-    reader_kwargs = {"shp": shp, "dbf": dbf}
-    if shx is not None:
-        reader_kwargs["shx"] = shx
-    reader = shapefile.Reader(**reader_kwargs)
+    reader, transformer, crs_metadata = shapefile_reader_and_transformer(contents)
     fields = [field[0] for field in reader.fields if field[0] != "DeletionFlag"]
     records = []
     missing_geometry = 0
@@ -474,6 +664,8 @@ def parse_shapefile_zip(contents: bytes) -> tuple[pd.DataFrame, dict[str, Any]]:
     for index, shape_record in enumerate(reader.iterShapeRecords(), start=1):
         record = {field: value for field, value in zip(fields, shape_record.record)}
         geometry = shape_record.shape.__geo_interface__
+        if transformer is not None:
+            geometry = transform_geometry_coordinates(geometry, transformer)
         geometry_types.add(str(geometry.get("type", "")))
         lon, lat = geometry_centroid(geometry)
         record.setdefault("stop_id", str(record.get("stop_id") or record.get("id") or index))
@@ -481,13 +673,16 @@ def parse_shapefile_zip(contents: bytes) -> tuple[pd.DataFrame, dict[str, Any]]:
         if lon is None or lat is None:
             missing_geometry += 1
         else:
-            record.setdefault("stop_lon", lon)
-            record.setdefault("stop_lat", lat)
+            if blank_tabular_value(record.get("stop_lon")):
+                record["stop_lon"] = lon
+            if blank_tabular_value(record.get("stop_lat")):
+                record["stop_lat"] = lat
         record["geometry_type"] = str(geometry.get("type", ""))
         records.append(record)
     if not records:
         raise ValueError("Shapefile did not contain any records")
     return pd.DataFrame(records), {
+        **crs_metadata,
         "geometry_types": "; ".join(sorted(geometry_types)),
         "features": len(records),
         "missing_geometry": missing_geometry,
@@ -496,31 +691,14 @@ def parse_shapefile_zip(contents: bytes) -> tuple[pd.DataFrame, dict[str, Any]]:
 
 def parse_shapefile_overlay_zip(contents: bytes) -> tuple[dict[str, Any], dict[str, Any]]:
     validate_zip_bytes(contents, "Shapefile overlay ZIP upload")
-    try:
-        import shapefile  # type: ignore[import-not-found]
-    except ImportError as error:
-        raise RuntimeError("Install pyshp to import zipped Shapefiles: pip install pyshp") from error
-
-    with zipfile.ZipFile(io.BytesIO(contents)) as archive:
-        members = {member.lower(): member for member in archive.namelist()}
-        shp_member = next((member for member in members.values() if member.lower().endswith(".shp")), None)
-        dbf_member = next((member for member in members.values() if member.lower().endswith(".dbf")), None)
-        shx_member = next((member for member in members.values() if member.lower().endswith(".shx")), None)
-        if not shp_member or not dbf_member:
-            raise ValueError("Shapefile ZIP must include at least .shp and .dbf files")
-        shp = io.BytesIO(archive.read(shp_member))
-        dbf = io.BytesIO(archive.read(dbf_member))
-        shx = io.BytesIO(archive.read(shx_member)) if shx_member else None
-
-    reader_kwargs = {"shp": shp, "dbf": dbf}
-    if shx is not None:
-        reader_kwargs["shx"] = shx
-    reader = shapefile.Reader(**reader_kwargs)
+    reader, transformer, crs_metadata = shapefile_reader_and_transformer(contents)
     fields = [field[0] for field in reader.fields if field[0] != "DeletionFlag"]
     features = []
     geometry_types: set[str] = set()
     for shape_record in reader.iterShapeRecords():
         geometry = shape_record.shape.__geo_interface__
+        if transformer is not None:
+            geometry = transform_geometry_coordinates(geometry, transformer)
         if not geometry_coordinate_pairs(geometry):
             continue
         geometry_types.add(str(geometry.get("type", "")))
@@ -532,40 +710,56 @@ def parse_shapefile_overlay_zip(contents: bytes) -> tuple[dict[str, Any], dict[s
     if not features:
         raise ValueError("Shapefile overlay did not contain any renderable geometries")
     return {"type": "FeatureCollection", "features": features}, {
+        **crs_metadata,
         "geometry_types": "; ".join(sorted(geometry_types)),
         "features": len(features),
     }
 
 
 def fetch_api_bytes(url: str) -> bytes:
-    clean_url = validate_api_url(url)
-    request = urllib.request.Request(
-        clean_url,
-        headers={"User-Agent": "Shade-GIS/0.1 (+https://github.com/)"},
-    )
     try:
-        with urllib.request.urlopen(request, timeout=API_FETCH_TIMEOUT_SECONDS) as response:
-            return read_limited_response(response, max_api_bytes())
-    except (urllib.error.URLError, ValueError) as error:
+        clean_url, addresses = _validated_api_target(url)
+        for redirect_count in range(API_MAX_REDIRECTS + 1):
+            connection, response = _open_pinned_api_response(clean_url, addresses)
+            try:
+                if response.status in {301, 302, 303, 307, 308}:
+                    location = str(response.headers.get("Location") or "").strip()
+                    if not location:
+                        raise RuntimeError("API redirect did not include a destination")
+                    if redirect_count >= API_MAX_REDIRECTS:
+                        raise RuntimeError("API URL redirected too many times")
+                    clean_url, addresses = _validated_api_target(
+                        urllib.parse.urljoin(clean_url, location)
+                    )
+                    continue
+                if response.status < 200 or response.status >= 300:
+                    raise RuntimeError(f"API URL returned HTTP {response.status}")
+                return read_limited_response(response, max_api_bytes())
+            finally:
+                response.close()
+                connection.close()
+        raise RuntimeError("API URL redirected too many times")
+    except (OSError, ValueError, ssl.SSLError, http.client.HTTPException) as error:
         raise RuntimeError(f"Could not fetch API URL: {error}") from error
 
 
 def parse_api_response(contents: bytes, url: str, requested_format: str) -> tuple[pd.DataFrame, dict[str, Any]]:
     validate_bytes_size(contents, max_api_bytes(), "API response")
+    source_url = public_source_url(url)
     if requested_format == "CSV":
-        return read_csv_bytes(contents, limit=max_api_bytes(), label="API CSV response"), {"source_url": url}
+        return read_csv_bytes(contents, limit=max_api_bytes(), label="API CSV response"), {"source_url": source_url}
     if requested_format == "GeoJSON":
         raw, metadata = parse_geojson_bytes(contents, limit=max_api_bytes(), label="API GeoJSON response")
-        metadata["source_url"] = url
+        metadata["source_url"] = source_url
         return raw, metadata
     try:
         raw, metadata = parse_geojson_bytes(contents, limit=max_api_bytes(), label="API GeoJSON response")
-        metadata["source_url"] = url
+        metadata["source_url"] = source_url
         metadata["detected_format"] = "GeoJSON"
         return raw, metadata
     except Exception:
         raw = read_csv_bytes(contents, limit=max_api_bytes(), label="API CSV response")
-        return raw, {"source_url": url, "detected_format": "CSV"}
+        return raw, {"source_url": source_url, "detected_format": "CSV"}
 
 
 def find_gtfs_member(archive: zipfile.ZipFile, filename: str) -> str | None:
@@ -679,7 +873,7 @@ def prepare_stop_dataset(raw: pd.DataFrame, project: dict[str, Any], taxonomy: l
         if field not in df.columns:
             df[field] = ""
 
-    df["stop_id"] = df["stop_id"].astype(str).str.strip()
+    df["stop_id"] = df["stop_id"].fillna("").astype(str).str.strip()
     df["stop_name"] = df["stop_name"].fillna("").astype(str).str.strip()
     df["stop_name"] = df["stop_name"].where(df["stop_name"] != "", "Unnamed stop")
     df["stop_lat"] = pd.to_numeric(df["stop_lat"], errors="coerce")

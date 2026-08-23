@@ -344,9 +344,11 @@ def load_study() -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
     config = normalize_published_config(
         json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     )
-    stops = pd.read_csv(DATA_PATH)
+    stops = pd.read_csv(DATA_PATH, dtype={"stop_id": str})
     raw_labels = (
-        pd.read_csv(RAW_LABELS_PATH) if RAW_LABELS_PATH.exists() else pd.DataFrame()
+        pd.read_csv(RAW_LABELS_PATH, dtype={"stop_id": str})
+        if RAW_LABELS_PATH.exists()
+        else pd.DataFrame()
     )
     stops = normalize_published_stop_dimensions(stops)
     stops["priority_score"] = calculate_priority_scores(
@@ -1294,6 +1296,7 @@ def render_stop_and_voting_panel(
     voting: dict[str, Any] | None,
     *,
     app_dir: Path | None = None,
+    preview: bool = False,
 ) -> Any:
     voting_config = normalize_voting_config(voting, taxonomy)
     if not voting_config["enabled"] or stops.empty:
@@ -1314,12 +1317,11 @@ def render_stop_and_voting_panel(
                 show_details=False,
                 show_selection_summary=False,
             )
+            voting_kwargs: dict[str, Any] = {"app_dir": app_dir or APP_DIR}
+            if preview:
+                voting_kwargs["preview"] = True
             render_voting_panel(
-                selected_stop,
-                study_id,
-                taxonomy,
-                voting_config,
-                app_dir=app_dir or APP_DIR,
+                selected_stop, study_id, taxonomy, voting_config, **voting_kwargs
             )
             return selected_stop
 
@@ -1824,7 +1826,13 @@ def render_issue_analytics_dashboard(
         st.dataframe(pd.DataFrame(queue_rows), width="stretch", hide_index=True)
 
     if include_agreement and "Agreement metrics" in selected:
-        render_agreement_metrics(raw_labels)
+        filtered_labels = raw_labels
+        if not raw_labels.empty and "stop_id" in raw_labels.columns and "stop_id" in df.columns:
+            visible_stop_ids = set(df["stop_id"].dropna().astype(str))
+            filtered_labels = raw_labels[
+                raw_labels["stop_id"].astype(str).isin(visible_stop_ids)
+            ].copy()
+        render_agreement_metrics(filtered_labels, df)
     if "Shade by route" in selected:
         render_route_shade_dashboard(df)
     if "Shade by neighborhood" in selected:
@@ -2005,14 +2013,20 @@ def clean_label_values(
         return pd.DataFrame(columns=["stop_id", label_column])
     clean = labels.copy()
     clean["stop_id"] = clean["stop_id"].fillna("").astype(str).str.strip()
-    clean[label_column] = clean[label_column].fillna("").astype(str).str.strip()
+    label_values = clean[label_column].fillna("").astype(str).str.strip()
+    if label_column == "shade_category":
+        if "shade_coverage" in clean.columns:
+            coverage_values = clean["shade_coverage"].fillna("").astype(str).str.strip()
+            label_values = coverage_values.where(coverage_values != "", label_values)
+        label_values = label_values.map(normalize_shade_coverage_chart_value)
+    clean[label_column] = label_values
     return clean[(clean["stop_id"] != "") & (clean[label_column] != "")]
 
 
 def majority_label_table(
     labels: pd.DataFrame, label_column: str = "shade_category"
 ) -> pd.DataFrame:
-    clean = clean_label_values(labels, label_column)
+    clean = latest_labels_by_rater(labels, label_column)
     rows = []
     for stop_id, group in clean.groupby("stop_id", sort=True):
         counts = group[label_column].value_counts()
@@ -2033,13 +2047,23 @@ def majority_label_table(
     return pd.DataFrame(rows)
 
 
+def optional_identifier(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
 def label_rater_key(row: pd.Series) -> str:
-    labeler_id = str(row.get("labeler_id", "") or "").strip()
+    labeler_id = optional_identifier(row.get("labeler_id", ""))
     if labeler_id:
         return labeler_id
-    role = str(row.get("labeler_role", "") or "").strip()
-    source = str(row.get("source", "") or "").strip()
-    return f"{role or 'unknown'}:{source or 'manual'}"
+    record_id = optional_identifier(row.get("id", ""))
+    return f"anonymous-record:{record_id}" if record_id else f"anonymous-row:{row.name}"
 
 
 def latest_labels_by_rater(
@@ -2051,7 +2075,13 @@ def latest_labels_by_rater(
     clean = clean.copy()
     clean["rater"] = clean.apply(label_rater_key, axis=1)
     if "created_at" in clean.columns:
-        clean = clean.sort_values("created_at")
+        clean["_created_at_sort"] = pd.to_datetime(
+            clean["created_at"], errors="coerce", utc=True
+        )
+        clean["_label_order"] = range(len(clean))
+        clean = clean.sort_values(
+            ["_created_at_sort", "_label_order"], na_position="first"
+        ).drop(columns=["_created_at_sort", "_label_order"])
     return clean.drop_duplicates(subset=["stop_id", "rater"], keep="last")
 
 
@@ -2095,7 +2125,7 @@ def average_pairwise_cohen_kappa(labels: pd.DataFrame) -> tuple[float | None, in
 
 
 def category_count_matrix(labels: pd.DataFrame) -> pd.DataFrame:
-    clean = clean_label_values(labels)
+    clean = latest_labels_by_rater(labels)
     return (
         pd.crosstab(clean["stop_id"], clean["shade_category"])
         if not clean.empty
@@ -2155,15 +2185,19 @@ def format_metric_value(value: float | None) -> str:
     return f"{float(value):.3f}"
 
 
-def agreement_overview_values(labels: pd.DataFrame) -> dict[str, int | float | None]:
+RESOLVED_REVIEW_STATUSES = {"Accepted", "Expert Reviewed", "Archived"}
+
+
+def agreement_overview_values(
+    labels: pd.DataFrame, stops: pd.DataFrame | None = None
+) -> dict[str, int | float | None]:
     majority = majority_label_table(labels)
+    review_queue = published_disagreement_queue(labels, stops)
     return {
         "stops_labeled": int(majority["stop_id"].nunique())
         if not majority.empty
         else 0,
-        "stops_needing_review": int(majority["disagreement_flag"].sum())
-        if not majority.empty
-        else 0,
+        "stops_needing_review": len(review_queue),
         "mean_agreement": float(majority["agreement_pct"].mean())
         if not majority.empty
         else None,
@@ -2172,11 +2206,31 @@ def agreement_overview_values(labels: pd.DataFrame) -> dict[str, int | float | N
     }
 
 
-def published_disagreement_queue(labels: pd.DataFrame) -> pd.DataFrame:
+def published_disagreement_queue(
+    labels: pd.DataFrame, stops: pd.DataFrame | None = None
+) -> pd.DataFrame:
     majority = majority_label_table(labels)
     if majority.empty:
         return majority
-    return majority[majority["disagreement_flag"].astype(bool)].sort_values(
+    queue = majority[majority["disagreement_flag"].astype(bool)].copy()
+    if (
+        stops is not None
+        and not stops.empty
+        and "stop_id" in stops.columns
+        and "review_status" in stops.columns
+    ):
+        status_rows = stops[["stop_id", "review_status"]].copy()
+        status_rows["_stop_key"] = status_rows["stop_id"].astype(str)
+        status_rows = status_rows.drop_duplicates("_stop_key", keep="last")
+        review_status_by_stop = pd.Series(
+            status_rows["review_status"].astype(str).str.strip().to_numpy(),
+            index=status_rows["_stop_key"],
+        )
+        resolved = queue["stop_id"].astype(str).map(review_status_by_stop).isin(
+            RESOLVED_REVIEW_STATUSES
+        )
+        queue = queue[~resolved]
+    return queue.sort_values(
         ["agreement_pct", "label_count", "stop_id"], ascending=[True, False, True]
     )
 
@@ -2213,16 +2267,16 @@ def agreement_overview_markup(metrics: dict[str, int | float | None]) -> str:
     """
 
 
-def render_agreement_metrics(labels: pd.DataFrame) -> None:
+def render_agreement_metrics(labels: pd.DataFrame, stops: pd.DataFrame | None = None) -> None:
     st.markdown("#### Agreement")
     st.caption("Overview of annotation quality and review status.")
     if labels.empty:
         st.info("No raw labels were included with this published study.")
         return
-    metrics = agreement_overview_values(labels)
+    metrics = agreement_overview_values(labels, stops)
     st.markdown(agreement_overview_markup(metrics), unsafe_allow_html=True)
 
-    queue = published_disagreement_queue(labels)
+    queue = published_disagreement_queue(labels, stops)
     if queue.empty:
         st.success("✅ All labeled stops currently have unanimous agreement.")
         return
@@ -2488,6 +2542,8 @@ def main() -> None:
         filters["selected_routes"],
         filters,
     )
+    with st.expander("Map and analytics filters", expanded=False):
+        render_map_filter_controls(stops, "published")
     tabs = st.tabs(
         ["Map", "Analytics", "Methodology", "Downloads"],
         key="published_tabs",
@@ -2529,7 +2585,6 @@ def main() -> None:
             st.caption(
                 f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters."
             )
-            render_map_filter_controls(stops, "published")
             if visualization.get("show_legend", True) and taxonomy:
                 render_taxonomy_legend(taxonomy)
     elif tabs[1].open:

@@ -5,6 +5,77 @@ import pandas as pd
 import published_app
 
 
+def test_load_study_preserves_leading_zero_stop_ids(db_path, monkeypatch):
+    config_path = db_path.parent / "shade_study_config.json"
+    stops_path = db_path.parent / "shade_study_stops.csv"
+    labels_path = db_path.parent / "shade_study_raw_labels.csv"
+    config_path.write_text('{"visualization": {"priority_weights": {}}}', encoding="utf-8")
+    stops_path.write_text(
+        "stop_id,stop_name,stop_lat,stop_lon\n00123,Leading Zero,27.9,-82.4\n123,Numeric,28.0,-82.5\n",
+        encoding="utf-8",
+    )
+    labels_path.write_text(
+        "stop_id,labeler_id,shade_category\n00123,a,No Shade\n123,b,Limited Shade\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(published_app, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(published_app, "DATA_PATH", stops_path)
+    monkeypatch.setattr(published_app, "RAW_LABELS_PATH", labels_path)
+
+    _, stops, labels = published_app.load_study()
+
+    assert stops["stop_id"].tolist() == ["00123", "123"]
+    assert labels["stop_id"].tolist() == ["00123", "123"]
+
+
+def test_published_majority_uses_latest_canonical_label_per_rater():
+    labels = pd.DataFrame(
+        [
+            {
+                "stop_id": "1",
+                "labeler_id": "a",
+                "shade_category": "No Shade",
+                "created_at": "2026-08-01T10:00:00Z",
+            },
+            {
+                "stop_id": "1",
+                "labeler_id": "a",
+                "shade_category": "Limited Natural Shade",
+                "shade_coverage": "Limited Shade",
+                "created_at": "2026-08-01T11:00:00Z",
+            },
+            {
+                "stop_id": "1",
+                "labeler_id": "b",
+                "shade_category": "Limited Shade",
+                "created_at": "2026-08-01T12:00:00Z",
+            },
+        ]
+    )
+
+    majority = published_app.majority_label_table(labels)
+    counts = published_app.category_count_matrix(labels)
+
+    assert majority.loc[0, "majority_label"] == "Limited Shade"
+    assert majority.loc[0, "label_count"] == 2
+    assert majority.loc[0, "agreement_pct"] == 100.0
+    assert not bool(majority.loc[0, "disagreement_flag"])
+    assert counts.loc["1", "Limited Shade"] == 2
+
+
+def test_blank_csv_labeler_ids_remain_separate_anonymous_records():
+    labels = pd.DataFrame(
+        [
+            {"id": "label-a", "stop_id": "1", "labeler_id": float("nan"), "shade_category": "No Shade"},
+            {"id": "label-b", "stop_id": "1", "labeler_id": float("nan"), "shade_category": "Limited Shade"},
+        ]
+    )
+
+    clean = published_app.latest_labels_by_rater(labels)
+
+    assert clean["rater"].tolist() == ["anonymous-record:label-a", "anonymous-record:label-b"]
+
+
 def test_safe_chart_has_no_scale_binding_and_drops_non_finite_values() -> None:
     data = pd.DataFrame(
         {
@@ -114,6 +185,41 @@ def test_published_agreement_overview_uses_compact_metrics() -> None:
     assert "📍 Labeled" in markup
     assert "Reliability" in markup
     assert "Krippendorff α" in markup
+
+
+def test_published_disagreement_queue_excludes_resolved_stops() -> None:
+    labels = pd.DataFrame(
+        [
+            {"stop_id": "1001", "labeler_id": "alice", "shade_category": "No Shade"},
+            {"stop_id": "1001", "labeler_id": "bob", "shade_category": "Limited Shade"},
+        ]
+    )
+    stops = pd.DataFrame([{"stop_id": "1001", "review_status": "Accepted"}])
+
+    metrics = published_app.agreement_overview_values(labels, stops)
+    queue = published_app.published_disagreement_queue(labels, stops)
+
+    assert metrics["stops_needing_review"] == 0
+    assert queue.empty
+
+
+def test_published_review_status_lookup_normalizes_mixed_stop_id_types() -> None:
+    labels = pd.DataFrame(
+        [
+            {"stop_id": "1001", "labeler_id": "alice", "shade_category": "No Shade"},
+            {"stop_id": "1001", "labeler_id": "bob", "shade_category": "Limited Shade"},
+        ]
+    )
+    stops = pd.DataFrame(
+        [
+            {"stop_id": 1001, "review_status": "Needs Review"},
+            {"stop_id": "1001", "review_status": "Accepted"},
+        ]
+    )
+
+    queue = published_app.published_disagreement_queue(labels, stops)
+
+    assert queue.empty
 
 
 def test_taxonomy_display_hides_sort_order_but_preserves_category_order() -> None:

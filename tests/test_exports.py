@@ -130,6 +130,8 @@ def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, me
         roles = bundle.read("migrations/least_privilege_roles.sql.example").decode("utf-8")
         assert "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE shade_votes" in roles
         assert "GRANT SELECT ON TABLE shade_vote_settings" in roles
+        assert "ALTER DEFAULT PRIVILEGES" not in roles
+        assert "ON TABLES TO shade_gis_app" not in roles
         assert "CREATE ROLE" not in roles.upper()
         assert "not create, own, centrally store" in bundle.read(
             "DEPLOYMENT.md"
@@ -331,7 +333,8 @@ def test_deploy_script_supports_existing_private_repositories():
     assert '$existingPublishFiles = @(\n        "preview_app",' in script
     assert '        "shade_study_stops.csv",' in script
     assert '        "shade_study_config.json"' in script
-    assert '".streamlit"' in script
+    assert 'function Test-StreamlitStaticServing' in script
+    assert '".streamlit/config.toml"' in script
     assert 'README.md' in script
     assert '.env.*' in script
     assert '"public_voting.py"' in script

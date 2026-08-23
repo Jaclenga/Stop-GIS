@@ -9,9 +9,13 @@ import uuid
 import zipfile
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
+from shade_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
+
 from shade_gis.deployment import (
+    CREATED_REPOSITORY_FILES,
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
     CommandResult,
     DeploymentTarget,
@@ -19,8 +23,11 @@ from shade_gis.deployment import (
     detect_deployment_target,
     github_repository_slug,
     publish_website,
+    manifest_owned_deployment_paths,
     repository_root_uses_legacy_published_app,
     unpublish_website,
+    validate_deployment_bundle,
+    verify_website,
 )
 
 
@@ -83,11 +90,32 @@ def deployment_tmp():
 
 def _bundle_bytes(commit_message: str = DEFAULT_DEPLOY_COMMIT_MESSAGE) -> bytes:
     files = {
+        name: f"placeholder for {name}\n".encode()
+        for name in CREATED_REPOSITORY_FILES
+        if name not in {"deployment_manifest.json", "shade_study_raw_labels.csv"}
+    }
+    files.update({
         "app.py": b"print('published')\n",
         "public_voting.py": b"VOTING = True\n",
         "shade_study_stops.csv": b"stop_id\n1001\n",
         "shade_study_config.json": b"{}",
         "requirements.txt": b"streamlit\n",
+        ".streamlit/config.toml": b"[server]\nenableStaticServing = true\n",
+    })
+    files["static/shade_gis_identity.json"] = json.dumps(
+        {
+            "schema_version": 1,
+            "study_id": "test-study",
+            "repository": "owner/study",
+            "dataset_sha256": hashlib.sha256(files["shade_study_stops.csv"]).hexdigest(),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    identity_file_hashes = {
+        name: hashlib.sha256(content).hexdigest()
+        for name, content in files.items()
+        if name != "README.md"
     }
     manifest_core = {
         "schema_version": 1,
@@ -97,16 +125,26 @@ def _bundle_bytes(commit_message: str = DEFAULT_DEPLOY_COMMIT_MESSAGE) -> bytes:
         "deploy_mode": "existing",
         "commit_message": commit_message,
         "entrypoint": "preview_app/app.py",
-        "files": {name: hashlib.sha256(content).hexdigest() for name, content in files.items()},
+        "dataset": {
+            "file": "shade_study_stops.csv",
+            "rows": 1,
+            "columns": ["stop_id"],
+            "sha256": identity_file_hashes["shade_study_stops.csv"],
+        },
+        "files": identity_file_hashes,
     }
-    manifest_core["bundle_id"] = hashlib.sha256(
-        json.dumps(manifest_core, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    identity_json = json.dumps(manifest_core, sort_keys=True, separators=(",", ":"))
+    manifest = {
+        **manifest_core,
+        "files": {name: hashlib.sha256(content).hexdigest() for name, content in files.items()},
+        "identity_json": identity_json,
+        "bundle_id": hashlib.sha256(identity_json.encode("utf-8")).hexdigest(),
+    }
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as bundle:
         for name, content in files.items():
             bundle.writestr(name, content)
-        bundle.writestr("deployment_manifest.json", json.dumps(manifest_core))
+        bundle.writestr("deployment_manifest.json", json.dumps(manifest))
     return output.getvalue()
 
 
@@ -114,11 +152,174 @@ def test_default_deploy_commit_message_is_generic():
     assert DEFAULT_DEPLOY_COMMIT_MESSAGE == "Publish website update"
 
 
+def test_bundle_builder_canonicalizes_a_github_repository_url():
+    bundle_data = build_deployment_bundle(
+        DeploymentBundleSpec(
+            repository="https://github.com/owner/study.git",
+            project={"name": "Study"},
+            study_id="study-id",
+            stops=pd.DataFrame([{"stop_id": "1001"}]),
+            raw_labels=pd.DataFrame(),
+            config_json="{}",
+            priority_weights={},
+        )
+    )
+
+    with zipfile.ZipFile(io.BytesIO(bundle_data)) as bundle:
+        manifest = json.loads(bundle.read("deployment_manifest.json"))
+        publisher = bundle.read("deploy_to_github.ps1").decode("utf-8")
+
+    assert manifest["repository"] == "owner/study"
+    assert "$RepositoryName = 'owner/study'" in publisher
+
+
 def test_github_repository_slug_supports_detected_remote_formats():
     assert github_repository_slug("https://github.com/owner/study.git") == "owner/study"
     assert github_repository_slug("git@github.com:owner/study.git") == "owner/study"
     assert github_repository_slug("owner/study") == "owner/study"
     assert github_repository_slug("https://example.com/owner/study") == ""
+    assert github_repository_slug("https://evilgithub.com/owner/study") == ""
+
+
+def test_bundle_validation_rejects_unhashed_app_and_forged_identity():
+    original = _bundle_bytes()
+    with zipfile.ZipFile(io.BytesIO(original)) as source:
+        contents = {name: source.read(name) for name in source.namelist()}
+
+    manifest = json.loads(contents["deployment_manifest.json"])
+    manifest["files"].pop("app.py")
+    contents["deployment_manifest.json"] = json.dumps(manifest).encode()
+    unhashed = io.BytesIO()
+    with zipfile.ZipFile(unhashed, "w") as changed:
+        for name, content in contents.items():
+            changed.writestr(name, content)
+    with pytest.raises(RuntimeError, match="unhashed: app.py"):
+        validate_deployment_bundle(
+            unhashed.getvalue(), DeploymentTarget(repository="owner/study", mode="existing")
+        )
+
+    with zipfile.ZipFile(io.BytesIO(original)) as source:
+        forged_contents = {name: source.read(name) for name in source.namelist()}
+    forged_manifest = json.loads(forged_contents["deployment_manifest.json"])
+    forged_manifest["files"]["app.py"] = hashlib.sha256(forged_contents["app.py"]).hexdigest()
+    forged_manifest["bundle_id"] = "0" * 64
+    forged_contents["deployment_manifest.json"] = json.dumps(forged_manifest).encode()
+    forged = io.BytesIO()
+    with zipfile.ZipFile(forged, "w") as changed:
+        for name, content in forged_contents.items():
+            changed.writestr(name, content)
+    with pytest.raises(RuntimeError, match="identity does not match"):
+        validate_deployment_bundle(
+            forged.getvalue(), DeploymentTarget(repository="owner/study", mode="existing")
+        )
+
+
+def test_bundle_validation_requires_the_complete_generated_file_set():
+    with zipfile.ZipFile(io.BytesIO(_bundle_bytes())) as source:
+        contents = {name: source.read(name) for name in source.namelist()}
+    contents.pop("DEPLOYMENT.md")
+    manifest = json.loads(contents["deployment_manifest.json"])
+    manifest["files"].pop("DEPLOYMENT.md")
+    identity = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"bundle_id", "deployed_paths", "identity_json"}
+    }
+    identity["files"] = {
+        name: digest for name, digest in manifest["files"].items() if name != "README.md"
+    }
+    manifest["identity_json"] = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+    manifest["bundle_id"] = hashlib.sha256(manifest["identity_json"].encode()).hexdigest()
+    contents["deployment_manifest.json"] = json.dumps(manifest).encode()
+    incomplete = io.BytesIO()
+    with zipfile.ZipFile(incomplete, "w") as changed:
+        for name, content in contents.items():
+            changed.writestr(name, content)
+
+    with pytest.raises(RuntimeError, match="DEPLOYMENT.md"):
+        validate_deployment_bundle(
+            incomplete.getvalue(), DeploymentTarget(repository="owner/study", mode="existing")
+        )
+
+
+def test_website_verification_rejects_unrelated_success_page(monkeypatch):
+    class FakeConnection:
+        def close(self):
+            pass
+
+    class FakeResponse:
+        status = 200
+        headers = {}
+
+        def read(self, _limit):
+            return b"<html><title>Some other application</title></html>"
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "shade_gis.deployment._validated_web_target",
+        lambda url, **_kwargs: (url, ["8.8.8.8"]),
+    )
+    monkeypatch.setattr(
+        "shade_gis.deployment._open_pinned_api_response",
+        lambda _url, _addresses: (FakeConnection(), FakeResponse()),
+    )
+
+    verified, message = verify_website(
+        "https://website.example", attempts=1, interval=0, expected_markers=("study-123",)
+    )
+
+    assert verified is False
+    assert "did not identify this Shade-GIS study" in message
+
+
+def test_website_verification_requires_all_exact_static_identity_values(monkeypatch):
+    requested_urls = []
+
+    class FakeConnection:
+        def close(self):
+            pass
+
+    class FakeResponse:
+        status = 200
+        headers = {}
+
+        def read(self, _limit):
+            return json.dumps(
+                {
+                    "schema_version": 1,
+                    "study_id": "study-123",
+                    "repository": "owner/study",
+                    "dataset_sha256": "abc123",
+                }
+            ).encode()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "shade_gis.deployment._validated_web_target",
+        lambda url, **_kwargs: (url, ["8.8.8.8"]),
+    )
+
+    def fake_open(url, _addresses):
+        requested_urls.append(url)
+        return FakeConnection(), FakeResponse()
+
+    monkeypatch.setattr("shade_gis.deployment._open_pinned_api_response", fake_open)
+
+    verified, _message = verify_website(
+        "https://website.example",
+        attempts=1,
+        interval=0,
+        expected_markers=("study-123", "owner/study", "abc123"),
+    )
+
+    assert verified is True
+    assert requested_urls == [
+        "https://website.example/app/static/shade_gis_identity.json"
+    ]
 
 
 def test_legacy_root_runtime_detection_protects_builder_entrypoint(deployment_tmp):
@@ -129,15 +330,61 @@ def test_legacy_root_runtime_detection_protects_builder_entrypoint(deployment_tm
         'DATA_PATH = APP_DIR / "shade_study_stops.csv"\n',
         encoding="utf-8",
     )
+    legacy_source = (legacy_root / "app.py").read_bytes()
+    (legacy_root / "deployment_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "study_id": "legacy-study",
+                "repository": "owner/study",
+                "deploy_mode": "create",
+                "files": {"app.py": hashlib.sha256(legacy_source).hexdigest()},
+            }
+        ),
+        encoding="utf-8",
+    )
     builder_root = deployment_tmp / "builder"
     builder_root.mkdir()
     (builder_root / "app.py").write_text(
         "from builder_app import main\n\nmain()\n",
         encoding="utf-8",
     )
+    unsigned_root = deployment_tmp / "unsigned"
+    unsigned_root.mkdir()
+    (unsigned_root / "app.py").write_text(
+        'CONFIG_PATH = "shade_study_config.json"\nDATA_PATH = "shade_study_stops.csv"\n',
+        encoding="utf-8",
+    )
 
     assert repository_root_uses_legacy_published_app(legacy_root) is True
     assert repository_root_uses_legacy_published_app(builder_root) is False
+    assert repository_root_uses_legacy_published_app(unsigned_root) is False
+
+
+def test_manifest_cannot_claim_arbitrary_repository_files(deployment_tmp):
+    preview = deployment_tmp / "preview_app"
+    preview.mkdir()
+    license_path = deployment_tmp / "LICENSE"
+    license_path.write_text("user-owned\n", encoding="utf-8")
+    (preview / "deployment_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "repository": "owner/study",
+                "deploy_mode": "existing",
+                "files": {"LICENSE": hashlib.sha256(license_path.read_bytes()).hexdigest()},
+                "deployed_paths": ["LICENSE", "preview_app/deployment_manifest.json"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    owned = manifest_owned_deployment_paths(
+        deployment_tmp,
+        DeploymentTarget(repository="owner/study", mode="existing"),
+    )
+
+    assert owned == []
 
 
 def test_publish_rejects_bundle_for_another_repository_before_git_runs():
@@ -148,6 +395,31 @@ def test_publish_rejects_bundle_for_another_repository_before_git_runs():
 
     assert result.success is False
     assert "targets owner/study, not owner/other" in result.message
+
+
+def test_publish_rejects_a_clone_url_for_another_repository_before_git_runs():
+    result = publish_website(
+        _bundle_bytes(),
+        DeploymentTarget(
+            repository="owner/study",
+            repository_url="https://github.com/owner/other.git",
+            mode="existing",
+            allow_public_target=True,
+        ),
+    )
+
+    assert result.success is False
+    assert "clone URL does not match" in result.message
+
+    unpublished = unpublish_website(
+        DeploymentTarget(
+            repository="owner/study",
+            repository_url="https://github.com/owner/other.git",
+            mode="existing",
+        )
+    )
+    assert unpublished.success is False
+    assert "clone URL does not match" in unpublished.message
 
 
 def test_publish_rejects_tampered_bundle_before_git_runs():
@@ -179,6 +451,43 @@ def test_publish_rejects_bundle_with_a_different_commit_message():
 
     assert result.success is False
     assert "different commit message" in result.message
+
+
+def test_existing_publish_requires_static_serving_in_user_owned_streamlit_config(
+    deployment_tmp, monkeypatch
+):
+    target = DeploymentTarget(
+        repository="owner/study",
+        repository_url="https://github.com/owner/study.git",
+        mode="existing",
+        allow_public_target=True,
+    )
+
+    class WorkspaceTemporaryDirectory:
+        def __init__(self, prefix="tmp"):
+            self.path = deployment_tmp / f"{prefix}config-check"
+
+        def __enter__(self):
+            self.path.mkdir()
+            return str(self.path)
+
+        def __exit__(self, _exc_type, _exc, _traceback):
+            shutil.rmtree(self.path, ignore_errors=True)
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", WorkspaceTemporaryDirectory)
+
+    def fake_runner(args, _cwd, _timeout):
+        if tuple(args[:2]) == ("git", "clone"):
+            worktree = Path(args[-1])
+            config_path = worktree / ".streamlit" / "config.toml"
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text("[server]\nenableStaticServing = false\n", encoding="utf-8")
+        return CommandResult(0)
+
+    result = publish_website(_bundle_bytes(), target, runner=fake_runner)
+
+    assert result.success is False
+    assert "server.enableStaticServing = true" in result.message
 
 
 def test_detect_deployment_target_uses_origin_and_remote_default_branch(deployment_tmp):
@@ -231,6 +540,42 @@ def test_readiness_sends_quality_failures_to_the_dashboard():
     assert result.action == "data_quality"
 
 
+def test_readiness_requires_confirmation_for_existing_public_repository():
+    target = DeploymentTarget(
+        repository="owner/study",
+        repository_url="https://github.com/owner/study.git",
+        visibility="public",
+    )
+
+    blocked = deployment_readiness(stops_empty=False, target=target)
+    confirmed = deployment_readiness(
+        stops_empty=False,
+        target=DeploymentTarget(**{**target.__dict__, "allow_public_target": True}),
+    )
+
+    assert blocked.ready is False
+    assert "public repository" in blocked.title
+    assert confirmed.ready is True
+
+
+def test_website_verification_rejects_private_targets_and_redirects(monkeypatch):
+    monkeypatch.delenv("SHADE_GIS_ALLOW_PRIVATE_WEBSITE_URLS", raising=False)
+    monkeypatch.setattr(
+        "shade_gis.builder_imports.socket.getaddrinfo",
+        lambda host, port, type: [(None, type, None, "", ("127.0.0.1", port))],
+    )
+
+    verified, message = verify_website(
+        "https://website.example",
+        attempts=1,
+        interval=0,
+        expected_markers=("test-study",),
+    )
+
+    assert verified is False
+    assert "Private or localhost" in message
+
+
 def test_publish_and_unpublish_existing_repository_automatically(deployment_tmp, monkeypatch):
     target = DeploymentTarget(
         repository="owner/study",
@@ -238,6 +583,7 @@ def test_publish_and_unpublish_existing_repository_automatically(deployment_tmp,
         branch="main",
         mode="existing",
         commit_message="Publish July field review",
+        allow_public_target=True,
     )
     stages: list[str] = []
     observed: dict[str, object] = {"published": False, "pushes": 0, "statuses": 0}
@@ -262,20 +608,50 @@ def test_publish_and_unpublish_existing_repository_automatically(deployment_tmp,
             worktree = Path(args[-1])
             worktree.mkdir(parents=True)
             (worktree / "README.md").write_text("existing repository\n", encoding="utf-8")
-            (worktree / "app.py").write_text(
+            legacy_app = (
                 'CONFIG_PATH = APP_DIR / "shade_study_config.json"\n'
                 'DATA_PATH = APP_DIR / "shade_study_stops.csv"\n'
-                "render_metric_cards(visible_stops)\n",
+                "render_metric_cards(visible_stops)\n"
+            )
+            (worktree / "app.py").write_text(legacy_app, encoding="utf-8")
+            (worktree / "deployment_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "study_id": "legacy-study",
+                        "repository": "owner/study",
+                        "deploy_mode": "create",
+                        "files": {
+                            "app.py": hashlib.sha256((worktree / "app.py").read_bytes()).hexdigest(),
+                        },
+                    }
+                ),
                 encoding="utf-8",
             )
             (worktree / "public_voting.py").write_text("OLD_VOTING = True\n", encoding="utf-8")
             (worktree / "requirements.txt").write_text("streamlit<1\n", encoding="utf-8")
             (worktree / "shade_study_stops.csv").write_text("stop_id\nold\n", encoding="utf-8")
             if observed["published"]:
-                preview = worktree / "preview_app"
-                preview.mkdir()
-                (preview / "app.py").write_text("print('published')\n", encoding="utf-8")
-            return CommandResult(0)
+                with zipfile.ZipFile(io.BytesIO(_bundle_bytes(target.commit_message))) as bundle:
+                    preview = worktree / "preview_app"
+                    preview.mkdir()
+                    for name in bundle.namelist():
+                        destination = preview / name
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_bytes(bundle.read(name))
+                    for name in (
+                        "app.py",
+                        "public_voting.py",
+                        "requirements.txt",
+                        "shade_study_stops.csv",
+                        "shade_study_config.json",
+                        "static/shade_gis_identity.json",
+                        ".streamlit/config.toml",
+                    ):
+                        destination = worktree / name
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_bytes(bundle.read(name))
+                return CommandResult(0)
         if command[:3] == ("git", "diff", "--cached"):
             return CommandResult(1)
         if command == ("git", "config", "user.name"):
@@ -296,7 +672,7 @@ def test_publish_and_unpublish_existing_repository_automatically(deployment_tmp,
             observed["manifest"] = (Path(cwd) / "preview_app" / "deployment_manifest.json").exists()
             return CommandResult(0)
         if command[:2] == ("git", "rm"):
-            observed["removed"] = list(args[5:])
+            observed["removed"] = list(args[4:])
             return CommandResult(0)
         if command[:2] == ("git", "push"):
             observed["published"] = not bool(observed["published"])
@@ -343,5 +719,20 @@ def test_publish_and_unpublish_existing_repository_automatically(deployment_tmp,
 
     assert unpublished.success is True
     assert unpublished.changed is True
-    assert observed["removed"] == ["preview_app"]
+    assert observed["removed"] == [
+        "preview_app/app.py",
+        "preview_app/public_voting.py",
+        "preview_app/shade_study_stops.csv",
+        "preview_app/shade_study_config.json",
+        "preview_app/requirements.txt",
+        "preview_app/static/shade_gis_identity.json",
+        "shade_study_stops.csv",
+        "shade_study_config.json",
+        "app.py",
+        "public_voting.py",
+        "requirements.txt",
+        "static/shade_gis_identity.json",
+        ".streamlit/config.toml",
+        "preview_app/deployment_manifest.json",
+    ]
     assert observed["pushes"] == 2

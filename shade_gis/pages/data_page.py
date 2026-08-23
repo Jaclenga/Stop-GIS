@@ -31,6 +31,7 @@ from shade_gis.builder_imports import (
     parse_geojson_bytes,
     parse_gtfs_zip,
     parse_shapefile_zip,
+    public_source_url,
     read_csv_bytes,
     render_mapped_import_controls,
 )
@@ -261,13 +262,13 @@ def render_project_storage_controls() -> None:
                 format_func=project_label,
             )
             if selected_project_id != active_project_id:
-                save_active_project_to_store()
-                load_project_into_session(selected_project_id)
-                st.rerun()
+                if save_active_project_to_store():
+                    load_project_into_session(selected_project_id)
+                    st.rerun()
     with cols[1]:
         if st.button("Save now", width="stretch"):
-            save_active_project_to_store()
-            st.success("Project saved.")
+            if save_active_project_to_store():
+                st.success("Project saved.")
     with cols[2]:
         status = database_status()
         if status["using_fallback"]:
@@ -391,6 +392,8 @@ def render_data_page() -> None:
             "Private network URLs are blocked unless enabled by deployment settings."
         )
         if st.button("Fetch API dataset", key="fetch_api_dataset"):
+            for key in ("api_import_raw", "api_import_metadata", "api_import_source"):
+                st.session_state.pop(key, None)
             if not api_url.strip():
                 st.warning("Enter a URL before fetching.")
             else:
@@ -400,7 +403,7 @@ def render_data_page() -> None:
                     raw, metadata = parse_api_response(contents, api_url, requested)
                     st.session_state["api_import_raw"] = raw
                     st.session_state["api_import_metadata"] = metadata
-                    st.session_state["api_import_source"] = api_url
+                    st.session_state["api_import_source"] = public_source_url(api_url)
                     st.success(f"Fetched {len(raw):,} records.")
                 except Exception as error:
                     st.error(f"Could not fetch this API dataset: {error}")
@@ -410,7 +413,9 @@ def render_data_page() -> None:
             detected = api_metadata.get("detected_format") or api_format.replace("Auto detect", "API")
             render_mapped_import_controls(
                 api_raw,
-                source_name=st.session_state.get("api_import_source", api_url),
+                source_name=st.session_state.get(
+                    "api_import_source", public_source_url(api_url)
+                ),
                 import_format=str(detected),
                 project=project,
                 taxonomy=taxonomy,

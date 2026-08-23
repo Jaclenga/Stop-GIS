@@ -1,11 +1,14 @@
 package org.shadegis.mobile
 
 import android.content.Context
+import android.net.Uri
 import android.util.AtomicFile
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.OutputStreamWriter
@@ -18,6 +21,7 @@ data class LoadResult(
     val observations: List<ShadeObservation>,
     val migratedLegacyData: Boolean = false,
     val skippedLegacyRecords: Int = 0,
+    val legacyBackupCreated: Boolean = false,
 )
 
 class ObservationCodec(
@@ -55,8 +59,27 @@ class ObservationCodec(
                 skipped += 1
                 null
             }
-        }.toList()
+        }.toList().withUniqueLegacyIds()
         return LoadResult(migrated.sortedByDescending { Instant.parse(it.capturedAt) }, true, skipped)
+    }
+
+    private fun List<ShadeObservation>.withUniqueLegacyIds(): List<ShadeObservation> {
+        val usedIds = mutableSetOf<String>()
+        val occurrences = mutableMapOf<String, Int>()
+        return map { observation ->
+            val baseId = observation.observationId
+            var occurrence = occurrences.getOrDefault(baseId, 0)
+            var candidateId = baseId
+            while (candidateId in usedIds) {
+                occurrence += 1
+                candidateId = UUID.nameUUIDFromBytes(
+                    "$baseId|legacy-duplicate:$occurrence".toByteArray(Charsets.UTF_8),
+                ).toString()
+            }
+            occurrences[baseId] = occurrence
+            usedIds += candidateId
+            if (candidateId == baseId) observation else observation.copy(observationId = candidateId)
+        }
     }
 }
 
@@ -65,30 +88,49 @@ class ObservationRepository(
     private val codec: ObservationCodec = ObservationCodec(),
 ) {
     private val storeFile = AtomicFile(File(context.filesDir, FILE_NAME))
+    private val photosDirectory = File(context.filesDir, PHOTOS_DIRECTORY_NAME)
+    private val repositoryStartedAt = System.currentTimeMillis()
+    private val mutex = Mutex()
 
     suspend fun load(): LoadResult = withContext(Dispatchers.IO) {
-        val baseFile = storeFile.baseFile
-        if (!baseFile.exists()) return@withContext LoadResult(emptyList())
-        val result = codec.decode(storeFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
-        if (result.migratedLegacyData && result.skippedLegacyRecords == 0) write(result.observations)
-        result
+        mutex.withLock {
+            val baseFile = storeFile.baseFile
+            if (!baseFile.exists()) {
+                cleanupOrphanedPhotos(emptyList())
+                return@withLock LoadResult(emptyList())
+            }
+            val result = codec.decode(storeFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
+            val loaded = if (result.migratedLegacyData) {
+                val backedUp = preserveLegacyFileIfNeeded(result)
+                write(result.observations)
+                result.copy(legacyBackupCreated = backedUp)
+            } else {
+                result
+            }
+            cleanupOrphanedPhotos(loaded.observations)
+            loaded
+        }
     }
 
     suspend fun save(observation: ShadeObservation): List<ShadeObservation> = withContext(Dispatchers.IO) {
-        val existing = if (storeFile.baseFile.exists()) {
-            val result = codec.decode(storeFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
-            require(result.skippedLegacyRecords == 0) {
-                "Resolve unreadable legacy records before saving"
+        mutex.withLock {
+            val existing = if (storeFile.baseFile.exists()) {
+                val result = codec.decode(storeFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
+                if (result.migratedLegacyData) {
+                    preserveLegacyFileIfNeeded(result)
+                    write(result.observations)
+                }
+                result.observations
+            } else {
+                emptyList()
             }
-            result.observations
-        } else {
-            emptyList()
+            val updated = (listOf(observation) + existing)
+                .distinctBy(ShadeObservation::observationId)
+                .sortedByDescending { Instant.parse(it.capturedAt) }
+            write(updated)
+            cleanupOrphanedPhotos(updated)
+            updated
         }
-        val updated = (listOf(observation) + existing)
-            .distinctBy(ShadeObservation::observationId)
-            .sortedByDescending { Instant.parse(it.capturedAt) }
-        write(updated)
-        updated
     }
 
     private fun write(observations: List<ShadeObservation>) {
@@ -105,8 +147,29 @@ class ObservationRepository(
         }
     }
 
+    private fun preserveLegacyFileIfNeeded(result: LoadResult): Boolean {
+        if (result.skippedLegacyRecords == 0) return false
+        val backup = File(storeFile.baseFile.parentFile, LEGACY_BACKUP_FILE_NAME)
+        if (!backup.exists()) storeFile.baseFile.copyTo(backup, overwrite = false)
+        return true
+    }
+
+    private fun cleanupOrphanedPhotos(observations: List<ShadeObservation>) {
+        if (!photosDirectory.isDirectory) return
+        val referencedNames = observations.mapNotNull { observation ->
+            runCatching { Uri.parse(observation.photoUri).lastPathSegment }.getOrNull()
+        }.toSet()
+        photosDirectory.listFiles()?.forEach { photo ->
+            if (photo.isFile && photo.lastModified() < repositoryStartedAt && photo.name !in referencedNames) {
+                photo.delete()
+            }
+        }
+    }
+
     private companion object {
         const val FILE_NAME = "shade_gis_observations.json"
+        const val LEGACY_BACKUP_FILE_NAME = "shade_gis_observations.legacy-backup.jsonl"
+        const val PHOTOS_DIRECTORY_NAME = "photos"
     }
 }
 

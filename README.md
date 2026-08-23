@@ -189,8 +189,8 @@ Additional imported columns are preserved as project attributes and can be used 
 | --- | --- |
 | GTFS ZIP | Imports `stops.txt` and can enrich stops using routes and trip information. |
 | CSV / `stops.txt` | Supports mapping source columns to the Shade-GIS schema. |
-| GeoJSON | Supports features and point geometries. |
-| Zipped Shapefile | Imports records through the standard field-mapping workflow. |
+| GeoJSON | Supports features and derives an on-geometry representative point for non-point features. |
+| Zipped Shapefile | Imports records through the standard field-mapping workflow and reprojects a matching `.prj` coordinate system to WGS84. |
 | API URL | Imports CSV or GeoJSON from supported HTTP(S) sources. |
 | Manual entry | Allows individual stop records to be entered directly. |
 
@@ -387,6 +387,8 @@ Initialize the schema:
 ```bash
 python scripts/init_db.py
 ```
+
+This command applies `sql/schema.sql` and every ordered migration under `sql/migrations/`, so it also upgrades existing databases before loading the seed project.
 
 The PostgreSQL model supports projects, stops, images, observations, releases, review history, taxonomy, settings, and import provenance.
 

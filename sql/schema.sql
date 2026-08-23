@@ -95,14 +95,17 @@ CREATE TABLE IF NOT EXISTS images (
   captured_at TIMESTAMPTZ,
   attribution TEXT,
   metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT tenant_images_project_id_key UNIQUE (project_id, id),
+  CONSTRAINT tenant_images_stop_fk FOREIGN KEY (project_id, stop_id)
+    REFERENCES stops(project_id, stop_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS shade_labels (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   stop_id TEXT NOT NULL,
-  image_id TEXT REFERENCES images(id) ON DELETE SET NULL,
+  image_id TEXT,
   labeler_id TEXT,
   labeler_role TEXT,
   shade_category TEXT,
@@ -112,8 +115,81 @@ CREATE TABLE IF NOT EXISTS shade_labels (
   notes TEXT,
   source TEXT NOT NULL DEFAULT 'manual',
   metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT tenant_labels_stop_fk FOREIGN KEY (project_id, stop_id)
+    REFERENCES stops(project_id, stop_id) ON DELETE CASCADE,
+  CONSTRAINT tenant_labels_image_fk FOREIGN KEY (project_id, image_id)
+    REFERENCES images(project_id, id)
 );
+
+CREATE OR REPLACE FUNCTION enforce_shade_label_image_stop()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.image_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM images
+    WHERE id = NEW.image_id
+      AND project_id = NEW.project_id
+      AND (stop_id IS NULL OR stop_id = NEW.stop_id)
+  ) THEN
+    RAISE EXCEPTION 'label image must belong to the same project and stop'
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tenant_labels_image_stop_guard ON shade_labels;
+CREATE TRIGGER tenant_labels_image_stop_guard
+BEFORE INSERT OR UPDATE OF project_id, stop_id, image_id ON shade_labels
+FOR EACH ROW EXECUTE FUNCTION enforce_shade_label_image_stop();
+
+CREATE OR REPLACE FUNCTION enforce_image_label_stop_update()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM shade_labels AS label
+    WHERE label.project_id = OLD.project_id
+      AND label.image_id = OLD.id
+      AND (
+        NEW.id <> OLD.id
+        OR label.project_id <> NEW.project_id
+        OR (NEW.stop_id IS NOT NULL AND label.stop_id <> NEW.stop_id)
+      )
+  ) THEN
+    RAISE EXCEPTION 'image update would invalidate linked labels'
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tenant_image_label_stop_guard ON images;
+CREATE TRIGGER tenant_image_label_stop_guard
+BEFORE UPDATE OF id, project_id, stop_id ON images
+FOR EACH ROW EXECUTE FUNCTION enforce_image_label_stop_update();
+
+CREATE OR REPLACE FUNCTION detach_labels_before_image_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  UPDATE shade_labels
+  SET image_id = NULL
+  WHERE project_id = OLD.project_id AND image_id = OLD.id;
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS tenant_image_label_delete_guard ON images;
+CREATE TRIGGER tenant_image_label_delete_guard
+BEFORE DELETE ON images
+FOR EACH ROW EXECUTE FUNCTION detach_labels_before_image_delete();
 
 -- Private, builder-side workflow for independent image coding. Public study apps do not use
 -- these tables. Results remain hidden until the protocol advances out of the coding phase.
@@ -132,11 +208,14 @@ CREATE TABLE IF NOT EXISTS blind_protocols (
 CREATE TABLE IF NOT EXISTS blind_images (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  image_id TEXT NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+  image_id TEXT NOT NULL,
   display_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT tenant_blind_images_project_id_key UNIQUE (project_id, id),
   UNIQUE (project_id, image_id),
-  UNIQUE (project_id, display_id)
+  UNIQUE (project_id, display_id),
+  CONSTRAINT tenant_blind_images_image_fk FOREIGN KEY (project_id, image_id)
+    REFERENCES images(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blind_stops (
@@ -145,27 +224,32 @@ CREATE TABLE IF NOT EXISTS blind_stops (
   stop_id TEXT NOT NULL,
   display_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT tenant_blind_stops_project_id_key UNIQUE (project_id, id),
   UNIQUE (project_id, stop_id),
   UNIQUE (project_id, display_id),
-  FOREIGN KEY (project_id, stop_id) REFERENCES stops(project_id, stop_id) ON DELETE CASCADE
+  CONSTRAINT tenant_blind_stops_stop_fk FOREIGN KEY (project_id, stop_id)
+    REFERENCES stops(project_id, stop_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blind_assignments (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  blind_image_id TEXT NOT NULL REFERENCES blind_images(id) ON DELETE CASCADE,
+  blind_image_id TEXT NOT NULL,
   coder_id TEXT NOT NULL,
   sort_order INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN ('assigned', 'submitted')),
   assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   submitted_at TIMESTAMPTZ,
-  UNIQUE (project_id, blind_image_id, coder_id)
+  CONSTRAINT tenant_blind_assignments_project_id_key UNIQUE (project_id, id),
+  UNIQUE (project_id, blind_image_id, coder_id),
+  CONSTRAINT tenant_blind_assignments_image_fk FOREIGN KEY (project_id, blind_image_id)
+    REFERENCES blind_images(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blind_ratings (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  assignment_id TEXT NOT NULL UNIQUE REFERENCES blind_assignments(id) ON DELETE CASCADE,
+  assignment_id TEXT NOT NULL,
   codebook_version TEXT NOT NULL,
   shade_source TEXT NOT NULL,
   coverage TEXT NOT NULL,
@@ -175,25 +259,31 @@ CREATE TABLE IF NOT EXISTS blind_ratings (
   confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
   location_recognized TEXT NOT NULL,
   review_method TEXT NOT NULL DEFAULT 'standardized_image',
-  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, assignment_id),
+  CONSTRAINT tenant_blind_ratings_assignment_fk FOREIGN KEY (project_id, assignment_id)
+    REFERENCES blind_assignments(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blind_stop_assignments (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  blind_stop_id TEXT NOT NULL REFERENCES blind_stops(id) ON DELETE CASCADE,
+  blind_stop_id TEXT NOT NULL,
   coder_id TEXT NOT NULL,
   sort_order INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN ('assigned', 'submitted')),
   assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   submitted_at TIMESTAMPTZ,
-  UNIQUE (project_id, blind_stop_id, coder_id)
+  CONSTRAINT tenant_blind_stop_assignments_project_id_key UNIQUE (project_id, id),
+  UNIQUE (project_id, blind_stop_id, coder_id),
+  CONSTRAINT tenant_blind_stop_assignments_stop_fk FOREIGN KEY (project_id, blind_stop_id)
+    REFERENCES blind_stops(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blind_stop_ratings (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  assignment_id TEXT NOT NULL UNIQUE REFERENCES blind_stop_assignments(id) ON DELETE CASCADE,
+  assignment_id TEXT NOT NULL,
   codebook_version TEXT NOT NULL,
   shade_source TEXT NOT NULL,
   coverage TEXT NOT NULL,
@@ -203,13 +293,16 @@ CREATE TABLE IF NOT EXISTS blind_stop_ratings (
   confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
   location_recognized TEXT NOT NULL,
   review_method TEXT NOT NULL,
-  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (project_id, assignment_id),
+  CONSTRAINT tenant_blind_stop_ratings_assignment_fk FOREIGN KEY (project_id, assignment_id)
+    REFERENCES blind_stop_assignments(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blind_adjudications (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  blind_image_id TEXT NOT NULL REFERENCES blind_images(id) ON DELETE CASCADE,
+  blind_image_id TEXT NOT NULL,
   adjudicator_id TEXT NOT NULL,
   codebook_version TEXT NOT NULL,
   shade_source TEXT NOT NULL,
@@ -220,13 +313,15 @@ CREATE TABLE IF NOT EXISTS blind_adjudications (
   confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
   notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (project_id, blind_image_id)
+  UNIQUE (project_id, blind_image_id),
+  CONSTRAINT tenant_blind_adjudications_image_fk FOREIGN KEY (project_id, blind_image_id)
+    REFERENCES blind_images(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blind_stop_adjudications (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  blind_stop_id TEXT NOT NULL REFERENCES blind_stops(id) ON DELETE CASCADE,
+  blind_stop_id TEXT NOT NULL,
   adjudicator_id TEXT NOT NULL,
   codebook_version TEXT NOT NULL,
   shade_source TEXT NOT NULL,
@@ -237,7 +332,9 @@ CREATE TABLE IF NOT EXISTS blind_stop_adjudications (
   confidence INTEGER NOT NULL CHECK (confidence BETWEEN 1 AND 5),
   notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (project_id, blind_stop_id)
+  UNIQUE (project_id, blind_stop_id),
+  CONSTRAINT tenant_blind_stop_adjudications_stop_fk FOREIGN KEY (project_id, blind_stop_id)
+    REFERENCES blind_stops(project_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS review_history (
@@ -250,7 +347,9 @@ CREATE TABLE IF NOT EXISTS review_history (
   to_status TEXT,
   notes TEXT,
   metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT tenant_review_history_stop_fk FOREIGN KEY (project_id, stop_id)
+    REFERENCES stops(project_id, stop_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS releases (

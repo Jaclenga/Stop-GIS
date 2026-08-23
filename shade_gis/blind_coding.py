@@ -165,6 +165,7 @@ def configure_blind_protocol(
     init_database(path)
     now = utc_timestamp()
     with connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute(
             "SELECT phase, created_at, assessment_unit FROM blind_protocols WHERE project_id = ?",
             (project_id,),
@@ -251,9 +252,18 @@ def create_blind_assignments(
     )
     if selected_ids == []:
         raise BlindCodingError("Select at least one assessment unit")
-    assessment_unit = str(protocol["assessment_unit"])
     init_database(path)
     with connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        locked_protocol = conn.execute(
+            "SELECT phase, assessment_unit, target_ratings FROM blind_protocols WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        if not locked_protocol or locked_protocol["phase"] != "setup":
+            raise BlindCodingError("Assignments can only be created during setup")
+        if int(locked_protocol["target_ratings"]) != int(protocol["target_ratings"]):
+            raise BlindCodingError("Protocol settings changed; reload before creating assignments")
+        assessment_unit = str(locked_protocol["assessment_unit"])
         source_table = "images" if assessment_unit == "image" else "stops"
         source_key = "id" if assessment_unit == "image" else "stop_id"
         unit_label = "Images" if assessment_unit == "image" else "Stops"
@@ -376,34 +386,63 @@ def blind_progress(project_id: str, path: Path | None = None) -> dict[str, int]:
 
 def advance_blind_phase(project_id: str, path: Path | None = None) -> str:
     """Advance setup -> coding -> adjudication -> closed after required checks."""
-    protocol = get_blind_protocol(project_id, path)
-    current = str(protocol["phase"])
-    next_phase = PHASE_TRANSITIONS.get(current)
-    if not next_phase:
-        raise BlindCodingError("The blind protocol is already closed")
-    progress = blind_progress(project_id, path)
-    if current == "setup":
-        unit_count = progress.get("images", progress.get("stops", 0))
-        if unit_count == 0 or progress["assignments"] == 0:
-            raise BlindCodingError("Create assignments before starting coding")
+    init_database(path)
+    now = utc_timestamp()
+    with connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        protocol = conn.execute(
+            "SELECT * FROM blind_protocols WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        if not protocol:
+            raise BlindCodingError("Configure the blind protocol before advancing it")
+        current = str(protocol["phase"])
+        next_phase = PHASE_TRANSITIONS.get(current)
+        if not next_phase:
+            raise BlindCodingError("The blind protocol is already closed")
         assessment_unit = str(protocol["assessment_unit"])
         assignment_table = "blind_assignments" if assessment_unit == "image" else "blind_stop_assignments"
         blind_fk = "blind_image_id" if assessment_unit == "image" else "blind_stop_id"
-        with connect(path) as conn:
+        progress = conn.execute(
+            f"""
+            SELECT COUNT(*) AS assignments,
+                   SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS submitted,
+                   COUNT(DISTINCT {blind_fk}) AS units
+            FROM {assignment_table} WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+        assignments = int(progress["assignments"] or 0)
+        remaining = max(assignments - int(progress["submitted"] or 0), 0)
+        if current == "setup":
+            if int(progress["units"] or 0) == 0 or assignments == 0:
+                raise BlindCodingError("Create assignments before starting coding")
             under_target = conn.execute(
                 f"SELECT COUNT(*) FROM (SELECT {blind_fk} FROM {assignment_table} "
                 "WHERE project_id = ? GROUP BY " + blind_fk + " HAVING COUNT(DISTINCT coder_id) < ?)",
                 (project_id, int(protocol["target_ratings"])),
             ).fetchone()[0]
-        if under_target:
-            raise BlindCodingError("Every assessment unit must have the target number of coders")
-    elif current == "coding" and progress["remaining"]:
-        raise BlindCodingError(
-            f"Coding cannot close while {progress['remaining']} assignments remain"
-        )
-
-    now = utc_timestamp()
-    with connect(path) as conn:
+            if under_target:
+                raise BlindCodingError("Every assessment unit must have the target number of coders")
+        elif current == "coding" and remaining:
+            raise BlindCodingError(
+                f"Coding cannot close while {remaining} assignments remain"
+            )
+        elif current == "adjudication":
+            queue = blind_adjudication_queue(
+                project_id,
+                path,
+                _connection=conn,
+                _protocol=protocol,
+            )
+            pending = queue[
+                queue["needs_adjudication"].astype(bool)
+                & queue["status"].ne("Adjudicated")
+            ] if not queue.empty else queue
+            if not pending.empty:
+                decision_label = "decision remains" if len(pending) == 1 else "decisions remain"
+                raise BlindCodingError(
+                    f"Adjudication cannot close while {len(pending)} required {decision_label}"
+                )
         cursor = conn.execute(
             "UPDATE blind_protocols SET phase = ?, updated_at = ? WHERE project_id = ? AND phase = ?",
             (next_phase, now, project_id, current),
@@ -506,10 +545,17 @@ def submit_blind_rating(
         raise BlindCodingError("Ratings can only be submitted while coding is open")
     now = utc_timestamp()
     rating_id = str(uuid.uuid4())
-    assessment_unit = str(protocol["assessment_unit"])
-    assignment_table = "blind_assignments" if assessment_unit == "image" else "blind_stop_assignments"
-    rating_table = "blind_ratings" if assessment_unit == "image" else "blind_stop_ratings"
     with connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        locked_protocol = conn.execute(
+            "SELECT phase, assessment_unit, codebook_version FROM blind_protocols WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        if not locked_protocol or locked_protocol["phase"] != "coding":
+            raise BlindCodingError("Ratings can only be submitted while coding is open")
+        assessment_unit = str(locked_protocol["assessment_unit"])
+        assignment_table = "blind_assignments" if assessment_unit == "image" else "blind_stop_assignments"
+        rating_table = "blind_ratings" if assessment_unit == "image" else "blind_stop_ratings"
         assignment = conn.execute(
             f"SELECT status FROM {assignment_table} "
             "WHERE id = ? AND project_id = ? AND coder_id = ?",
@@ -531,7 +577,7 @@ def submit_blind_rating(
                 rating_id,
                 project_id,
                 assignment_id,
-                protocol["codebook_version"],
+                locked_protocol["codebook_version"],
                 clean["shade_source"],
                 clean["coverage"],
                 clean["waiting_area_covered"],
@@ -606,12 +652,19 @@ def export_blind_ratings(project_id: str, path: Path | None = None) -> pd.DataFr
     return pd.DataFrame([dict(row) for row in rows]) if rows else empty_dataframe(columns)
 
 
-def _analysis_ratings(project_id: str, path: Path | None = None) -> pd.DataFrame:
-    protocol = _require_results_open(project_id, path)
+def _analysis_ratings(
+    project_id: str,
+    path: Path | None = None,
+    *,
+    _connection: Any | None = None,
+    _protocol: Any | None = None,
+) -> pd.DataFrame:
+    protocol = _protocol or _require_results_open(project_id, path)
     assessment_unit = str(protocol["assessment_unit"])
-    with connect(path) as conn:
+
+    def load_rows(conn: Any) -> list[Any]:
         if assessment_unit == "image":
-            rows = conn.execute(
+            return conn.execute(
                 """
                 SELECT bi.id AS blind_unit_id, bi.id AS blind_image_id,
                        NULL AS blind_stop_id, bi.display_id, r.shade_source, r.coverage,
@@ -623,8 +676,7 @@ def _analysis_ratings(project_id: str, path: Path | None = None) -> pd.DataFrame
                 """,
                 (project_id,),
             ).fetchall()
-        else:
-            rows = conn.execute(
+        return conn.execute(
                 """
                 SELECT bs.id AS blind_unit_id, NULL AS blind_image_id,
                        bs.id AS blind_stop_id, bs.display_id, r.shade_source, r.coverage,
@@ -635,7 +687,13 @@ def _analysis_ratings(project_id: str, path: Path | None = None) -> pd.DataFrame
                 WHERE r.project_id = ? ORDER BY bs.display_id
                 """,
                 (project_id,),
-            ).fetchall()
+        ).fetchall()
+
+    if _connection is None:
+        with connect(path) as conn:
+            rows = load_rows(conn)
+    else:
+        rows = load_rows(_connection)
     columns = ["blind_unit_id", "blind_image_id", "blind_stop_id", "display_id", *RATING_FIELDS]
     return pd.DataFrame([dict(row) for row in rows]) if rows else empty_dataframe(columns)
 
@@ -742,15 +800,26 @@ def _item_field_summary(group: pd.DataFrame, field: str) -> tuple[str, float | N
     return summary, agreement
 
 
-def blind_adjudication_queue(project_id: str, path: Path | None = None) -> pd.DataFrame:
-    protocol = _require_results_open(project_id, path)
+def blind_adjudication_queue(
+    project_id: str,
+    path: Path | None = None,
+    *,
+    _connection: Any | None = None,
+    _protocol: Any | None = None,
+) -> pd.DataFrame:
+    protocol = _protocol or _require_results_open(project_id, path)
     assessment_unit = str(protocol["assessment_unit"])
-    ratings = _analysis_ratings(project_id, path)
+    ratings = _analysis_ratings(
+        project_id,
+        path,
+        _connection=_connection,
+        _protocol=protocol,
+    )
     if ratings.empty:
         return empty_dataframe(
             ["blind_unit_id", "blind_image_id", "blind_stop_id", "display_id", "ratings_completed", "agreement", "status", *RATING_FIELDS]
         )
-    with connect(path) as conn:
+    def load_details(conn: Any) -> dict[str, dict[str, Any]]:
         if assessment_unit == "image":
             detail_rows = conn.execute(
                 """
@@ -777,9 +846,9 @@ def blind_adjudication_queue(project_id: str, path: Path | None = None) -> pd.Da
                 """,
                 (project_id,),
             ).fetchall()
-        details = {str(row["blind_unit_id"]): dict(row) for row in detail_rows}
+        loaded_details = {str(row["blind_unit_id"]): dict(row) for row in detail_rows}
         if assessment_unit == "stop":
-            for detail in details.values():
+            for detail in loaded_details.values():
                 evidence = conn.execute(
                     "SELECT uri, storage_path FROM images WHERE project_id = ? AND stop_id = ? "
                     "ORDER BY created_at",
@@ -790,6 +859,13 @@ def blind_adjudication_queue(project_id: str, path: Path | None = None) -> pd.Da
                     for item in evidence
                     if item["storage_path"] or item["uri"]
                 ]
+        return loaded_details
+
+    if _connection is None:
+        with connect(path) as conn:
+            details = load_details(conn)
+    else:
+        details = load_details(_connection)
     records = []
     threshold = float(protocol["agreement_threshold"])
     for blind_unit_id, group in ratings.groupby("blind_unit_id", sort=False):
@@ -838,18 +914,23 @@ def submit_blind_adjudication(
     notes: str = "",
     path: Path | None = None,
 ) -> str:
-    protocol = get_blind_protocol(project_id, path)
-    if protocol["phase"] != "adjudication":
-        raise BlindCodingError("Adjudication is only available after coding closes")
     adjudicator_id = _clean_required(adjudicator_id, "Adjudicator ID")
     clean = _validated_rating({**decision, "location_recognized": "no"})
     adjudication_id = str(uuid.uuid4())
     now = utc_timestamp()
-    assessment_unit = str(protocol["assessment_unit"])
-    blind_table = "blind_images" if assessment_unit == "image" else "blind_stops"
-    adjudication_table = "blind_adjudications" if assessment_unit == "image" else "blind_stop_adjudications"
-    blind_fk = "blind_image_id" if assessment_unit == "image" else "blind_stop_id"
+    init_database(path)
     with connect(path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        protocol = conn.execute(
+            "SELECT phase, assessment_unit, codebook_version FROM blind_protocols WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        if not protocol or protocol["phase"] != "adjudication":
+            raise BlindCodingError("Adjudication is only available after coding closes")
+        assessment_unit = str(protocol["assessment_unit"])
+        blind_table = "blind_images" if assessment_unit == "image" else "blind_stops"
+        adjudication_table = "blind_adjudications" if assessment_unit == "image" else "blind_stop_adjudications"
+        blind_fk = "blind_image_id" if assessment_unit == "image" else "blind_stop_id"
         unit = conn.execute(
             f"SELECT 1 FROM {blind_table} WHERE id = ? AND project_id = ?",
             (blind_unit_id, project_id),

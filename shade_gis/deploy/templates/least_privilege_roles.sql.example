@@ -13,8 +13,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE shade_votes TO shade_gis_app;
 GRANT SELECT ON TABLE shade_vote_settings TO shade_gis_app;
 GRANT USAGE, SELECT ON SEQUENCE shade_votes_id_seq TO shade_gis_app;
 
--- Preserve runtime permissions if the owner recreates application objects later.
-ALTER DEFAULT PRIVILEGES FOR ROLE shade_gis_owner IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO shade_gis_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE shade_gis_owner IN SCHEMA public
-    GRANT USAGE, SELECT ON SEQUENCES TO shade_gis_app;
+-- Re-run the three explicit GRANT statements after a migration recreates a
+-- voting table or sequence. Do not grant default table privileges: this owner
+-- may also create private builder tables in a shared Shade-GIS database.

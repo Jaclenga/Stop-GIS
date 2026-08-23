@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qsl, urlparse
 
 import streamlit as st
 
@@ -110,6 +110,7 @@ VOTE_DATABASE_URL_ENV = "SHADE_GIS_VOTE_DATABASE_URL"
 VOTE_DB_PATH_ENV = "SHADE_GIS_VOTE_DB_PATH"
 VOTE_FINGERPRINT_SECRET_ENV = "SHADE_GIS_VOTE_FINGERPRINT_SECRET"
 ALLOW_PRIVATE_DATABASE_HOSTS_ENV = "SHADE_GIS_ALLOW_PRIVATE_DATABASE_HOSTS"
+TRUST_PROXY_HEADERS_ENV = "SHADE_GIS_TRUST_PROXY_HEADERS"
 DEFAULT_VOTE_DB_FILENAME = ".shade_gis_votes.sqlite3"
 POSTGRES_CONNECT_TIMEOUT_SECONDS = 5
 POSTGRES_STATEMENT_TIMEOUT_MS = 5_000
@@ -428,7 +429,7 @@ class _PooledPostgresConnection:
             self._pool.putconn(connection)
 
 
-def _postgres_pooled_connection(database_url: str):
+def _postgres_pooled_connection(database_url: str, hostaddr: str):
     scheme = urlparse(database_url).scheme.lower()
     if scheme not in {"postgres", "postgresql"}:
         raise VoteStorageError(
@@ -441,7 +442,7 @@ def _postgres_pooled_connection(database_url: str):
             "PostgreSQL connection pooling requires psycopg_pool from requirements.txt."
         ) from exc
 
-    pool_key = hashlib.sha256(database_url.encode("utf-8")).hexdigest()
+    pool_key = hashlib.sha256(f"{database_url}\n{hostaddr}".encode("utf-8")).hexdigest()
     with _POSTGRES_POOLS_LOCK:
         pool = _POSTGRES_POOLS.get(pool_key)
         if pool is None:
@@ -453,6 +454,7 @@ def _postgres_pooled_connection(database_url: str):
                     timeout=POSTGRES_CONNECT_TIMEOUT_SECONDS,
                     reconnect_timeout=POSTGRES_CONNECT_TIMEOUT_SECONDS,
                     kwargs={
+                        "hostaddr": hostaddr,
                         "connect_timeout": POSTGRES_CONNECT_TIMEOUT_SECONDS,
                         "options": (
                             f"-c statement_timeout={POSTGRES_STATEMENT_TIMEOUT_MS} "
@@ -482,7 +484,11 @@ def _sqlite_connection(path: Path):
 def _connect(database_url: str | None = None, sqlite_path: Path | None = None):
     resolved_url = (database_url if database_url is not None else configured_vote_database_url()).strip()
     if resolved_url:
-        return _postgres_pooled_connection(resolved_url), "postgres"
+        try:
+            hostaddr = validate_vote_database_setup_url(resolved_url)
+        except ValueError as exc:
+            raise VoteStorageError(str(exc)) from exc
+        return _postgres_pooled_connection(resolved_url, hostaddr), "postgres"
     return _sqlite_connection(sqlite_path or configured_vote_db_path()), "sqlite"
 
 
@@ -501,7 +507,25 @@ def validate_vote_database_setup_url(database_url: str) -> str:
         raise ValueError("The PostgreSQL URL must include a user, host, and database name.")
 
     allow_private = _config_bool(os.environ.get(ALLOW_PRIVATE_DATABASE_HOSTS_ENV), False)
-    sslmode = str(parse_qs(parsed.query).get("sslmode", [""])[0]).strip().lower()
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    security_parameters = {
+        "sslmode",
+        "sslcert",
+        "sslkey",
+        "sslrootcert",
+        "sslcrl",
+        "sslcrldir",
+        "sslnegotiation",
+    }
+    duplicate_security_parameters = {
+        key.lower()
+        for key, _value in query_pairs
+        if key.lower() in security_parameters
+        and sum(1 for candidate, _ in query_pairs if candidate.lower() == key.lower()) > 1
+    }
+    if duplicate_security_parameters:
+        raise ValueError("PostgreSQL security parameters may appear only once in the connection URL.")
+    sslmode = str(dict(query_pairs).get("sslmode", "")).strip().lower()
     if not allow_private and sslmode not in {"require", "verify-ca", "verify-full"}:
         raise ValueError("Remote PostgreSQL setup requires sslmode=require or stronger.")
 
@@ -525,14 +549,7 @@ def validate_vote_database_setup_url(database_url: str) -> str:
             parsed_address = ipaddress.ip_address(address)
         except ValueError:
             continue
-        if allow_private or not (
-            parsed_address.is_private
-            or parsed_address.is_loopback
-            or parsed_address.is_link_local
-            or parsed_address.is_multicast
-            or parsed_address.is_reserved
-            or parsed_address.is_unspecified
-        ):
+        if allow_private or parsed_address.is_global:
             public_addresses.append(parsed_address.compressed)
     if not public_addresses:
         raise ValueError(
@@ -812,11 +829,13 @@ def privacy_preserving_voter_id(
         for key, value in dict(headers or {}).items()
         if str(value).strip()
     }
-    raw_ip = str(client_ip or "").strip() or (
-        normalized_headers.get("cf-connecting-ip")
-        or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-        or normalized_headers.get("x-real-ip")
-    )
+    raw_ip = str(client_ip or "").strip()
+    if not raw_ip and _config_bool(os.environ.get(TRUST_PROXY_HEADERS_ENV), False):
+        raw_ip = (
+            normalized_headers.get("cf-connecting-ip")
+            or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+            or normalized_headers.get("x-real-ip")
+        )
     try:
         client_ip = ipaddress.ip_address(raw_ip).compressed
     except ValueError:
@@ -842,11 +861,13 @@ def privacy_preserving_network_id(
         for key, value in dict(headers or {}).items()
         if str(value).strip()
     }
-    raw_ip = str(client_ip or "").strip() or (
-        normalized_headers.get("cf-connecting-ip")
-        or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-        or normalized_headers.get("x-real-ip")
-    )
+    raw_ip = str(client_ip or "").strip()
+    if not raw_ip and _config_bool(os.environ.get(TRUST_PROXY_HEADERS_ENV), False):
+        raw_ip = (
+            normalized_headers.get("cf-connecting-ip")
+            or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+            or normalized_headers.get("x-real-ip")
+        )
     try:
         parsed_ip = ipaddress.ip_address(raw_ip)
     except ValueError:

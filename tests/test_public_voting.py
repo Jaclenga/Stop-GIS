@@ -218,7 +218,8 @@ def test_voting_config_hardens_legacy_thresholds_and_string_booleans():
     assert config["allow_vote_changes"] is False
 
 
-def test_privacy_preserving_voter_id_is_stable_without_storing_raw_signals():
+def test_privacy_preserving_voter_id_is_stable_without_storing_raw_signals(monkeypatch):
+    monkeypatch.setenv("SHADE_GIS_TRUST_PROXY_HEADERS", "true")
     headers = {
         "X-Forwarded-For": "203.0.113.42, 10.0.0.2",
         "User-Agent": "ExampleBrowser/1.0",
@@ -245,13 +246,24 @@ def test_privacy_preserving_voter_id_is_stable_without_storing_raw_signals():
     ) == "session-fallback"
 
 
-def test_rotating_fingerprint_secret_intentionally_changes_pseudonyms():
+def test_rotating_fingerprint_secret_intentionally_changes_pseudonyms(monkeypatch):
+    monkeypatch.setenv("SHADE_GIS_TRUST_PROXY_HEADERS", "true")
     headers = {"X-Forwarded-For": "8.8.8.8", "User-Agent": "ExampleBrowser/1.0"}
 
     first = privacy_preserving_voter_id(headers, "stable-secret", "fallback")
 
     assert first == privacy_preserving_voter_id(headers, "stable-secret", "fallback")
     assert first != privacy_preserving_voter_id(headers, "rotated-secret", "fallback")
+
+
+def test_forwarded_client_headers_are_ignored_without_trusted_proxy_opt_in(monkeypatch):
+    monkeypatch.delenv("SHADE_GIS_TRUST_PROXY_HEADERS", raising=False)
+
+    assert privacy_preserving_voter_id(
+        {"X-Forwarded-For": "8.8.8.8", "User-Agent": "Browser"},
+        "secret",
+        "session-fallback",
+    ) == "session-fallback"
 
 
 def test_network_identity_ignores_mutable_browser_headers_and_groups_ipv6_prefixes():
@@ -319,6 +331,10 @@ def test_transient_database_setup_requires_tls_and_blocks_private_hosts(monkeypa
     assert validate_vote_database_setup_url(
         "postgresql://user:secret@example.test/research?sslmode=verify-full"
     ) == "8.8.8.8"
+    with pytest.raises(ValueError, match="appear only once"):
+        validate_vote_database_setup_url(
+            "postgresql://user:secret@example.test/research?sslmode=require&sslmode=disable"
+        )
 
 
 def test_connection_test_pins_the_validated_address_and_never_returns_credentials(monkeypatch):
@@ -367,8 +383,9 @@ def test_configured_postgres_failure_never_falls_back_to_sqlite(monkeypatch, db_
     monkeypatch.setattr(
         public_voting,
         "_postgres_pooled_connection",
-        lambda value: (_ for _ in ()).throw(public_voting.VoteStorageError("unavailable")),
+        lambda value, hostaddr: (_ for _ in ()).throw(public_voting.VoteStorageError("unavailable")),
     )
+    monkeypatch.setattr(public_voting, "validate_vote_database_setup_url", lambda _value: "8.8.8.8")
     monkeypatch.setattr(
         public_voting,
         "_sqlite_connection",

@@ -75,6 +75,11 @@ the target by default as SSRF protection. A trusted self-hosted operator can exp
 `SHADE_GIS_ALLOW_PRIVATE_DATABASE_HOSTS=true` for that process. Never enable that override on a
 publicly accessible Shade-GIS builder.
 
+Client-address forwarding is disabled by default. If every request reaches the app through a trusted
+reverse proxy that removes client-supplied forwarding headers and writes its own, set
+`SHADE_GIS_TRUST_PROXY_HEADERS=true`. Do not enable it when clients can reach the app directly or the
+proxy passes through arbitrary `Forwarded`, `X-Forwarded-For`, or `CF-Connecting-IP` values.
+
 ## Local SQLite
 
 When no PostgreSQL URL is configured, the generated app uses `.shade_gis_votes.sqlite3`. This is
