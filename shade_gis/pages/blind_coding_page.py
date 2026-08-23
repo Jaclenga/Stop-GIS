@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+import published_app
 from platform_store import add_image, list_images
 from shade_gis.blind_coding import (
     COVERAGE_OPTIONS,
@@ -460,14 +461,14 @@ def render_admin_results(project_id: str, protocol: dict[str, Any]) -> None:
     downloads = st.columns(3)
     downloads[0].download_button(
         "Download submitted reviews",
-        ratings.to_csv(index=False).encode("utf-8"),
+        published_app.dataframe_to_safe_csv(ratings),
         "shade_study_blind_ratings.csv",
         "text/csv",
         width="stretch",
     )
     downloads[1].download_button(
         "Download adjudications",
-        adjudications.to_csv(index=False).encode("utf-8"),
+        published_app.dataframe_to_safe_csv(adjudications),
         "shade_study_blind_adjudications.csv",
         "text/csv",
         width="stretch",

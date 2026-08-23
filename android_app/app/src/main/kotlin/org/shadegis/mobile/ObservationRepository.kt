@@ -22,6 +22,7 @@ data class LoadResult(
     val migratedLegacyData: Boolean = false,
     val skippedLegacyRecords: Int = 0,
     val legacyBackupCreated: Boolean = false,
+    val skippedLegacyPhotoUris: Set<String> = emptySet(),
 )
 
 class ObservationCodec(
@@ -52,16 +53,32 @@ class ObservationCodec(
         }
 
         var skipped = 0
+        val skippedPhotoUris = mutableSetOf<String>()
         val migrated = json.lineSequence().filter(String::isNotBlank).mapNotNull { line ->
+            var legacy: LegacyObservation? = null
             try {
-                legacyAdapter.fromJson(line)?.toCurrent()
+                legacy = requireNotNull(legacyAdapter.fromJson(line)) { "Legacy observation is empty" }
+                legacy.toCurrent()
             } catch (_: Exception) {
                 skipped += 1
+                legacy?.photoUri?.takeIf(String::isNotBlank)?.let(skippedPhotoUris::add)
                 null
             }
         }.toList().withUniqueLegacyIds()
-        return LoadResult(migrated.sortedByDescending { Instant.parse(it.capturedAt) }, true, skipped)
+        return LoadResult(
+            migrated.sortedByDescending { Instant.parse(it.capturedAt) },
+            migratedLegacyData = true,
+            skippedLegacyRecords = skipped,
+            skippedLegacyPhotoUris = skippedPhotoUris,
+        )
     }
+
+    fun legacyPhotoUris(jsonLines: String): Set<String> =
+        jsonLines.lineSequence().filter(String::isNotBlank).mapNotNull { line ->
+            runCatching { legacyAdapter.fromJson(line)?.photoUri }
+                .getOrNull()
+                ?.takeIf(String::isNotBlank)
+        }.toSet()
 
     private fun List<ShadeObservation>.withUniqueLegacyIds(): List<ShadeObservation> {
         val usedIds = mutableSetOf<String>()
@@ -92,11 +109,11 @@ class ObservationRepository(
     private val repositoryStartedAt = System.currentTimeMillis()
     private val mutex = Mutex()
 
-    suspend fun load(): LoadResult = withContext(Dispatchers.IO) {
+    suspend fun load(protectedPhotoUris: Collection<String> = emptyList()): LoadResult = withContext(Dispatchers.IO) {
         mutex.withLock {
             val baseFile = storeFile.baseFile
             if (!baseFile.exists()) {
-                cleanupOrphanedPhotos(emptyList())
+                cleanupOrphanedPhotos(emptyList(), protectedPhotoUris)
                 return@withLock LoadResult(emptyList())
             }
             val result = codec.decode(storeFile.openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
@@ -107,7 +124,7 @@ class ObservationRepository(
             } else {
                 result
             }
-            cleanupOrphanedPhotos(loaded.observations)
+            cleanupOrphanedPhotos(loaded.observations, protectedPhotoUris)
             loaded
         }
     }
@@ -154,10 +171,21 @@ class ObservationRepository(
         return true
     }
 
-    private fun cleanupOrphanedPhotos(observations: List<ShadeObservation>) {
+    private fun cleanupOrphanedPhotos(
+        observations: List<ShadeObservation>,
+        protectedPhotoUris: Collection<String> = emptyList(),
+    ) {
         if (!photosDirectory.isDirectory) return
-        val referencedNames = observations.mapNotNull { observation ->
-            runCatching { Uri.parse(observation.photoUri).lastPathSegment }.getOrNull()
+        val legacyBackup = File(storeFile.baseFile.parentFile, LEGACY_BACKUP_FILE_NAME)
+        val backupPhotoUris = if (legacyBackup.isFile) {
+            runCatching { codec.legacyPhotoUris(legacyBackup.readText(Charsets.UTF_8)) }.getOrDefault(emptySet())
+        } else {
+            emptySet()
+        }
+        val referencedNames = (
+            observations.map(ShadeObservation::photoUri) + protectedPhotoUris + backupPhotoUris
+        ).mapNotNull { photoUri ->
+            runCatching { Uri.parse(photoUri).lastPathSegment }.getOrNull()
         }.toSet()
         photosDirectory.listFiles()?.forEach { photo ->
             if (photo.isFile && photo.lastModified() < repositoryStartedAt && photo.name !in referencedNames) {

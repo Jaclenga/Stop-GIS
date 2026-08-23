@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import pandas as pd
 import pytest
 
 from platform_store import add_image, create_project
@@ -16,6 +17,7 @@ from shade_gis.blind_coding import (
     export_blind_adjudications,
     export_blind_ratings,
     get_blind_protocol,
+    krippendorff_alpha,
     list_coder_assignments,
     protocol_json,
     submit_blind_adjudication,
@@ -304,3 +306,34 @@ def test_explicit_empty_unit_selection_does_not_assign_everything(
         create_blind_assignments(
             project_id, ["CODER-A", "CODER-B", "CODER-C"], [], db_path
         )
+
+
+def test_krippendorff_alpha_normalizes_units_with_unequal_rater_counts():
+    ratings = pd.DataFrame(
+        [("U1", "none"), ("U1", "high"), ("U2", "none"), ("U2", "none"), ("U2", "none")],
+        columns=["blind_image_id", "coverage"],
+    )
+
+    assert krippendorff_alpha(ratings, "coverage") == pytest.approx(0.0)
+
+
+def test_assignment_creation_rejects_concurrent_assessment_unit_change(
+    db_path, project, taxonomy, methodology, visualization, minimal_stops, monkeypatch
+):
+    import shade_gis.blind_coding as blind_coding
+
+    project_id, _ = make_project(
+        db_path, project, taxonomy, methodology, visualization, minimal_stops
+    )
+    current = configure_blind_protocol(
+        project_id,
+        codebook_version="v1",
+        target_ratings=3,
+        assessment_unit="stop",
+        path=db_path,
+    )
+    stale = {**current, "assessment_unit": "image"}
+    monkeypatch.setattr(blind_coding, "get_blind_protocol", lambda *_args, **_kwargs: stale)
+
+    with pytest.raises(BlindCodingError, match="Protocol settings changed"):
+        create_blind_assignments(project_id, ["A", "B", "C"], path=db_path)

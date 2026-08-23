@@ -194,7 +194,15 @@ def test_published_disagreement_queue_excludes_resolved_stops() -> None:
             {"stop_id": "1001", "labeler_id": "bob", "shade_category": "Limited Shade"},
         ]
     )
-    stops = pd.DataFrame([{"stop_id": "1001", "review_status": "Accepted"}])
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "review_status": "Accepted",
+                "review_resolved_at": "2026-08-01T12:00:00Z",
+            }
+        ]
+    )
 
     metrics = published_app.agreement_overview_values(labels, stops)
     queue = published_app.published_disagreement_queue(labels, stops)
@@ -213,13 +221,79 @@ def test_published_review_status_lookup_normalizes_mixed_stop_id_types() -> None
     stops = pd.DataFrame(
         [
             {"stop_id": 1001, "review_status": "Needs Review"},
-            {"stop_id": "1001", "review_status": "Accepted"},
+            {
+                "stop_id": "1001",
+                "review_status": "Accepted",
+                "review_resolved_at": "2026-08-01T12:00:00Z",
+            },
         ]
     )
 
     queue = published_app.published_disagreement_queue(labels, stops)
 
     assert queue.empty
+
+
+def test_agreement_filter_normalizes_visible_stop_id_types() -> None:
+    labels = pd.DataFrame(
+        [
+            {"stop_id": "1", "labeler_id": "alice", "shade_category": "No Shade"},
+            {"stop_id": "2", "labeler_id": "bob", "shade_category": "Limited Shade"},
+        ]
+    )
+    visible_stops = pd.DataFrame([{"stop_id": 1.0}])
+
+    filtered = published_app.labels_for_visible_stops(labels, visible_stops)
+
+    assert filtered["stop_id"].tolist() == ["1"]
+
+
+def test_published_newer_label_reopens_resolved_disagreement() -> None:
+    labels = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "labeler_id": "alice",
+                "shade_category": "No Shade",
+                "created_at": "2026-08-01T10:00:00Z",
+            },
+            {
+                "stop_id": "1001",
+                "labeler_id": "bob",
+                "shade_category": "Limited Shade",
+                "created_at": "2026-08-01T13:00:00Z",
+            },
+        ]
+    )
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "review_status": "Accepted",
+                "review_resolved_at": "2026-08-01T12:00:00Z",
+            }
+        ]
+    )
+
+    assert published_app.published_disagreement_queue(labels, stops)["stop_id"].tolist() == [
+        "1001"
+    ]
+
+
+def test_fleiss_kappa_rejects_unequal_rater_counts() -> None:
+    labels = pd.DataFrame(
+        [
+            ("U1", "r1", "No Shade"),
+            ("U1", "r2", "No Shade"),
+            ("U2", "r1", "No Shade"),
+            ("U2", "r2", "No Shade"),
+            ("U2", "r3", "Limited Shade"),
+            ("U2", "r4", "Limited Shade"),
+        ],
+        columns=["stop_id", "labeler_id", "shade_category"],
+    )
+
+    assert published_app.fleiss_kappa(labels) is None
 
 
 def test_taxonomy_display_hides_sort_order_but_preserves_category_order() -> None:

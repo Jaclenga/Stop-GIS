@@ -158,7 +158,12 @@ private fun ObservationScreen() {
 
     LaunchedEffect(repository) {
         try {
-            val result = repository.load()
+            val result = repository.load(
+                protectedPhotoUris = listOfNotNull(
+                    selectedPhotoUri,
+                    pendingPhotoUri,
+                ),
+            )
             observations = result.observations
             if (result.migratedLegacyData) {
                 val suffix = if (result.skippedLegacyRecords == 0) "" else {

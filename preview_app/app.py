@@ -835,10 +835,20 @@ def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
     )
 
 
+def mappable_stop_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or not {"stop_lat", "stop_lon"}.issubset(df.columns):
+        return df.iloc[0:0].copy()
+    mapped = df.copy()
+    mapped["stop_lat"] = pd.to_numeric(mapped["stop_lat"], errors="coerce")
+    mapped["stop_lon"] = pd.to_numeric(mapped["stop_lon"], errors="coerce")
+    valid = mapped["stop_lat"].between(-90, 90) & mapped["stop_lon"].between(-180, 180)
+    return mapped[valid].copy()
+
+
 def build_deck_chart(
     df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
 ) -> pdk.Deck:
-    map_df = color_dataset(df, taxonomy, visualization)
+    map_df = color_dataset(mappable_stop_rows(df), taxonomy, visualization)
     marker_shape = visualization.get("marker_shape", "Circle")
     if marker_shape not in MARKER_SHAPES:
         marker_shape = "Circle"
@@ -1768,6 +1778,24 @@ def render_numeric_by_shade_dashboard(
     st.dataframe(summary, width="stretch", hide_index=True)
 
 
+def labels_for_visible_stops(
+    raw_labels: pd.DataFrame, visible_stops: pd.DataFrame
+) -> pd.DataFrame:
+    if (
+        raw_labels.empty
+        or "stop_id" not in raw_labels.columns
+        or "stop_id" not in visible_stops.columns
+    ):
+        return raw_labels
+    visible_stop_ids = {
+        stop_id
+        for stop_id in visible_stops["stop_id"].map(canonical_identifier)
+        if stop_id
+    }
+    label_stop_ids = raw_labels["stop_id"].map(canonical_identifier)
+    return raw_labels[label_stop_ids.isin(visible_stop_ids)].copy()
+
+
 def render_issue_analytics_dashboard(
     df: pd.DataFrame,
     visualization: dict[str, Any],
@@ -1826,12 +1854,7 @@ def render_issue_analytics_dashboard(
         st.dataframe(pd.DataFrame(queue_rows), width="stretch", hide_index=True)
 
     if include_agreement and "Agreement metrics" in selected:
-        filtered_labels = raw_labels
-        if not raw_labels.empty and "stop_id" in raw_labels.columns and "stop_id" in df.columns:
-            visible_stop_ids = set(df["stop_id"].dropna().astype(str))
-            filtered_labels = raw_labels[
-                raw_labels["stop_id"].astype(str).isin(visible_stop_ids)
-            ].copy()
+        filtered_labels = labels_for_visible_stops(raw_labels, df)
         render_agreement_metrics(filtered_labels, df)
     if "Shade by route" in selected:
         render_route_shade_dashboard(df)
@@ -1980,9 +2003,51 @@ def render_methodology(config: dict[str, Any]) -> None:
     )
 
 
+def json_safe_geojson_property(value: Any) -> Any:
+    if value is None or value is pd.NA:
+        return None
+    if isinstance(value, dict):
+        return {str(key): json_safe_geojson_property(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe_geojson_property(item) for item in value]
+    if isinstance(value, set):
+        return [json_safe_geojson_property(item) for item in sorted(value, key=str)]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    try:
+        if bool(pd.isna(value)):
+            return None
+    except (TypeError, ValueError):
+        pass
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            scalar = item()
+        except (TypeError, ValueError):
+            scalar = value
+        if scalar is not value:
+            return json_safe_geojson_property(scalar)
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def spreadsheet_safe_value(value: Any) -> Any:
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + value
+    return value
+
+
+def dataframe_to_safe_csv(df: pd.DataFrame) -> bytes:
+    safe = df.copy()
+    for column in safe.columns:
+        safe[column] = safe[column].map(spreadsheet_safe_value)
+    return safe.to_csv(index=False).encode("utf-8")
+
+
 def dataframe_to_geojson(df: pd.DataFrame) -> str:
     features = []
-    for _, row in df.iterrows():
+    for _, row in mappable_stop_rows(df).iterrows():
         properties = row.drop(
             labels=["stop_lat", "stop_lon"], errors="ignore"
         ).to_dict()
@@ -1994,12 +2059,40 @@ def dataframe_to_geojson(df: pd.DataFrame) -> str:
                     "coordinates": [float(row["stop_lon"]), float(row["stop_lat"])],
                 },
                 "properties": {
-                    key: (None if pd.isna(value) else value)
+                    key: json_safe_geojson_property(value)
                     for key, value in properties.items()
                 },
             }
         )
     return json.dumps({"type": "FeatureCollection", "features": features}, indent=2)
+
+
+def canonical_identifier(value: Any) -> str:
+    if value is None or value is pd.NA:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return ""
+        return str(int(value)) if value.is_integer() else str(value).strip()
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            scalar = item()
+        except (TypeError, ValueError):
+            scalar = value
+        if scalar is not value:
+            return canonical_identifier(scalar)
+    try:
+        text = str(value).strip()
+    except Exception:
+        return ""
+    return "" if text in {"<NA>", "nan", "NaN", "NaT"} else text
 
 
 def clean_label_values(
@@ -2012,7 +2105,7 @@ def clean_label_values(
     ):
         return pd.DataFrame(columns=["stop_id", label_column])
     clean = labels.copy()
-    clean["stop_id"] = clean["stop_id"].fillna("").astype(str).str.strip()
+    clean["stop_id"] = clean["stop_id"].map(canonical_identifier)
     label_values = clean[label_column].fillna("").astype(str).str.strip()
     if label_column == "shade_category":
         if "shade_coverage" in clean.columns:
@@ -2141,6 +2234,8 @@ def fleiss_kappa(labels: pd.DataFrame) -> float | None:
     if counts.empty:
         return None
     item_totals = counts.sum(axis=1)
+    if item_totals.nunique() != 1:
+        return None
     total_assignments = float(item_totals.sum())
     p_i = (
         (counts.pow(2).sum(axis=1) - item_totals) / (item_totals * (item_totals - 1))
@@ -2219,17 +2314,38 @@ def published_disagreement_queue(
         and "stop_id" in stops.columns
         and "review_status" in stops.columns
     ):
-        status_rows = stops[["stop_id", "review_status"]].copy()
-        status_rows["_stop_key"] = status_rows["stop_id"].astype(str)
+        status_columns = ["stop_id", "review_status"]
+        if "review_resolved_at" in stops.columns:
+            status_columns.append("review_resolved_at")
+        status_rows = stops[status_columns].copy()
+        status_rows["_stop_key"] = status_rows["stop_id"].map(canonical_identifier)
         status_rows = status_rows.drop_duplicates("_stop_key", keep="last")
         review_status_by_stop = pd.Series(
             status_rows["review_status"].astype(str).str.strip().to_numpy(),
             index=status_rows["_stop_key"],
         )
-        resolved = queue["stop_id"].astype(str).map(review_status_by_stop).isin(
+        queue_stop_keys = queue["stop_id"].map(canonical_identifier)
+        resolved_status = queue_stop_keys.map(review_status_by_stop).isin(
             RESOLVED_REVIEW_STATUSES
         )
-        queue = queue[~resolved]
+        resolved_at = pd.Series(pd.NaT, index=queue.index, dtype="datetime64[ns, UTC]")
+        if "review_resolved_at" in status_rows.columns:
+            resolved_values = pd.to_datetime(status_rows["review_resolved_at"], errors="coerce", utc=True)
+            resolved_lookup = dict(zip(status_rows["_stop_key"], resolved_values, strict=False))
+            resolved_at = pd.to_datetime(
+                queue_stop_keys.map(resolved_lookup), errors="coerce", utc=True
+            )
+        latest_label_at = pd.Series(pd.NaT, index=queue.index, dtype="datetime64[ns, UTC]")
+        clean_labels = clean_label_values(labels)
+        if "created_at" in clean_labels.columns:
+            clean_labels = clean_labels.copy()
+            clean_labels["created_at"] = pd.to_datetime(clean_labels["created_at"], errors="coerce", utc=True)
+            latest_by_stop = clean_labels.groupby("stop_id")["created_at"].max()
+            latest_label_at = queue_stop_keys.map(latest_by_stop)
+        resolution_is_current = resolved_status & resolved_at.notna() & (
+            latest_label_at.isna() | (resolved_at >= latest_label_at)
+        )
+        queue = queue[~resolution_is_current]
     return queue.sort_values(
         ["agreement_pct", "label_count", "stop_id"], ascending=[True, False, True]
     )
@@ -2395,10 +2511,10 @@ def export_file_catalog(
         if not label_dates.empty:
             latest_label_at = label_dates.max()
 
-    stops_csv = stops.to_csv(index=False).encode("utf-8")
+    stops_csv = dataframe_to_safe_csv(stops)
     stops_geojson = dataframe_to_geojson(stops).encode("utf-8")
     labels_csv = (
-        raw_labels.to_csv(index=False).encode("utf-8") if not raw_labels.empty else b""
+        dataframe_to_safe_csv(raw_labels) if not raw_labels.empty else b""
     )
     config_json = json.dumps(config, indent=2, default=str).encode("utf-8")
     return [

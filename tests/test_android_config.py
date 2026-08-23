@@ -53,5 +53,23 @@ def test_observation_repository_serializes_updates_and_cleans_prior_process_phot
 
     assert "private val mutex = Mutex()" in source
     assert source.count("mutex.withLock") == 2
-    assert "cleanupOrphanedPhotos(loaded.observations)" in source
+    assert "cleanupOrphanedPhotos(loaded.observations, protectedPhotoUris)" in source
     assert "photo.lastModified() < repositoryStartedAt" in source
+    assert "codec.legacyPhotoUris" in source
+    assert "protectedPhotoUris: Collection<String>" in source
+
+    app_source = (
+        PROJECT_ROOT
+        / "android_app"
+        / "app"
+        / "src"
+        / "main"
+        / "kotlin"
+        / "org"
+        / "shadegis"
+        / "mobile"
+        / "ShadeGISApp.kt"
+    ).read_text(encoding="utf-8")
+    assert "protectedPhotoUris = listOfNotNull(" in app_source
+    assert "selectedPhotoUri" in app_source
+    assert "pendingPhotoUri" in app_source

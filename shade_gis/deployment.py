@@ -483,12 +483,36 @@ def validate_deployment_bundle(bundle_data: bytes, target: DeploymentTarget) -> 
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise RuntimeError("The deployment package website identity is invalid.") from exc
             dataset = manifest.get("dataset") if isinstance(manifest.get("dataset"), dict) else {}
+            release_sha256 = manifest.get("release_sha256")
             expected_website_identity = {
-                "schema_version": 1,
+                "schema_version": 2 if release_sha256 is not None else 1,
                 "study_id": manifest.get("study_id"),
                 "repository": manifest.get("repository"),
                 "dataset_sha256": dataset.get("sha256"),
             }
+            if release_sha256 is not None:
+                if not isinstance(release_sha256, str) or not re.fullmatch(
+                    r"[0-9a-f]{64}", release_sha256
+                ):
+                    raise RuntimeError(
+                        "The deployment package has an invalid release identity."
+                    )
+                release_hashes = {
+                    name: digest
+                    for name, digest in sorted(file_hashes.items())
+                    if name not in {WEBSITE_IDENTITY_FILE, "README.md"}
+                }
+                release_json = json.dumps(
+                    release_hashes, sort_keys=True, separators=(",", ":")
+                )
+                expected_release_sha256 = hashlib.sha256(
+                    release_json.encode("utf-8")
+                ).hexdigest()
+                if release_sha256 != expected_release_sha256:
+                    raise RuntimeError(
+                        "The deployment package release identity does not match its files."
+                    )
+                expected_website_identity["release_sha256"] = release_sha256
             if website_identity != expected_website_identity:
                 raise RuntimeError("The deployment package website identity does not match its manifest.")
             streamlit_config_content = _safe_zip_read(bundle, ".streamlit/config.toml")
@@ -946,6 +970,8 @@ def publish_website(
         notify("Check project", "Checking project data and publishing access")
         if not bundle_data:
             raise RuntimeError("The website package is empty. Return to the project and try again.")
+        if target.mode == "create" and target.visibility not in {"public", "private"}:
+            raise RuntimeError("Repository visibility must be 'public' or 'private' when creating a repository.")
         if target.mode == "create" and target.visibility == "public" and not target.allow_public_target:
             raise RuntimeError(
                 "Confirm public-repository publishing explicitly before creating this repository."
@@ -1017,6 +1043,7 @@ def publish_website(
                 str(manifest.get("study_id") or ""),
                 str(manifest.get("repository") or ""),
                 str((manifest.get("dataset") or {}).get("sha256") or ""),
+                str(manifest.get("release_sha256") or ""),
             ),
         )
         return PublishResult(
@@ -1032,9 +1059,14 @@ def publish_website(
             ),
             logs=[*logs, verification_message],
         )
-    except (RuntimeError, zipfile.BadZipFile) as exc:
-        logs.append(str(exc))
-        return PublishResult(False, message=str(exc), logs=logs)
+    except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+        message = (
+            f"Publishing could not access a required file or temporary directory: {exc}"
+            if isinstance(exc, OSError)
+            else str(exc)
+        )
+        logs.append(message)
+        return PublishResult(False, message=message, logs=logs)
 
 
 def unpublish_website(
@@ -1142,6 +1174,11 @@ def unpublish_website(
             message="The published website files were removed.",
             logs=logs,
         )
-    except RuntimeError as exc:
-        logs.append(str(exc))
-        return PublishResult(False, message=str(exc), logs=logs)
+    except (RuntimeError, OSError) as exc:
+        message = (
+            f"Unpublishing could not access a required file or temporary directory: {exc}"
+            if isinstance(exc, OSError)
+            else str(exc)
+        )
+        logs.append(message)
+        return PublishResult(False, message=message, logs=logs)

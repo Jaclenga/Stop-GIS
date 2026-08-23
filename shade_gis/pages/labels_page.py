@@ -26,6 +26,7 @@ from platform_store import (
     list_shade_labels,
 )
 from shade_gis.builder_labels import (
+    RESOLVED_REVIEW_STATUSES,
     label_source_code,
     review_queue_label,
     review_queue_table,
@@ -398,16 +399,15 @@ def render_admin_review_decision(
     def decision_key(name: str) -> str:
         return f"review_{decision_scope}_{name}"
 
+    st.markdown("#### Admin Review Decision")
+    action = st.selectbox("Decision type", REVIEW_ACTION_OPTIONS, key=decision_key("action"))
+    default_status = REVIEW_ACTION_STATUS_DEFAULTS.get(action, "Needs Review")
     with st.form(decision_key("admin_review_decision_form"), clear_on_submit=False):
-        st.markdown("#### Admin Review Decision")
         render_label_code_helper(taxonomy, "Review label/code definitions")
-        top_cols = st.columns([1, 1, 1])
+        top_cols = st.columns([1, 1])
         with top_cols[0]:
-            action = st.selectbox("Decision type", REVIEW_ACTION_OPTIONS, key=decision_key("action"))
-        default_status = REVIEW_ACTION_STATUS_DEFAULTS.get(action, "Needs Review")
-        with top_cols[1]:
             actor_id = st.text_input("Reviewer or admin ID", key=decision_key("actor_id"))
-        with top_cols[2]:
+        with top_cols[1]:
             actor_role = st.selectbox(
                 "Reviewer role",
                 LABELER_ROLE_OPTIONS,
@@ -421,7 +421,7 @@ def render_admin_review_decision(
                 "Final review status",
                 list(REVIEW_STATUS_COLORS),
                 index=list(REVIEW_STATUS_COLORS).index(default_status),
-                key=decision_key("final_status"),
+                key=decision_key(f"final_status_{label_source_code(action)}"),
             )
         with decision_cols[1]:
             _, final_confidence = render_confidence_level_buttons(
@@ -540,7 +540,7 @@ def render_review_audit_history(project_id: str, selected_stop_id: str | None) -
     st.dataframe(history.loc[:, visible_columns], width="stretch", hide_index=True)
     st.download_button(
         "Download review audit CSV",
-        history.to_csv(index=False).encode("utf-8"),
+        published_app.dataframe_to_safe_csv(history),
         "shade_study_review_audit.csv",
         "text/csv",
     )
@@ -874,6 +874,10 @@ def apply_review_decision_to_stop(
     stops.loc[mask, "shade_sources"] = shade_sources
     stops.loc[mask, "confidence"] = confidence
     stops.loc[mask, "review_status"] = review_status
+    if review_status in RESOLVED_REVIEW_STATUSES:
+        stops.loc[mask, "review_resolved_at"] = pd.Timestamp.now(tz="UTC").isoformat()
+    else:
+        stops.loc[mask, "review_resolved_at"] = ""
     st.session_state["stops"] = stops
 
 
@@ -1065,7 +1069,7 @@ def render_raw_label_history(project_id: str) -> None:
         st.dataframe(history.loc[:, visible_columns], width="stretch", hide_index=True)
         st.download_button(
             "Download raw labels CSV",
-            history.to_csv(index=False).encode("utf-8"),
+            published_app.dataframe_to_safe_csv(history),
             "shade_study_raw_labels.csv",
             "text/csv",
         )

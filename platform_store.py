@@ -877,6 +877,9 @@ def load_project_bundle(project_id: str, path: Path | None = None) -> dict[str, 
     init_database(path)
     loaded_at = utc_timestamp()
     with connect(path) as conn:
+        # Pin all related SELECTs to one SQLite snapshot. Python's legacy
+        # transaction mode does not start a transaction for SELECT statements.
+        conn.execute("BEGIN")
         project_row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if project_row is None:
             raise KeyError(f"Project {project_id} was not found")

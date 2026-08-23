@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from shade_gis.identifiers import canonical_identifier
 from shade_gis.shade_dimensions import normalize_shade_coverage, split_shade_sources
 
 
@@ -47,7 +48,7 @@ def normalize_review_status_series(values: pd.Series) -> pd.Series:
 
 
 def stop_picker_label(row: pd.Series) -> str:
-    stop_id = str(row.get("stop_id", "")).strip()
+    stop_id = canonical_identifier(row.get("stop_id", ""))
     stop_name = str(row.get("stop_name", "")).strip() or "Unnamed stop"
     routes = str(row.get("routes", "")).strip()
     suffix = f" | routes {routes}" if routes else ""
@@ -82,7 +83,7 @@ def clean_label_values(labels: pd.DataFrame, label_column: str = "shade_category
     if labels.empty or label_column not in labels.columns or "stop_id" not in labels.columns:
         return pd.DataFrame(columns=list(labels.columns) if not labels.empty else ["stop_id", label_column])
     clean = labels.copy()
-    clean["stop_id"] = clean["stop_id"].fillna("").astype(str).str.strip()
+    clean["stop_id"] = clean["stop_id"].map(canonical_identifier)
     label_values = clean[label_column].fillna("").astype(str)
     if label_column == "shade_category" and "shade_coverage" in clean.columns:
         coverage_values = clean["shade_coverage"].fillna("").astype(str).str.strip()
@@ -214,6 +215,8 @@ def fleiss_kappa(labels: pd.DataFrame, label_column: str = "shade_category") -> 
     if counts.empty:
         return None
     item_totals = counts.sum(axis=1)
+    if item_totals.nunique() != 1:
+        return None
     total_assignments = float(item_totals.sum())
     p_i = ((counts.pow(2).sum(axis=1) - item_totals) / (item_totals * (item_totals - 1))).fillna(0)
     p_bar = float((p_i * item_totals / total_assignments).sum())
@@ -297,7 +300,7 @@ def disagreement_queue_table(
 
     stop_details = stops.copy() if stops is not None else pd.DataFrame()
     if not stop_details.empty and "stop_id" in stop_details.columns:
-        stop_details["stop_id"] = stop_details["stop_id"].astype(str)
+        stop_details["stop_id"] = stop_details["stop_id"].map(canonical_identifier)
         queue = queue.merge(stop_details, on="stop_id", how="left")
     for column, fallback in [
         ("stop_name", ""),
@@ -321,7 +324,7 @@ def disagreement_queue_table(
     if not history.empty and {"stop_id", "to_status"}.issubset(history.columns):
         resolved = history[history["to_status"].isin(RESOLVED_REVIEW_STATUSES)].copy()
         if not resolved.empty:
-            resolved["stop_id"] = resolved["stop_id"].astype(str)
+            resolved["stop_id"] = resolved["stop_id"].map(canonical_identifier)
             resolved["resolved_at"] = pd.to_datetime(resolved.get("created_at"), errors="coerce", utc=True)
             latest_resolutions = resolved.groupby("stop_id", as_index=False)["resolved_at"].max()
             queue = queue.merge(latest_resolutions, on="stop_id", how="left")
@@ -330,11 +333,13 @@ def disagreement_queue_table(
     else:
         queue["resolved_at"] = pd.Series(pd.NaT, index=queue.index, dtype="datetime64[ns, UTC]")
 
-    terminal_without_history = queue["review_status"].isin(RESOLVED_REVIEW_STATUSES) & queue["resolved_at"].isna()
+    if "review_resolved_at" in queue.columns:
+        stop_resolutions = pd.to_datetime(queue["review_resolved_at"], errors="coerce", utc=True)
+        queue["resolved_at"] = queue["resolved_at"].fillna(stop_resolutions)
     resolution_is_current = queue["resolved_at"].notna() & (
         queue["latest_label_at"].isna() | (queue["resolved_at"] >= queue["latest_label_at"])
     )
-    queue = queue[~(terminal_without_history | resolution_is_current)].copy()
+    queue = queue[~resolution_is_current].copy()
     return queue.sort_values(["agreement_pct", "label_count", "stop_id"], ascending=[True, False, True])
 
 
@@ -400,7 +405,7 @@ def review_queue_table(stops: pd.DataFrame, labels: pd.DataFrame) -> pd.DataFram
     if stops.empty or "stop_id" not in stops.columns:
         return pd.DataFrame()
     queue = stops.copy()
-    queue["stop_id"] = queue["stop_id"].astype(str)
+    queue["stop_id"] = queue["stop_id"].map(canonical_identifier)
     if "review_status" not in queue.columns:
         queue["review_status"] = "Unlabeled"
     queue["review_status"] = normalize_review_status_series(queue["review_status"])
@@ -410,7 +415,7 @@ def review_queue_table(stops: pd.DataFrame, labels: pd.DataFrame) -> pd.DataFram
 
     majority = majority_label_table(labels)
     if not majority.empty:
-        majority["stop_id"] = majority["stop_id"].astype(str)
+        majority["stop_id"] = majority["stop_id"].map(canonical_identifier)
         queue = queue.merge(majority, on="stop_id", how="left")
     for column, fallback in [
         ("majority_label", ""),

@@ -115,12 +115,19 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
     }
     if not spec.raw_labels.empty:
         files["shade_study_raw_labels.csv"] = spec.raw_labels.to_csv(index=False).encode("utf-8")
+    release_hashes = {
+        name: hashlib.sha256(content).hexdigest()
+        for name, content in sorted(files.items())
+    }
+    release_json = json.dumps(release_hashes, sort_keys=True, separators=(",", ":"))
+    release_sha256 = hashlib.sha256(release_json.encode("utf-8")).hexdigest()
     files[WEBSITE_IDENTITY_FILE] = json.dumps(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "study_id": spec.study_id,
             "repository": repository,
             "dataset_sha256": hashlib.sha256(files["shade_study_stops.csv"]).hexdigest(),
+            "release_sha256": release_sha256,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -138,6 +145,7 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         "deploy_mode": spec.deploy_mode,
         "commit_message": commit_message,
         "entrypoint": streamlit_entrypoint_path(spec.deploy_mode),
+        "release_sha256": release_sha256,
         "dataset": {
             "file": "shade_study_stops.csv",
             "rows": int(len(stops)),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import io
 import json
 import zipfile
@@ -93,25 +94,26 @@ def cached_repository_metadata(repository: str, repository_url: str, branch: str
     )
 
 
-def website_identity_markers(bundle_data: bytes) -> tuple[str, str, str]:
+def website_identity_markers(bundle_data: bytes) -> tuple[str, str, str, str]:
     manifest = deployment_bundle_manifest(bundle_data)
     dataset = manifest.get("dataset") if isinstance(manifest.get("dataset"), dict) else {}
     return (
         str(manifest.get("study_id") or ""),
         str(manifest.get("repository") or ""),
         str(dataset.get("sha256") or ""),
+        str(manifest.get("release_sha256") or ""),
     )
 
 
 @st.cache_data(ttl=45, show_spinner=False)
 def cached_website_check(
-    url: str, study_id: str, repository: str, dataset_sha256: str
+    url: str, study_id: str, repository: str, dataset_sha256: str, release_sha256: str
 ) -> tuple[bool, str]:
     return verify_website(
         url,
         attempts=1,
         interval=0,
-        expected_markers=(study_id, repository, dataset_sha256),
+        expected_markers=(study_id, repository, dataset_sha256, release_sha256),
     )
 
 
@@ -378,13 +380,23 @@ def _current_target(detected: DeploymentTarget, project: dict) -> DeploymentTarg
     return target
 
 
-def _store_result(target: DeploymentTarget, result: PublishResult) -> None:
+def _bundle_result_key(target: DeploymentTarget, bundle_data: bytes) -> str:
+    try:
+        bundle_id = str(deployment_bundle_manifest(bundle_data).get("bundle_id") or "")
+    except RuntimeError:
+        # Incomplete settings legitimately produce no bundle. Scope any stored
+        # failure to the exact malformed/empty bytes without crashing the page.
+        bundle_id = "invalid-" + hashlib.sha256(bundle_data).hexdigest()
+    return f"{deployment_target_key(target)}|{bundle_id}"
+
+
+def _store_result(target: DeploymentTarget, result: PublishResult, bundle_data: bytes) -> None:
     st.session_state[DEPLOYMENT_RESULT_KEY] = result
-    st.session_state[DEPLOYMENT_TARGET_KEY] = deployment_target_key(target)
+    st.session_state[DEPLOYMENT_TARGET_KEY] = _bundle_result_key(target, bundle_data)
 
 
-def _stored_result(target: DeploymentTarget) -> PublishResult | None:
-    if st.session_state.get(DEPLOYMENT_TARGET_KEY) != deployment_target_key(target):
+def _stored_result(target: DeploymentTarget, bundle_data: bytes) -> PublishResult | None:
+    if st.session_state.get(DEPLOYMENT_TARGET_KEY) != _bundle_result_key(target, bundle_data):
         return None
     result = st.session_state.get(DEPLOYMENT_RESULT_KEY)
     return result if isinstance(result, PublishResult) else None
@@ -405,7 +417,7 @@ def _run_publish(bundle_data: bytes, target: DeploymentTarget) -> PublishResult:
         render_stages("", set(STAGES), stage_box)
     elif result.needs_host_setup:
         render_stages("", set(STAGES[:3]), stage_box)
-    _store_result(target, result)
+    _store_result(target, result, bundle_data)
     st.session_state[DEPLOYMENT_STAGE_KEY] = ""
     return result
 
@@ -471,7 +483,7 @@ def _render_optional_website_setup(
         result.needs_host_setup = False
         result.verification_skipped = True
         result.message = "The repository is published. Website verification was skipped."
-        _store_result(target, result)
+        _store_result(target, result, bundle_data)
         st.rerun()
 
     if verify_clicked:
@@ -490,7 +502,7 @@ def _render_optional_website_setup(
             result.verification_skipped = False
             result.message = "The website is published and responding."
             result.logs.append(message)
-            _store_result(verified_target, result)
+            _store_result(verified_target, result, bundle_data)
             st.rerun()
         else:
             st.error("The website is not reachable yet. Check the link, or skip verification for now.")
@@ -681,7 +693,7 @@ def render_deploy_page() -> None:
     # A previous successful deployment must not bypass checks after the active
     # dataset changes. Keep its result for a later clean rerun, but surface the
     # current blocker until the dashboard passes again.
-    result = _stored_result(target) if readiness.ready else None
+    result = _stored_result(target, bundle_data) if readiness.ready else None
     if result is None and readiness.ready and target.public_url:
         verified, verification_message = cached_website_check(
             target.public_url,
@@ -695,7 +707,7 @@ def render_deploy_page() -> None:
                 message="An existing published website was detected.",
                 logs=[verification_message],
             )
-            _store_result(target, result)
+            _store_result(target, result, bundle_data)
 
     if unpublished_notice:
         st.info(
@@ -737,7 +749,7 @@ def render_deploy_page() -> None:
             if confirm_columns[1].button("Confirm unpublish", type="primary", width="stretch"):
                 with st.spinner("Unpublishing website…"):
                     unpublish_result = unpublish_website(target)
-                _store_result(target, unpublish_result)
+                _store_result(target, unpublish_result, bundle_data)
                 st.session_state.pop(DEPLOYMENT_UNPUBLISH_KEY, None)
                 if unpublish_result.success:
                     st.session_state[DEPLOYMENT_UNPUBLISHED_KEY] = {
@@ -765,7 +777,7 @@ def render_deploy_page() -> None:
         if action_columns[1].button("Add a hosted website", width="stretch"):
             result.verification_skipped = False
             result.needs_host_setup = True
-            _store_result(target, result)
+            _store_result(target, result, bundle_data)
             st.rerun()
         _render_technical_details(target, result, bundle_data)
         _render_settings(project, target, bundle_data, bundle_name)
@@ -818,7 +830,7 @@ def render_deploy_page() -> None:
                     status.update(label="Publishing stopped", state="error", expanded=True)
                     _render_publish_error(result)
 
-    result = _stored_result(target)
+    result = _stored_result(target, bundle_data)
     if result and result.needs_host_setup:
         _render_optional_website_setup(target, result, bundle_data)
 

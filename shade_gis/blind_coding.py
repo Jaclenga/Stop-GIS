@@ -263,6 +263,8 @@ def create_blind_assignments(
             raise BlindCodingError("Assignments can only be created during setup")
         if int(locked_protocol["target_ratings"]) != int(protocol["target_ratings"]):
             raise BlindCodingError("Protocol settings changed; reload before creating assignments")
+        if str(locked_protocol["assessment_unit"]) != str(protocol["assessment_unit"]):
+            raise BlindCodingError("Protocol settings changed; reload before creating assignments")
         assessment_unit = str(locked_protocol["assessment_unit"])
         source_table = "images" if assessment_unit == "image" else "stops"
         source_key = "id" if assessment_unit == "image" else "stop_id"
@@ -744,9 +746,12 @@ def krippendorff_alpha(
     observed_numerator = 0.0
     observed_denominator = 0
     for values in grouped:
+        unit_denominator = len(values) - 1
         for left, right in itertools.permutations(values, 2):
-            observed_numerator += distance(left, right)
-            observed_denominator += 1
+            observed_numerator += distance(left, right) / unit_denominator
+        # Coincidence matrices contribute n values per unit, independently of
+        # how many raters happened to score that unit.
+        observed_denominator += len(values)
     if observed_denominator == 0:
         return None
     observed = observed_numerator / observed_denominator

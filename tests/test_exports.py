@@ -202,6 +202,30 @@ def test_deployment_bundle_requires_imported_project_data(
         build_github_deploy_bundle("owner/empty-project")
 
 
+def test_geojson_export_handles_nested_properties_and_skips_invalid_coordinates():
+    frame = pd.DataFrame(
+        [
+            {"stop_id": "valid", "stop_lat": 27.9, "stop_lon": -82.4, "tags": ["a", "b"]},
+            {"stop_id": "invalid", "stop_lat": 999, "stop_lon": float("inf"), "tags": []},
+        ]
+    )
+
+    exported = json.loads(dataframe_to_geojson(frame))
+
+    assert len(exported["features"]) == 1
+    assert exported["features"][0]["properties"]["tags"] == ["a", "b"]
+
+
+def test_spreadsheet_csv_export_neutralizes_formula_strings():
+    exported = published_app.dataframe_to_safe_csv(
+        pd.DataFrame([{"name": "=1+1", "note": "@SUM(A1:A2)", "number": -2}])
+    ).decode("utf-8")
+
+    assert "'=1+1" in exported
+    assert "'@SUM(A1:A2)" in exported
+    assert ",-2" in exported
+
+
 def test_deployment_bundle_rejects_data_quality_failures(project, visualization):
     builder_app.st.session_state.clear()
     builder_app.st.session_state["active_project_id"] = "invalid-project"

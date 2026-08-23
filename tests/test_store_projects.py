@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import sqlite3
 
 import pytest
@@ -38,6 +39,13 @@ def test_create_project_roundtrip(db_path, project, taxonomy, methodology, visua
     assert bundle["stops"].loc[bundle["stops"]["stop_id"] == "1001", "context_label"].iloc[0] == "High"
     assert bundle["taxonomy"][0]["name"] == taxonomy[0]["name"]
     assert bundle["methodology"]["terminology"] == methodology["terminology"]
+
+
+def test_project_bundle_reads_use_one_explicit_snapshot_transaction():
+    source = inspect.getsource(load_project_bundle)
+
+    assert 'conn.execute("BEGIN")' in source
+    assert source.index('conn.execute("BEGIN")') < source.index('SELECT * FROM projects')
 
 
 def test_save_project_updates_metadata_without_corrupting_stops(db_path, project, taxonomy, methodology, visualization, minimal_stops):

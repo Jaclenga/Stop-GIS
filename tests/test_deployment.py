@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import shade_gis.deployment as deployment_module
 from shade_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
 
 from shade_gis.deployment import (
@@ -19,6 +20,7 @@ from shade_gis.deployment import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
     CommandResult,
     DeploymentTarget,
+    PublishResult,
     deployment_readiness,
     detect_deployment_target,
     github_repository_slug,
@@ -29,6 +31,68 @@ from shade_gis.deployment import (
     validate_deployment_bundle,
     verify_website,
 )
+
+
+def test_release_identity_changes_when_only_configuration_changes():
+    from shade_gis.pages import deploy_page
+
+    base = dict(
+        repository="owner/study",
+        project={"name": "Study"},
+        study_id="study-id",
+        stops=pd.DataFrame([{"stop_id": "1001"}]),
+        raw_labels=pd.DataFrame(),
+        priority_weights={},
+    )
+    first = build_deployment_bundle(DeploymentBundleSpec(config_json="{}", **base))
+    second = build_deployment_bundle(
+        DeploymentBundleSpec(config_json='{"voting": true}', **base)
+    )
+    with zipfile.ZipFile(io.BytesIO(first)) as first_zip, zipfile.ZipFile(
+        io.BytesIO(second)
+    ) as second_zip:
+        first_identity = json.loads(first_zip.read("static/shade_gis_identity.json"))
+        second_identity = json.loads(second_zip.read("static/shade_gis_identity.json"))
+
+    assert first_identity["release_sha256"] != second_identity["release_sha256"]
+    assert deploy_page.website_identity_markers(first)[-1] == first_identity["release_sha256"]
+
+
+def test_stored_deployment_result_is_bound_to_bundle(monkeypatch):
+    from shade_gis.pages import deploy_page
+
+    monkeypatch.setattr(deploy_page.st, "session_state", {})
+    target = DeploymentTarget(repository="owner/study", mode="existing")
+    first = _bundle_bytes()
+    with zipfile.ZipFile(io.BytesIO(first)) as source:
+        files = {name: source.read(name) for name in source.namelist()}
+    manifest = json.loads(files["deployment_manifest.json"])
+    manifest["bundle_id"] = "different-bundle"
+    files["deployment_manifest.json"] = json.dumps(manifest).encode()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as changed:
+        for name, content in files.items():
+            changed.writestr(name, content)
+    result = PublishResult(True, verified=True)
+
+    deploy_page._store_result(target, result, first)
+
+    assert deploy_page._stored_result(target, first) is result
+    assert deploy_page._stored_result(target, output.getvalue()) is None
+
+
+def test_create_publish_rejects_invalid_visibility_before_running_commands():
+    def unexpected_runner(*_args, **_kwargs):
+        raise AssertionError("runner should not be called")
+
+    result = publish_website(
+        _bundle_bytes(),
+        DeploymentTarget(repository="owner/study", mode="create", visibility="help"),
+        runner=unexpected_runner,
+    )
+
+    assert result.success is False
+    assert "visibility must be 'public' or 'private'" in result.message.lower()
 
 
 def test_deploy_page_restores_and_remembers_settings_per_project(monkeypatch):
@@ -171,6 +235,28 @@ def test_bundle_builder_canonicalizes_a_github_repository_url():
 
     assert manifest["repository"] == "owner/study"
     assert "$RepositoryName = 'owner/study'" in publisher
+
+
+def test_generated_bundle_validates_against_its_own_release_identity():
+    bundle_data = build_deployment_bundle(
+        DeploymentBundleSpec(
+            repository="owner/study",
+            project={"name": "Study"},
+            study_id="study-id",
+            stops=pd.DataFrame([{"stop_id": "1001"}]),
+            raw_labels=pd.DataFrame(),
+            config_json="{}",
+            priority_weights={},
+        )
+    )
+
+    manifest = validate_deployment_bundle(
+        bundle_data,
+        DeploymentTarget(repository="owner/study", mode="existing"),
+    )
+
+    assert manifest["repository"] == "owner/study"
+    assert len(manifest["release_sha256"]) == 64
 
 
 def test_github_repository_slug_supports_detected_remote_formats():
@@ -420,6 +506,48 @@ def test_publish_rejects_a_clone_url_for_another_repository_before_git_runs():
     )
     assert unpublished.success is False
     assert "clone URL does not match" in unpublished.message
+
+
+def test_publish_and_unpublish_translate_filesystem_failures(monkeypatch):
+    def inaccessible_temporary_directory(*_args, **_kwargs):
+        raise PermissionError("temporary storage denied")
+
+    monkeypatch.setattr(
+        deployment_module,
+        "validate_deployment_bundle",
+        lambda _bundle, _target: {
+            "bundle_id": "0" * 64,
+            "repository": "owner/study",
+        },
+    )
+    monkeypatch.setattr(
+        deployment_module.tempfile,
+        "TemporaryDirectory",
+        inaccessible_temporary_directory,
+    )
+
+    published = publish_website(
+        _bundle_bytes(),
+        DeploymentTarget(
+            repository="owner/study",
+            mode="create",
+            visibility="private",
+        ),
+    )
+    unpublished = unpublish_website(
+        DeploymentTarget(
+            repository="owner/study",
+            repository_url="https://github.com/owner/study.git",
+            mode="existing",
+        )
+    )
+
+    assert published.success is False
+    assert "Publishing could not access" in published.message
+    assert "temporary storage denied" in published.message
+    assert unpublished.success is False
+    assert "Unpublishing could not access" in unpublished.message
+    assert "temporary storage denied" in unpublished.message
 
 
 def test_publish_rejects_tampered_bundle_before_git_runs():

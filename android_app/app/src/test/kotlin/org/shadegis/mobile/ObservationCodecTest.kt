@@ -79,6 +79,19 @@ class ObservationCodecTest {
     }
 
     @Test
+    fun recordsPhotoUrisForSkippedLegacyEvidence() {
+        val invalid = """{"stopId":"1001","stopName":"Main St","photoUri":"content://org.shadegis.mobile.fileprovider/photos/evidence.jpg","shadeCoverage":"Unknown","capturedAt":"2026-08-08T15:30:00Z"}"""
+
+        val result = codec.decode(invalid)
+
+        assertEquals(1, result.skippedLegacyRecords)
+        assertEquals(
+            setOf("content://org.shadegis.mobile.fileprovider/photos/evidence.jpg"),
+            result.skippedLegacyPhotoUris,
+        )
+    }
+
+    @Test
     fun rejectsUnknownStoreSchema() {
         val futureStore = """{"schema_version":99,"observations":[]}"""
 

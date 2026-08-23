@@ -958,10 +958,14 @@ def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
     )
 
 
+def mappable_stop_rows(df: pd.DataFrame) -> pd.DataFrame:
+    return published_app.mappable_stop_rows(df)
+
+
 def build_deck_chart(
     df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
 ) -> pdk.Deck:
-    map_df = color_dataset(df, taxonomy, visualization)
+    map_df = color_dataset(mappable_stop_rows(df), taxonomy, visualization)
     marker_shape = visualization.get("marker_shape", "Circle")
     if marker_shape not in MARKER_SHAPES:
         marker_shape = "Circle"

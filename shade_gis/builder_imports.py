@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from shade_gis.identifiers import canonical_identifier
 from shade_gis.shade_dimensions import (
     infer_sources_from_legacy_category,
     normalize_shade_coverage,
@@ -98,6 +99,19 @@ def normalize_hex_color(value: Any, fallback: str = "#808080") -> str:
     return text.lower()
 
 
+def scalar_text(value: Any) -> str:
+    """Return trimmed scalar text and reject nested tabular values."""
+
+    if not pd.api.types.is_scalar(value):
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    return str(value).strip()
+
+
 def normalize_category(value: Any, taxonomy: list[dict[str, Any]]) -> str:
     categories = [
         normalize_shade_coverage(item.get("name", ""), "")
@@ -105,16 +119,18 @@ def normalize_category(value: Any, taxonomy: list[dict[str, Any]]) -> str:
         if normalize_shade_coverage(item.get("name", ""), "")
     ]
     fallback = "Needs Review" if "Needs Review" in categories else (categories[-1] if categories else "Needs Review")
-    if pd.isna(value):
+    if not scalar_text(value):
         return fallback
     coverage = normalize_shade_coverage(value, fallback)
     return coverage if coverage in categories else fallback
 
 
 def normalize_review_status(value: Any) -> str:
-    if pd.isna(value) or not str(value).strip():
+    if not pd.api.types.is_scalar(value):
+        return "Needs Review"
+    text = scalar_text(value)
+    if not text:
         return "Unlabeled"
-    text = str(value).strip()
     return text if text in REVIEW_STATUS_NAMES else "Needs Review"
 
 
@@ -873,7 +889,7 @@ def prepare_stop_dataset(raw: pd.DataFrame, project: dict[str, Any], taxonomy: l
         if field not in df.columns:
             df[field] = ""
 
-    df["stop_id"] = df["stop_id"].fillna("").astype(str).str.strip()
+    df["stop_id"] = df["stop_id"].map(canonical_identifier)
     df["stop_name"] = df["stop_name"].fillna("").astype(str).str.strip()
     df["stop_name"] = df["stop_name"].where(df["stop_name"] != "", "Unnamed stop")
     df["stop_lat"] = pd.to_numeric(df["stop_lat"], errors="coerce")
@@ -885,17 +901,23 @@ def prepare_stop_dataset(raw: pd.DataFrame, project: dict[str, Any], taxonomy: l
 
     def coverage_for_row(row: pd.Series) -> str:
         explicit_coverage = row.get("shade_coverage", "")
-        coverage_text = "" if pd.isna(explicit_coverage) else str(explicit_coverage).strip()
-        candidate = explicit_coverage if coverage_text else row.get("shading", "")
+        if not pd.api.types.is_scalar(explicit_coverage):
+            return normalize_category(explicit_coverage, taxonomy)
+        candidate = explicit_coverage if scalar_text(explicit_coverage) else row.get("shading", "")
         return normalize_category(candidate, taxonomy)
 
     df["shade_coverage"] = df.apply(coverage_for_row, axis=1)
     df["shading"] = df["shade_coverage"]
 
     def sources_for_row(index: Any, value: Any) -> str:
-        sources = split_shade_sources(value)
+        sources = split_shade_sources(value) if pd.api.types.is_scalar(value) else []
         if not sources:
-            sources = infer_sources_from_legacy_category(legacy_shading.loc[index])
+            legacy_value = legacy_shading.loc[index]
+            sources = (
+                infer_sources_from_legacy_category(legacy_value)
+                if pd.api.types.is_scalar(legacy_value)
+                else []
+            )
         if df.at[index, "shade_coverage"] == "No Shade":
             sources = []
         return "; ".join(sources)
@@ -907,7 +929,8 @@ def prepare_stop_dataset(raw: pd.DataFrame, project: dict[str, Any], taxonomy: l
     for field in numeric_fields:
         df[field] = pd.to_numeric(df[field], errors="coerce")
 
-    df = df.dropna(subset=["stop_lat", "stop_lon"])
+    valid_coordinates = df["stop_lat"].between(-90, 90) & df["stop_lon"].between(-180, 180)
+    df = df[valid_coordinates]
     df = df[df["stop_id"] != ""].drop_duplicates(subset=["stop_id"], keep="first")
     df["priority_score"] = calculate_priority_scores(df)
     return df.reset_index(drop=True)

@@ -558,17 +558,7 @@ def ensure_state() -> None:
 
 
 def dataframe_to_geojson(df: pd.DataFrame) -> str:
-    features = []
-    for _, row in df.iterrows():
-        properties = row.drop(labels=["stop_lat", "stop_lon"], errors="ignore").to_dict()
-        features.append(
-            {
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [float(row["stop_lon"]), float(row["stop_lat"])]},
-                "properties": {key: (None if pd.isna(value) else value) for key, value in properties.items()},
-            }
-        )
-    return json.dumps({"type": "FeatureCollection", "features": features}, indent=2)
+    return published_app.dataframe_to_geojson(df)
 
 
 def study_config_json() -> str:

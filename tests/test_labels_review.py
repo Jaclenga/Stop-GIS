@@ -74,6 +74,38 @@ def test_current_resolution_hides_stop_but_newer_label_reopens_it():
     assert disagreement_queue_table(stops, labels, stale_history)["stop_id"].tolist() == ["7588", "4254"]
 
 
+def test_resolved_status_without_a_resolution_timestamp_does_not_hide_new_disagreement():
+    stops = pd.DataFrame(
+        [{"stop_id": 1, "stop_name": "Legacy", "review_status": "Accepted"}]
+    )
+    labels = pd.DataFrame(
+        [
+            {"stop_id": "1", "labeler_id": "a", "shade_category": "No Shade"},
+            {"stop_id": 1, "labeler_id": "b", "shade_category": "Limited Shade"},
+        ]
+    )
+
+    assert disagreement_queue_table(stops, labels)["stop_id"].tolist() == ["1"]
+
+
+def test_builder_fleiss_kappa_rejects_unequal_rater_counts():
+    from shade_gis.builder_labels import fleiss_kappa
+
+    labels = pd.DataFrame(
+        [
+            ("U1", "r1", "No Shade"),
+            ("U1", "r2", "No Shade"),
+            ("U2", "r1", "No Shade"),
+            ("U2", "r2", "No Shade"),
+            ("U2", "r3", "Limited Shade"),
+            ("U2", "r4", "Limited Shade"),
+        ],
+        columns=["stop_id", "labeler_id", "shade_category"],
+    )
+
+    assert fleiss_kappa(labels) is None
+
+
 def test_agreement_overview_counts_only_unresolved_disagreements():
     stops, labels = disagreement_fixture()
     history = pd.DataFrame(
@@ -546,6 +578,13 @@ def test_apply_review_decision_updates_active_stop(monkeypatch):
     assert updated["shade_sources"] == "None"
     assert updated["confidence"] == 0.95
     assert updated["review_status"] == "Accepted"
+    assert pd.notna(pd.to_datetime(updated["review_resolved_at"], utc=True))
+
+
+def test_review_status_widget_state_is_scoped_to_the_selected_action():
+    source = inspect.getsource(labels_page.render_admin_review_decision)
+
+    assert 'decision_key(f"final_status_{label_source_code(action)}")' in source
 
 
 def test_selected_stop_reference_dataset_keeps_only_mappable_stop(minimal_stops):

@@ -54,6 +54,50 @@ def test_csv_import_maps_fields_deduplicates_and_logs(project, taxonomy):
     assert builder_app.st.session_state["import_log"][0]["source"] == "stops_minimal.csv"
 
 
+def test_prepare_stop_dataset_rejects_nonfinite_and_out_of_range_coordinates(project, taxonomy):
+    raw = pd.DataFrame(
+        [
+            {"stop_id": "valid", "stop_lat": 27.9, "stop_lon": -82.4},
+            {"stop_id": "bad-lat", "stop_lat": 999, "stop_lon": -82.4},
+            {"stop_id": "bad-lon", "stop_lat": 27.9, "stop_lon": float("inf")},
+        ]
+    )
+
+    prepared = prepare_stop_dataset(raw, project, taxonomy)
+
+    assert prepared["stop_id"].tolist() == ["valid"]
+
+
+@pytest.mark.parametrize(
+    "malformed_value",
+    [
+        ["No Shade", "Limited Shade"],
+        {"value": "No Shade"},
+    ],
+)
+def test_prepare_stop_dataset_normalizes_nested_classifications_to_review(
+    project, taxonomy, malformed_value
+):
+    raw = pd.DataFrame(
+        [
+            {
+                "stop_id": "nested",
+                "stop_lat": 27.9,
+                "stop_lon": -82.4,
+                "shade_coverage": malformed_value,
+                "shade_sources": malformed_value,
+                "review_status": malformed_value,
+            }
+        ]
+    )
+
+    prepared = prepare_stop_dataset(raw, project, taxonomy)
+
+    assert prepared.loc[0, "shade_coverage"] == "Needs Review"
+    assert prepared.loc[0, "shade_sources"] == ""
+    assert prepared.loc[0, "review_status"] == "Needs Review"
+
+
 def test_gtfs_zip_import_enriches_routes(project, taxonomy):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
