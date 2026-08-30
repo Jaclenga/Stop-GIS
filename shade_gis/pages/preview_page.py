@@ -1,3 +1,5 @@
+import html
+
 import streamlit as st
 
 import published_app
@@ -43,7 +45,12 @@ def render_preview_page() -> None:
     ).strip()
 
     st.title(project["name"])
-    st.markdown(f"### {methodology['summary']}")
+    summary = str(methodology.get("summary", "") or "").strip()
+    if summary:
+        st.markdown(
+            f'<p class="study-summary">{html.escape(summary)}</p>',
+            unsafe_allow_html=True,
+        )
     st.caption(
         f"{project['agency']} | {project['region']} | dataset v{project['dataset_version']}"
     )
@@ -72,6 +79,14 @@ def render_preview_page() -> None:
         with tabs[0]:
             if visible_stops.empty:
                 st.info("No stops match the current visibility settings.")
+                if published_app.map_filters_active(filters):
+                    st.button(
+                        "Clear filters and show stops",
+                        key="preview_empty_clear_filters",
+                        type="primary",
+                        on_click=published_app.clear_map_filters,
+                        args=(stops, "preview"),
+                    )
             else:
                 map_cols = st.columns([2, 1])
                 with map_cols[0]:

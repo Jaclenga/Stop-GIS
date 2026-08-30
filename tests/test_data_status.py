@@ -6,6 +6,7 @@ from shade_gis.pages.data_page import (
     dataset_status_metrics,
     dataset_status_table,
     manual_entry_dataframe,
+    manual_entry_validation_error,
 )
 from shade_gis.taxonomy_components import (
     render_shade_coverage_taxonomy_editor,
@@ -122,7 +123,10 @@ def test_source_definition_reset_preserves_display_labels(monkeypatch):
     assert rows["Natural"]["operational_definition"] == (
         "Trees, palms, hedges, or other vegetation visibly shade the waiting area."
     )
-    assert taxonomy_editor_key("shade_source") == "shade_source_taxonomy_editor:project-1:1"
+    assert (
+        taxonomy_editor_key("shade_source")
+        == "shade_source_taxonomy_editor:project-1:1"
+    )
 
 
 def test_coverage_definition_reset_preserves_display_labels(monkeypatch, taxonomy):
@@ -160,8 +164,13 @@ def test_coverage_definition_reset_preserves_display_labels(monkeypatch, taxonom
     assert rows["Limited Shade"]["operational_definition"] == (
         "Shade visibly covers part of the waiting area, but not most of it."
     )
-    assert definitions["Limited Shade"] == rows["Limited Shade"]["operational_definition"]
-    assert taxonomy_editor_key("shade_coverage") == "shade_coverage_taxonomy_editor:project-1:1"
+    assert (
+        definitions["Limited Shade"] == rows["Limited Shade"]["operational_definition"]
+    )
+    assert (
+        taxonomy_editor_key("shade_coverage")
+        == "shade_coverage_taxonomy_editor:project-1:1"
+    )
 
 
 def test_terminology_editor_updates_project_methodology(monkeypatch):
@@ -229,7 +238,9 @@ def test_source_taxonomy_editor_updates_definitions_without_editing_codes(monkey
             calls.append(kwargs)
             edited = frame.copy()
             edited.loc[edited["code"] == "Natural", "shade_source"] = "Vegetation"
-            edited.loc[edited["code"] == "Natural", "operational_definition"] = "Custom natural definition."
+            edited.loc[edited["code"] == "Natural", "operational_definition"] = (
+                "Custom natural definition."
+            )
             return edited
 
     from shade_gis import taxonomy_components
@@ -250,7 +261,9 @@ def test_source_taxonomy_editor_updates_definitions_without_editing_codes(monkey
     assert calls[0]["num_rows"] == "fixed"
 
 
-def test_coverage_taxonomy_editor_updates_definitions_without_editing_codes(monkeypatch, taxonomy):
+def test_coverage_taxonomy_editor_updates_definitions_without_editing_codes(
+    monkeypatch, taxonomy
+):
     calls = []
 
     class FakeTextColumn:
@@ -268,7 +281,9 @@ def test_coverage_taxonomy_editor_updates_definitions_without_editing_codes(monk
         def data_editor(frame, **kwargs):
             calls.append(kwargs)
             edited = frame.copy()
-            edited.loc[edited["code"] == "Limited Shade", "shade_coverage"] = "Partial Shade"
+            edited.loc[edited["code"] == "Limited Shade", "shade_coverage"] = (
+                "Partial Shade"
+            )
             edited.loc[
                 edited["code"] == "Limited Shade",
                 "operational_definition",
@@ -295,7 +310,9 @@ def test_coverage_taxonomy_editor_updates_definitions_without_editing_codes(monk
 
 
 def test_manual_entry_dataframe_uses_plain_object_columns():
-    template = manual_entry_dataframe([{"stop_id": "1001", "stop_name": "Main & First"}])
+    template = manual_entry_dataframe(
+        [{"stop_id": "1001", "stop_name": "Main & First"}]
+    )
 
     assert len(template) == 1
     assert template.columns.is_unique
@@ -342,15 +359,35 @@ def test_dataset_status_reopens_review_when_label_is_newer_than_resolution():
     )
     labels = pd.DataFrame(
         [
-            {"stop_id": "2001", "shade_category": "No Shade", "created_at": "2026-07-01T10:00:00Z"},
-            {"stop_id": "2001", "shade_category": "Limited Shade", "created_at": "2026-07-01T12:00:00Z"},
+            {
+                "stop_id": "2001",
+                "shade_category": "No Shade",
+                "created_at": "2026-07-01T10:00:00Z",
+            },
+            {
+                "stop_id": "2001",
+                "shade_category": "Limited Shade",
+                "created_at": "2026-07-01T12:00:00Z",
+            },
         ]
     )
     stale_resolution = pd.DataFrame(
-        [{"stop_id": "2001", "to_status": "Accepted", "created_at": "2026-07-01T11:00:00Z"}]
+        [
+            {
+                "stop_id": "2001",
+                "to_status": "Accepted",
+                "created_at": "2026-07-01T11:00:00Z",
+            }
+        ]
     )
     current_resolution = pd.DataFrame(
-        [{"stop_id": "2001", "to_status": "Accepted", "created_at": "2026-07-01T13:00:00Z"}]
+        [
+            {
+                "stop_id": "2001",
+                "to_status": "Accepted",
+                "created_at": "2026-07-01T13:00:00Z",
+            }
+        ]
     )
 
     reopened = dataset_status_table(stops, labels, stale_resolution)
@@ -364,7 +401,9 @@ def test_dataset_preview_returns_only_requested_page():
     stops = pd.DataFrame({"stop_id": [str(index) for index in range(2278)]})
 
     visible, page, page_count = dataset_preview_page(stops, page=3, page_size=50)
-    final_page, final_page_number, _ = dataset_preview_page(stops, page=999, page_size=100)
+    final_page, final_page_number, _ = dataset_preview_page(
+        stops, page=999, page_size=100
+    )
 
     assert len(visible) == 50
     assert visible["stop_id"].tolist() == [str(index) for index in range(100, 150)]
@@ -372,3 +411,39 @@ def test_dataset_preview_returns_only_requested_page():
     assert final_page_number == 23
     assert len(final_page) == 78
     assert final_page.iloc[0]["stop_id"] == "2200"
+
+
+def test_manual_entry_validation_rejects_rows_that_import_would_drop():
+    assert (
+        manual_entry_validation_error({}) == "Enter a stop ID before adding this entry."
+    )
+    assert (
+        manual_entry_validation_error(
+            {"stop_id": "1001", "stop_lat": "north", "stop_lon": "-82.4"}
+        )
+        == "Enter numeric latitude and longitude values before adding this entry."
+    )
+    assert (
+        manual_entry_validation_error(
+            {"stop_id": "1001", "stop_lat": "91", "stop_lon": "-82.4"}
+        )
+        == "Latitude must be between -90 and 90."
+    )
+    assert (
+        manual_entry_validation_error(
+            {"stop_id": "1001", "stop_lat": "nan", "stop_lon": "-82.4"}
+        )
+        == "Enter finite latitude and longitude values before adding this entry."
+    )
+    assert (
+        manual_entry_validation_error(
+            {"stop_id": "1001", "stop_lat": "27.9", "stop_lon": "-181"}
+        )
+        == "Longitude must be between -180 and 180."
+    )
+    assert (
+        manual_entry_validation_error(
+            {"stop_id": "1001", "stop_lat": "27.9", "stop_lon": "-82.4"}
+        )
+        == ""
+    )

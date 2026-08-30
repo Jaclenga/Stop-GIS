@@ -47,9 +47,71 @@ PHASE_LABELS = {
     "closed": "Closed",
 }
 
+PHASE_CONFIRMATION_KEY = "blind_phase_confirmation"
+PHASE_CONFIRMATION_COPY = {
+    "setup": (
+        "Start Intercoder Review",
+        "Study setup and reviewer assignments will be locked while independent review is open.",
+        "Start review",
+    ),
+    "coding": (
+        "Close review and reveal agreement",
+        "Independent review will close and agreement results will become visible. Reviewers cannot submit more ratings afterward.",
+        "Close and reveal",
+    ),
+    "adjudication": (
+        "Close experiment",
+        "Adjudication will close and this experiment will become read-only.",
+        "Close experiment",
+    ),
+}
+
+
+def clear_phase_confirmation() -> None:
+    st.session_state.pop(PHASE_CONFIRMATION_KEY, None)
+
+
+@st.dialog("Confirm workflow change", on_dismiss=clear_phase_confirmation)
+def render_phase_confirmation(project_id: str, protocol: dict[str, Any]) -> None:
+    pending = st.session_state.get(PHASE_CONFIRMATION_KEY) or {}
+    phase = str(protocol.get("phase") or "")
+    if pending.get("project_id") != project_id or pending.get("phase") != phase:
+        clear_phase_confirmation()
+        st.warning(
+            "The workflow changed. Close this dialog and review the current phase."
+        )
+        return
+
+    title, explanation, confirmation_label = PHASE_CONFIRMATION_COPY[phase]
+    st.subheader(title)
+    st.warning(explanation)
+    st.caption("This phase transition cannot be undone.")
+    cancel_column, confirm_column = st.columns(2)
+    if cancel_column.button("Cancel", key="cancel_blind_phase", width="stretch"):
+        clear_phase_confirmation()
+        st.rerun()
+    if confirm_column.button(
+        confirmation_label,
+        key="confirm_blind_phase",
+        type="primary",
+        width="stretch",
+    ):
+        try:
+            next_phase = advance_blind_phase(project_id)
+        except BlindCodingError as error:
+            st.error(str(error))
+        else:
+            clear_phase_confirmation()
+            st.session_state["blind_phase_notice"] = (
+                f"Protocol advanced to {PHASE_LABELS[next_phase]}."
+            )
+            st.rerun()
+
 
 def _unit_label(protocol: dict[str, Any], *, plural: bool = False) -> str:
-    unit = "stop" if str(protocol.get("assessment_unit", "image")) == "stop" else "image"
+    unit = (
+        "stop" if str(protocol.get("assessment_unit", "image")) == "stop" else "image"
+    )
     return f"{unit}s" if plural else unit
 
 
@@ -83,12 +145,18 @@ def _rating_inputs(
             key=f"{key_prefix}:adequacy",
         )
     with second:
-        coverage = st.selectbox("Coverage", COVERAGE_OPTIONS, key=f"{key_prefix}:coverage")
+        coverage = st.selectbox(
+            "Coverage", COVERAGE_OPTIONS, key=f"{key_prefix}:coverage"
+        )
         permanence = st.selectbox(
             "Shade permanence", PERMANENCE_OPTIONS, key=f"{key_prefix}:permanence"
         )
         confidence = st.slider(
-            "Confidence", min_value=1, max_value=5, value=3, key=f"{key_prefix}:confidence"
+            "Confidence",
+            min_value=1,
+            max_value=5,
+            value=3,
+            key=f"{key_prefix}:confidence",
         )
     recognition = "no"
     if include_recognition:
@@ -163,7 +231,9 @@ def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
             "labels, comments, and other reviewers' answers remain hidden until independent review closes."
         )
     if protocol["phase"] != "coding":
-        st.warning("The research administrator has not started Intercoder Review, or review has closed.")
+        st.warning(
+            "The research administrator has not started Intercoder Review, or review has closed."
+        )
         return
     coder_id = st.text_input(
         "Pseudonymous reviewer ID",
@@ -184,7 +254,9 @@ def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
     )
     pending = assignments[assignments["status"] == "assigned"].copy()
     if pending.empty:
-        st.success("All of your independent reviews are complete. Group results remain hidden.")
+        st.success(
+            "All of your independent reviews are complete. Group results remain hidden."
+        )
         return
     options = pending["assignment_id"].astype(str).tolist()
     selected_assignment = st.selectbox(
@@ -211,11 +283,17 @@ def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
             st.link_button("Open location in Google Maps", maps_url)
         evidence_sources = assignment.get("evidence_sources", [])
         if isinstance(evidence_sources, list) and evidence_sources:
-            with st.expander(f"Project imagery ({len(evidence_sources)})", expanded=False):
+            with st.expander(
+                f"Project imagery ({len(evidence_sources)})", expanded=False
+            ):
                 for index, evidence_source in enumerate(evidence_sources, start=1):
-                    _render_image(str(evidence_source), f"{display_id} evidence {index}")
+                    _render_image(
+                        str(evidence_source), f"{display_id} evidence {index}"
+                    )
         else:
-            st.caption("No project imagery is attached. Use the prespecified field or map evidence source.")
+            st.caption(
+                "No project imagery is attached. Use the prespecified field or map evidence source."
+            )
     st.markdown("#### Reviewer instructions")
     st.write(str(protocol["instructions"]))
     _render_codebook(assessment_unit)
@@ -233,7 +311,9 @@ def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
         )
     if submitted:
         if not acknowledged:
-            st.error("Confirm that the rating was completed independently before submitting.")
+            st.error(
+                "Confirm that the rating was completed independently before submitting."
+            )
         else:
             try:
                 submit_blind_rating(project_id, selected_assignment, coder_id, rating)
@@ -250,7 +330,9 @@ def _registered_image_label(row: pd.Series) -> str:
     return f"{row['id']} · stop {stop} · {image_type}"
 
 
-def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[str, Any]) -> None:
+def render_protocol_setup(
+    project_id: str, stops: pd.DataFrame, protocol: dict[str, Any]
+) -> None:
     st.subheader("Study Setup")
     st.caption("Define what reviewers assess and how agreement will be evaluated.")
     with st.container(border=True):
@@ -259,7 +341,9 @@ def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[s
             assessment_unit = st.radio(
                 "Assessment unit",
                 ["image", "stop"],
-                index=0 if str(protocol.get("assessment_unit", "image")) == "image" else 1,
+                index=0
+                if str(protocol.get("assessment_unit", "image")) == "image"
+                else 1,
                 format_func=lambda value: (
                     "Standardized image" if value == "image" else "Transit stop"
                 ),
@@ -313,7 +397,9 @@ def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[s
             st.rerun()
 
     st.subheader("Review Materials")
-    st.caption("Add the standardized images or transit stops that reviewers will assess.")
+    st.caption(
+        "Add the standardized images or transit stops that reviewers will assess."
+    )
     stop_records = stops.reset_index(drop=True)
     saved_unit = str(protocol.get("assessment_unit", "image"))
     if saved_unit == "image":
@@ -322,7 +408,9 @@ def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[s
             "Use cropped or de-identified images with neutral filenames. Remove readable route signs, "
             "addresses, and recognizable landmarks when practical."
         )
-        st.caption("Review images are added by URL; file upload is not enabled in this workspace.")
+        st.caption(
+            "Review images are added by URL; file upload is not enabled in this workspace."
+        )
         if not stop_records.empty:
             with st.form("blind_register_image_form"):
                 stop_index = st.selectbox(
@@ -349,7 +437,9 @@ def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[s
                             "source": "blind protocol setup",
                         },
                     )
-                    st.success("Standardized image registered with a neutral internal ID.")
+                    st.success(
+                        "Standardized image registered with a neutral internal ID."
+                    )
                     st.rerun()
         units = list_images(project_id)
         if units.empty:
@@ -360,7 +450,11 @@ def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[s
         }
         st.dataframe(
             units[
-                [column for column in ["id", "stop_id", "image_type", "created_at"] if column in units]
+                [
+                    column
+                    for column in ["id", "stop_id", "image_type", "created_at"]
+                    if column in units
+                ]
             ],
             width="stretch",
             hide_index=True,
@@ -375,7 +469,9 @@ def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[s
             st.info("No transit stops are available yet.")
             return
         unit_labels = {
-            str(row.get("stop_id", "")): f"{row.get('stop_id', '')} · {row.get('stop_name', '')}"
+            str(
+                row.get("stop_id", "")
+            ): f"{row.get('stop_id', '')} · {row.get('stop_name', '')}"
             for _, row in stop_records.iterrows()
         }
         st.dataframe(
@@ -414,7 +510,9 @@ def render_protocol_setup(project_id: str, stops: pd.DataFrame, protocol: dict[s
         except BlindCodingError as error:
             st.error(str(error))
         else:
-            st.success(f"Created {created} new assignments. Existing assignments were preserved.")
+            st.success(
+                f"Created {created} new assignments. Existing assignments were preserved."
+            )
             st.rerun()
 
 
@@ -422,9 +520,13 @@ def _agreement_display(report: pd.DataFrame) -> pd.DataFrame:
     if report.empty:
         return report
     display = report.copy()
-    display["variable"] = display["variable"].map(lambda value: FIELD_LABELS.get(value, value))
+    display["variable"] = display["variable"].map(
+        lambda value: FIELD_LABELS.get(value, value)
+    )
     display["percent_agreement"] = display["percent_agreement"].map(
-        lambda value: "Not enough data" if pd.isna(value) else f"{float(value) * 100:.1f}%"
+        lambda value: (
+            "Not enough data" if pd.isna(value) else f"{float(value) * 100:.1f}%"
+        )
     )
     display["krippendorff_alpha"] = display["krippendorff_alpha"].map(
         lambda value: "Not enough data" if pd.isna(value) else f"{float(value):.3f}"
@@ -442,18 +544,34 @@ def render_admin_results(project_id: str, protocol: dict[str, Any]) -> None:
     report = blind_agreement_report(project_id)
     st.dataframe(_agreement_display(report), width="stretch", hide_index=True)
     queue = blind_adjudication_queue(project_id)
-    low_count = int(queue.get("needs_adjudication", pd.Series(dtype=bool)).sum()) if not queue.empty else 0
-    st.metric(f"{_unit_label(protocol, plural=True).title()} below the prespecified threshold", low_count)
+    low_count = (
+        int(queue.get("needs_adjudication", pd.Series(dtype=bool)).sum())
+        if not queue.empty
+        else 0
+    )
+    st.metric(
+        f"{_unit_label(protocol, plural=True).title()} below the prespecified threshold",
+        low_count,
+    )
     if not queue.empty:
         columns = [
-            "display_id", "ratings_completed", "agreement", "status", "shade_source", "coverage",
-            "waiting_area_covered", "permanence", "image_adequacy",
+            "display_id",
+            "ratings_completed",
+            "agreement",
+            "status",
+            "shade_source",
+            "coverage",
+            "waiting_area_covered",
+            "permanence",
+            "image_adequacy",
         ]
         display = queue[[column for column in columns if column in queue]].copy()
         display["agreement"] = display["agreement"].map(
             lambda value: "" if pd.isna(value) else f"{float(value) * 100:.1f}%"
         )
-        display.columns = [column.replace("_", " ").title() for column in display.columns]
+        display.columns = [
+            column.replace("_", " ").title() for column in display.columns
+        ]
         st.dataframe(display, width="stretch", hide_index=True)
 
     ratings = export_blind_ratings(project_id)
@@ -501,7 +619,9 @@ def render_admin_workflow(
         with st.container(border=True):
             metrics = st.columns(4)
             unit_key = (
-                "stops" if str(protocol.get("assessment_unit", "image")) == "stop" else "images"
+                "stops"
+                if str(protocol.get("assessment_unit", "image")) == "stop"
+                else "images"
             )
             metrics[0].metric("Review items", progress[unit_key])
             metrics[1].metric("Assigned reviewers", progress["coders"])
@@ -529,31 +649,37 @@ def render_admin_workflow(
     }
     label = action_labels.get(str(protocol["phase"]))
     if label:
-        disabled = (
-            protocol["phase"] == "setup" and progress["assignments"] == 0
-        ) or (
+        disabled = (protocol["phase"] == "setup" and progress["assignments"] == 0) or (
             protocol["phase"] == "coding" and progress["remaining"] > 0
         )
-        if st.button(label, type="primary", disabled=disabled, key="advance_blind_phase"):
-            try:
-                next_phase = advance_blind_phase(project_id)
-            except BlindCodingError as error:
-                st.error(str(error))
-            else:
-                st.success(f"Protocol advanced to {PHASE_LABELS[next_phase]}.")
-                st.rerun()
+        if st.button(
+            label, type="primary", disabled=disabled, key="advance_blind_phase"
+        ):
+            st.session_state[PHASE_CONFIRMATION_KEY] = {
+                "project_id": project_id,
+                "phase": str(protocol["phase"]),
+            }
         if protocol["phase"] == "setup" and disabled:
             st.caption("Create reviewer assignments before starting Intercoder Review.")
         elif disabled:
-            st.caption("Every assignment must be submitted before agreement can be revealed.")
+            st.caption(
+                "Every assignment must be submitted before agreement can be revealed."
+            )
+        pending = st.session_state.get(PHASE_CONFIRMATION_KEY) or {}
+        if pending.get("project_id") == project_id:
+            render_phase_confirmation(project_id, protocol)
 
 
 def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> None:
     st.subheader("Identity-blinded adjudication")
     if protocol["phase"] != "adjudication":
-        st.warning("Adjudication becomes available only after all independent reviews are submitted.")
+        st.warning(
+            "Adjudication becomes available only after all independent reviews are submitted."
+        )
         return
-    adjudicator_id = st.text_input("Pseudonymous adjudicator ID", key="blind_adjudicator_id").strip()
+    adjudicator_id = st.text_input(
+        "Pseudonymous adjudicator ID", key="blind_adjudicator_id"
+    ).strip()
     if not adjudicator_id:
         st.caption("Enter the adjudicator ID issued by the research administrator.")
         return
@@ -574,15 +700,23 @@ def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> No
     display_id = str(item["display_id"])
     st.markdown(f"### {display_id}")
     if str(protocol.get("assessment_unit", "image")) == "image":
-        _render_image(str(item.get("storage_path", "") or item.get("uri", "") or ""), display_id)
+        _render_image(
+            str(item.get("storage_path", "") or item.get("uri", "") or ""), display_id
+        )
     else:
         st.write(f"{item.get('stop_name', '')} · Stop ID {item.get('stop_id', '')}")
         evidence_sources = item.get("evidence_sources", [])
         if isinstance(evidence_sources, list) and evidence_sources:
-            with st.expander(f"Project imagery ({len(evidence_sources)})", expanded=False):
+            with st.expander(
+                f"Project imagery ({len(evidence_sources)})", expanded=False
+            ):
                 for index, evidence_source in enumerate(evidence_sources, start=1):
-                    _render_image(str(evidence_source), f"{display_id} evidence {index}")
-    st.caption("Original reviewer identities are withheld. Counts below are the competing submitted codes.")
+                    _render_image(
+                        str(evidence_source), f"{display_id} evidence {index}"
+                    )
+    st.caption(
+        "Original reviewer identities are withheld. Counts below are the competing submitted codes."
+    )
     _render_codebook(str(protocol.get("assessment_unit", "image")))
     summary = pd.DataFrame(
         [
@@ -598,7 +732,9 @@ def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> No
             assessment_unit=str(protocol.get("assessment_unit", "image")),
         )
         notes = st.text_area("Adjudication rationale")
-        submitted = st.form_submit_button("Save locked adjudication", type="primary", width="stretch")
+        submitted = st.form_submit_button(
+            "Save locked adjudication", type="primary", width="stretch"
+        )
     if submitted:
         try:
             submit_blind_adjudication(
@@ -607,7 +743,9 @@ def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> No
         except BlindCodingError as error:
             st.error(str(error))
         else:
-            st.success(f"Adjudicated decision for {display_id} was stored separately from raw ratings.")
+            st.success(
+                f"Adjudicated decision for {display_id} was stored separately from raw ratings."
+            )
             st.rerun()
 
 
@@ -625,6 +763,9 @@ def render_blind_coding_page() -> None:
         return
     protocol = get_blind_protocol(project_id)
     _phase_caption(protocol)
+    notice = st.session_state.pop("blind_phase_notice", None)
+    if notice:
+        st.success(str(notice))
     if st.session_state.get("blind_workspace_role") == "Coder":
         st.session_state["blind_workspace_role"] = "Reviewer"
     with st.expander("Admin preview", expanded=False):

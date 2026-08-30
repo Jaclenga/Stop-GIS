@@ -44,7 +44,12 @@ from shade_gis.ui_tables import (
 )
 
 
-DATASET_REVIEWED_STATUSES = {"Crowd Reviewed", "Expert Reviewed", "Accepted", "Archived"}
+DATASET_REVIEWED_STATUSES = {
+    "Crowd Reviewed",
+    "Expert Reviewed",
+    "Accepted",
+    "Archived",
+}
 DATASET_ATTENTION_STATUSES = {"Needs Review", "Disputed"}
 MANUAL_ENTRY_COLUMNS = REQUIRED_STOP_FIELDS + [
     "agency",
@@ -59,7 +64,10 @@ MANUAL_ENTRY_COLUMNS = REQUIRED_STOP_FIELDS + [
 def manual_entry_dataframe(records: list[dict[str, str]]) -> pd.DataFrame:
     """Build a consistently typed frame after manual form submission."""
     normalized_records = [
-        {column: str(record.get(column, "") or "").strip() for column in MANUAL_ENTRY_COLUMNS}
+        {
+            column: str(record.get(column, "") or "").strip()
+            for column in MANUAL_ENTRY_COLUMNS
+        }
         for record in records
     ]
     return pd.DataFrame(
@@ -77,7 +85,13 @@ def dataset_status_table(
     """Combine canonical stop state and raw-label history into progress rows."""
     if stops.empty or "stop_id" not in stops.columns:
         return pd.DataFrame(
-            columns=["stop_id", "dataset_status", "label_count", "final_label", "agreement_pct"]
+            columns=[
+                "stop_id",
+                "dataset_status",
+                "label_count",
+                "final_label",
+                "agreement_pct",
+            ]
         )
     status = stops.copy()
     status["stop_id"] = status["stop_id"].fillna("").astype(str).str.strip()
@@ -85,7 +99,11 @@ def dataset_status_table(
     if not majority.empty:
         majority = majority.copy()
         majority["stop_id"] = majority["stop_id"].astype(str)
-        computed_columns = [column for column in majority.columns if column != "stop_id" and column in status.columns]
+        computed_columns = [
+            column
+            for column in majority.columns
+            if column != "stop_id" and column in status.columns
+        ]
         status = status.drop(columns=computed_columns)
         status = status.merge(majority, on="stop_id", how="left")
     for column, fallback in [
@@ -98,8 +116,12 @@ def dataset_status_table(
     ]:
         if column not in status.columns:
             status[column] = fallback
-        status[column] = status[column].fillna(fallback) if fallback is not None else status[column]
-    status["label_count"] = pd.to_numeric(status["label_count"], errors="coerce").fillna(0).astype(int)
+        status[column] = (
+            status[column].fillna(fallback) if fallback is not None else status[column]
+        )
+    status["label_count"] = (
+        pd.to_numeric(status["label_count"], errors="coerce").fillna(0).astype(int)
+    )
     status["review_status"] = status["review_status"].fillna("Unlabeled").astype(str)
 
     def final_label(row: pd.Series) -> str:
@@ -110,11 +132,17 @@ def dataset_status_table(
 
     status["final_label"] = status.apply(final_label, axis=1)
     unresolved = disagreement_queue_table(stops, labels, review_history)
-    unresolved_ids = set(unresolved["stop_id"].astype(str)) if not unresolved.empty else set()
+    unresolved_ids = (
+        set(unresolved["stop_id"].astype(str)) if not unresolved.empty else set()
+    )
     status["unresolved_disagreement"] = status["stop_id"].isin(unresolved_ids)
     if "assessment_values" in status.columns:
         status["_has_assessment_values"] = status["assessment_values"].map(
-            lambda value: bool(value) if isinstance(value, dict) else str(value or "").strip() not in {"", "{}", "nan"}
+            lambda value: (
+                bool(value)
+                if isinstance(value, dict)
+                else str(value or "").strip() not in {"", "{}", "nan"}
+            )
         )
     else:
         status["_has_assessment_values"] = False
@@ -125,7 +153,9 @@ def dataset_status_table(
             return "Needs Review"
         if review_status in DATASET_REVIEWED_STATUSES:
             return "Reviewed"
-        if review_status in DATASET_ATTENTION_STATUSES or bool(row.get("disagreement_flag", False)):
+        if review_status in DATASET_ATTENTION_STATUSES or bool(
+            row.get("disagreement_flag", False)
+        ):
             return "Needs Review"
         if (
             int(row.get("label_count", 0) or 0) == 0
@@ -144,13 +174,44 @@ def dataset_status_table(
     return status.drop(columns=["_has_assessment_values"])
 
 
+def manual_entry_validation_error(record: dict[str, str]) -> str:
+    """Return an actionable error for a manual row that import would discard."""
+    if not str(record.get("stop_id") or "").strip():
+        return "Enter a stop ID before adding this entry."
+    try:
+        latitude = float(str(record.get("stop_lat") or "").strip())
+        longitude = float(str(record.get("stop_lon") or "").strip())
+    except ValueError:
+        return "Enter numeric latitude and longitude values before adding this entry."
+    if not math.isfinite(latitude) or not math.isfinite(longitude):
+        return "Enter finite latitude and longitude values before adding this entry."
+    if not -90 <= latitude <= 90:
+        return "Latitude must be between -90 and 90."
+    if not -180 <= longitude <= 180:
+        return "Longitude must be between -180 and 180."
+    return ""
+
+
 def dataset_status_metrics(status: pd.DataFrame) -> dict[str, int | float]:
     total = len(status)
-    labeled_mask = status.get("is_labeled", pd.Series(False, index=status.index)).fillna(False).astype(bool)
+    labeled_mask = (
+        status.get("is_labeled", pd.Series(False, index=status.index))
+        .fillna(False)
+        .astype(bool)
+    )
     labeled = int(labeled_mask.sum())
-    reviewed = int((status.get("dataset_status", pd.Series(dtype=str)).eq("Reviewed") & labeled_mask).sum())
-    needs_review = int(status.get("dataset_status", pd.Series(dtype=str)).eq("Needs Review").sum())
-    unlabeled = int(status.get("dataset_status", pd.Series(dtype=str)).eq("Unlabeled").sum())
+    reviewed = int(
+        (
+            status.get("dataset_status", pd.Series(dtype=str)).eq("Reviewed")
+            & labeled_mask
+        ).sum()
+    )
+    needs_review = int(
+        status.get("dataset_status", pd.Series(dtype=str)).eq("Needs Review").sum()
+    )
+    unlabeled = int(
+        status.get("dataset_status", pd.Series(dtype=str)).eq("Unlabeled").sum()
+    )
     return {
         "total_stops": total,
         "labeled_stops": labeled,
@@ -194,7 +255,9 @@ def render_dataset_status(
             f"({float(metrics['review_completion']) * 100:.1f}%)."
         )
 
-    attention_count = int(metrics["stops_needing_review"]) + int(metrics["unlabeled_stops"])
+    attention_count = int(metrics["stops_needing_review"]) + int(
+        metrics["unlabeled_stops"]
+    )
     queue_message = (
         f"{attention_count:,} stops need labeling or moderator attention."
         if attention_count
@@ -212,7 +275,9 @@ def render_dataset_status(
     )
 
     with st.expander("Dataset Preview", expanded=False):
-        st.caption("Browse the project dataset one page at a time. Only the visible page is rendered.")
+        st.caption(
+            "Browse the project dataset one page at a time. Only the visible page is rendered."
+        )
         preview_controls = st.columns([1, 1, 3], vertical_alignment="bottom")
         preview_page_size = preview_controls[0].selectbox(
             "Preview rows per page",
@@ -251,6 +316,7 @@ def render_dataset_status(
         )
         render_dataframe_table(visible_stops)
 
+
 def render_project_storage_controls() -> None:
     projects = list_projects()
     project_ids = [project["id"] for project in projects]
@@ -266,7 +332,10 @@ def render_project_storage_controls() -> None:
         return f"{name} - {region} - v{version}"
 
     st.subheader("Project Store")
-    cols = st.columns([1.5, 0.55, 0.95], vertical_alignment="bottom")
+    st.caption(
+        "Changes throughout the workspace save automatically to the active project."
+    )
+    cols = st.columns([1.7, 1], vertical_alignment="bottom")
     with cols[0]:
         if project_ids:
             selected_project_id = st.selectbox(
@@ -280,10 +349,6 @@ def render_project_storage_controls() -> None:
                     load_project_into_session(selected_project_id)
                     st.rerun()
     with cols[1]:
-        if st.button("Save now", width="stretch"):
-            if save_active_project_to_store():
-                st.success("Project saved.")
-    with cols[2]:
         status = database_status()
         if status["using_fallback"]:
             st.caption(f"Database fallback: `{status['active_path']}`")
@@ -292,7 +357,9 @@ def render_project_storage_controls() -> None:
 
     create_cols = st.columns([1.5, 0.65], vertical_alignment="bottom")
     with create_cols[0]:
-        new_project_name = st.text_input("New blank project name", key="new_project_name")
+        new_project_name = st.text_input(
+            "New blank project name", key="new_project_name"
+        )
     with create_cols[1]:
         if st.button("Create blank project", width="stretch"):
             new_project_id = create_blank_project(new_project_name)
@@ -315,10 +382,24 @@ def render_data_page() -> None:
         project["owners"] = st.text_input("Owner(s)", project["owners"])
     with right:
         st.subheader("Publication")
-        project["visibility"] = st.selectbox("Visibility", ["Public", "Private"], index=0 if project["visibility"] == "Public" else 1)
-        project["dataset_version"] = st.text_input("Dataset version", project["dataset_version"])
-        project["methodology_version"] = st.text_input("Methodology version", project["methodology_version"])
-        project["description"] = st.text_area("Description", project["description"], height=118)
+        project["visibility"] = st.selectbox(
+            "Publication intent",
+            ["Public", "Private"],
+            index=0 if project["visibility"] == "Public" else 1,
+            help=(
+                "Sets the project badge and intended audience only. It does not publish the website, "
+                "change repository access, or make project data public."
+            ),
+        )
+        project["dataset_version"] = st.text_input(
+            "Dataset version", project["dataset_version"]
+        )
+        project["methodology_version"] = st.text_input(
+            "Methodology version", project["methodology_version"]
+        )
+        project["description"] = st.text_area(
+            "Description", project["description"], height=118
+        )
 
     st.subheader("Upload Or Map A Dataset")
     file_tab, api_tab, manual_tab = st.tabs(["File Upload", "API URL", "Manual Entry"])
@@ -333,7 +414,9 @@ def render_data_page() -> None:
         )
         if uploaded is not None:
             if getattr(uploaded, "size", 0) > max_upload_bytes():
-                st.error(f"This upload is larger than the {format_bytes(max_upload_bytes())} limit.")
+                st.error(
+                    f"This upload is larger than the {format_bytes(max_upload_bytes())} limit."
+                )
                 return
             contents = uploaded.getvalue()
             filename = uploaded.name
@@ -344,8 +427,16 @@ def render_data_page() -> None:
                     if zip_format == "GTFS":
                         raw, metadata = parse_gtfs_zip(contents)
                         render_dataframe_table(raw.head(25))
-                        if st.button("Use uploaded GTFS stops", type="primary", key=f"{key_prefix}_gtfs"):
-                            mapping = {field: field for field in REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS if field in raw.columns}
+                        if st.button(
+                            "Use uploaded GTFS stops",
+                            type="primary",
+                            key=f"{key_prefix}_gtfs",
+                        ):
+                            mapping = {
+                                field: field
+                                for field in REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS
+                                if field in raw.columns
+                            }
                             metadata.update({"original_filename": filename})
                             prepared = import_stop_dataset(
                                 raw,
@@ -400,7 +491,11 @@ def render_data_page() -> None:
 
     with api_tab:
         api_url = st.text_input("Dataset API or file URL", key="api_import_url")
-        api_format = st.selectbox("Response format", ["Auto detect", "CSV", "GeoJSON"], key="api_import_format")
+        api_format = st.selectbox(
+            "Response format",
+            ["Auto detect", "CSV", "GeoJSON"],
+            key="api_import_format",
+        )
         st.caption(
             f"API imports accept HTTP(S) CSV or GeoJSON responses up to {format_bytes(max_api_bytes())}. "
             "Private network URLs are blocked unless enabled by deployment settings."
@@ -424,7 +519,9 @@ def render_data_page() -> None:
         api_raw = st.session_state.get("api_import_raw")
         if isinstance(api_raw, pd.DataFrame):
             api_metadata = st.session_state.get("api_import_metadata", {})
-            detected = api_metadata.get("detected_format") or api_format.replace("Auto detect", "API")
+            detected = api_metadata.get("detected_format") or api_format.replace(
+                "Auto detect", "API"
+            )
             render_mapped_import_controls(
                 api_raw,
                 source_name=st.session_state.get(
@@ -440,8 +537,8 @@ def render_data_page() -> None:
 
     with manual_tab:
         st.caption(
-            "Add stops to the queue with text fields. Rows without a stop ID or valid coordinates "
-            "are ignored on import."
+            "Add stops to the queue with text fields. A stop ID and valid latitude/longitude are "
+            "required; invalid entries are explained before they reach the queue."
         )
         with st.form("manual_entry_form", clear_on_submit=True):
             field_columns = st.columns(2)
@@ -455,14 +552,20 @@ def render_data_page() -> None:
             add_manual_entry = st.form_submit_button("Add entry")
 
         if add_manual_entry:
-            record = {column: str(manual_values.get(column, "")).strip() for column in MANUAL_ENTRY_COLUMNS}
-            if any(record.values()):
+            record = {
+                column: str(manual_values.get(column, "")).strip()
+                for column in MANUAL_ENTRY_COLUMNS
+            }
+            validation_error = manual_entry_validation_error(record)
+            if validation_error:
+                st.error(validation_error)
+            else:
                 queued_entries = list(st.session_state.get("manual_import_entries", []))
                 queued_entries.append(record)
                 st.session_state["manual_import_entries"] = queued_entries
-                st.success(f"Added entry {len(queued_entries)} to the manual import queue.")
-            else:
-                st.warning("Enter at least one value before adding an entry.")
+                st.success(
+                    f"Added entry {len(queued_entries)} to the manual import queue."
+                )
 
         queued_entries = list(st.session_state.get("manual_import_entries", []))
         if queued_entries:
@@ -477,7 +580,9 @@ def render_data_page() -> None:
                     st.session_state["manual_import_entries"] = queued_entries
                     st.rerun()
 
-        manual_source = st.text_input("Manual import source label", "Manual entry", key="manual_import_source")
+        manual_source = st.text_input(
+            "Manual import source label", "Manual entry", key="manual_import_source"
+        )
         if st.button(
             "Use manual entries",
             type="primary",
@@ -485,7 +590,11 @@ def render_data_page() -> None:
             disabled=not queued_entries,
         ):
             manual_rows = manual_entry_dataframe(queued_entries)
-            mapping = {field: field for field in REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS if field in manual_rows.columns}
+            mapping = {
+                field: field
+                for field in REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS
+                if field in manual_rows.columns
+            }
             prepared = import_stop_dataset(
                 manual_rows,
                 mapping,
@@ -500,9 +609,13 @@ def render_data_page() -> None:
 
     source_cols = st.columns(3)
     with source_cols[0]:
-        project["source_name"] = st.text_input("Data source name", project["source_name"])
+        project["source_name"] = st.text_input(
+            "Data source name", project["source_name"]
+        )
     with source_cols[1]:
-        project["source_license"] = st.text_input("Source license", project["source_license"])
+        project["source_license"] = st.text_input(
+            "Source license", project["source_license"]
+        )
     with source_cols[2]:
         project["source_url"] = st.text_input("Source URL", project["source_url"])
 

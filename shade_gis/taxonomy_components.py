@@ -48,7 +48,9 @@ def reset_shade_source_definitions(methodology: dict[str, Any]) -> None:
         item["shade_source"]: item["operational_definition"]
         for item in SHADE_SOURCE_TAXONOMY
     }
-    source_taxonomy = normalize_source_taxonomy(methodology.get("shade_source_taxonomy"))
+    source_taxonomy = normalize_source_taxonomy(
+        methodology.get("shade_source_taxonomy")
+    )
     for item in source_taxonomy:
         item["operational_definition"] = default_definitions[item["code"]]
     methodology["shade_source_taxonomy"] = source_taxonomy
@@ -86,27 +88,31 @@ def render_taxonomy_section_header(
     reset_args: tuple[Any, ...] = (),
 ) -> bool:
     mode_key = taxonomy_edit_mode_key(section)
+    project_id = st.session_state.get("active_project_id", "draft")
+    reset_pending_key = f"taxonomy_reset_pending:{project_id}:{section}"
+    reset_notice_key = f"taxonomy_reset_notice:{project_id}:{section}"
     editing = bool(st.session_state.get(mode_key, False))
     if editing and reset_callback is not None:
         title_column, reset_column, action_column = st.columns(
             [0.68, 0.20, 0.12], vertical_alignment="center"
         )
     else:
-        title_column, action_column = st.columns([0.88, 0.12], vertical_alignment="center")
+        title_column, action_column = st.columns(
+            [0.88, 0.12], vertical_alignment="center"
+        )
         reset_column = None
     with title_column:
         st.subheader(title, help=help_text)
     if reset_column is not None:
         with reset_column:
-            st.button(
+            if st.button(
                 "Reset definitions",
                 type="secondary",
                 width="stretch",
-                key=f"taxonomy_reset_{section}_{st.session_state.get('active_project_id', 'draft')}",
+                key=f"taxonomy_reset_{section}_{project_id}",
                 help="Restore the original operational definitions while keeping your display labels.",
-                on_click=reset_callback,
-                args=reset_args,
-            )
+            ):
+                st.session_state[reset_pending_key] = True
     with action_column:
         st.button(
             "Done" if editing else "Edit",
@@ -116,6 +122,35 @@ def render_taxonomy_section_header(
             on_click=toggle_taxonomy_edit_mode,
             args=(mode_key,),
         )
+    if st.session_state.pop(reset_notice_key, False):
+        st.success(f"Restored the default {title.lower()} definitions.")
+    if (
+        editing
+        and reset_callback is not None
+        and st.session_state.get(reset_pending_key)
+    ):
+        st.warning(
+            "Resetting replaces your customized operational definitions. "
+            "Display labels are preserved, but this change cannot be undone."
+        )
+        cancel_column, confirm_column = st.columns([1, 1])
+        if cancel_column.button(
+            "Cancel reset",
+            key=f"taxonomy_reset_cancel_{section}_{project_id}",
+            width="stretch",
+        ):
+            st.session_state.pop(reset_pending_key, None)
+            st.rerun()
+        if confirm_column.button(
+            "Reset definitions permanently",
+            key=f"taxonomy_reset_confirm_{section}_{project_id}",
+            type="primary",
+            width="stretch",
+        ):
+            reset_callback(*reset_args)
+            st.session_state.pop(reset_pending_key, None)
+            st.session_state[reset_notice_key] = True
+            st.rerun()
     return editing
 
 
@@ -196,7 +231,9 @@ def render_shade_coverage_taxonomy_editor(
     edited = st.data_editor(
         coverage_taxonomy_table_frame(methodology, normalized_taxonomy),
         column_config={
-            "shade_coverage": st.column_config.TextColumn("Shade coverage", width="small"),
+            "shade_coverage": st.column_config.TextColumn(
+                "Shade coverage", width="small"
+            ),
             "operational_definition": st.column_config.TextColumn(
                 "Operational definition", required=True, width="large"
             ),

@@ -32,13 +32,15 @@ def test_core_modules_compile_without_bytecode_writes():
 def test_deploy_source_comes_from_public_app_module():
     import builder_app
 
-    assert builder_app.published_app_source() == Path("published_app.py").read_text(encoding="utf-8")
+    assert builder_app.published_app_source() == Path("published_app.py").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_tracked_preview_app_matches_published_source():
-    assert Path("preview_app/app.py").read_text(encoding="utf-8") == Path("published_app.py").read_text(
-        encoding="utf-8"
-    )
+    assert Path("preview_app/app.py").read_text(encoding="utf-8") == Path(
+        "published_app.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_builder_and_published_runtime_disable_arrow_string_inference():
@@ -105,11 +107,17 @@ def test_ui_smoke_can_disable_expensive_automatic_persistence(monkeypatch):
     import builder_app
 
     monkeypatch.setenv("SHADE_GIS_TEST_DISABLE_AUTO_SAVE", "1")
-    monkeypatch.setattr(builder_app, "st", type("FakeStreamlit", (), {"session_state": {"active_project_id": "ui-test"}}))
+    monkeypatch.setattr(
+        builder_app,
+        "st",
+        type("FakeStreamlit", (), {"session_state": {"active_project_id": "ui-test"}}),
+    )
     monkeypatch.setattr(
         builder_app,
         "save_project_bundle",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("auto-save should be skipped")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("auto-save should be skipped")
+        ),
     )
 
     builder_app.save_active_project_to_store()
@@ -125,10 +133,10 @@ def test_ui_seed_limit_is_test_only(monkeypatch, taxonomy, project):
     monkeypatch.setattr(
         builder_app,
         "create_project",
-        lambda project, taxonomy, methodology, visualization, stops, import_log: captured.update(
-            {"stops": stops, "rows": import_log[0]["rows"]}
-        )
-        or "ui-seed",
+        lambda project, taxonomy, methodology, visualization, stops, import_log: (
+            captured.update({"stops": stops, "rows": import_log[0]["rows"]})
+            or "ui-seed"
+        ),
     )
 
     assert builder_app.create_seed_project() == "ui-seed"
@@ -159,7 +167,10 @@ def test_summary_metrics_only_render_in_analytics():
 def test_public_taxonomy_table_does_not_expose_sort_order():
     source = Path("published_app.py").read_text(encoding="utf-8")
 
-    assert 'coverage_schema_display_table(taxonomy, config.get("shade_coverage_taxonomy"))' in source
+    assert (
+        'coverage_schema_display_table(taxonomy, config.get("shade_coverage_taxonomy"))'
+        in source
+    )
     assert 'source_schema_display_table(config.get("shade_source_taxonomy"))' in source
     assert 'drop(columns=["sort_order"]' in source
 
@@ -177,7 +188,7 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
     assert '("Dataset", "Data")' in builder_source
     assert '("Labelling", "Labels")' in builder_source
     assert '("Build", "Preview")' in builder_source
-    assert '("Export", "Deploy")' in builder_source
+    assert '("Publish", "Deploy")' in builder_source
     assert '"Dataset": [' in builder_source
     assert '("Quality", "Data Quality")' in builder_source
     assert '("Dataset Review", "Labels")' in builder_source
@@ -198,21 +209,30 @@ def test_builder_has_project_home_and_clickable_brand_navigation():
 
     assert 'st.title("Stop-GIS Projects")' not in source
     assert 'st.button("Stop-GIS", key="nav_home", on_click=request_main_menu)' in source
-    assert '@st.dialog("Open project?", on_dismiss=clear_pending_project_open)' in source
-    assert '@st.dialog("Project settings", on_dismiss=clear_pending_project_settings)' in source
-    assert '@st.dialog("Delete project?", on_dismiss=clear_pending_project_delete)' in source
-    assert '@st.dialog("Return to main menu?", on_dismiss=clear_pending_main_menu)' in source
+    assert '@st.dialog("Open project?"' not in source
+    assert (
+        '@st.dialog("Project settings", on_dismiss=clear_pending_project_settings)'
+        in source
+    )
+    assert (
+        '@st.dialog("Delete project?", on_dismiss=clear_pending_project_delete)'
+        in source
+    )
+    assert '@st.dialog("Return to main menu?"' not in source
+    assert 'def request_main_menu() -> None:\n    set_page("Home")' in source
     assert 'with st.container(key="home_page")' in source
     assert 'f"Open project: {name}"' in source
     assert 'key=f"project_settings_{project_id}"' in source
     assert "it does not move the map, filter data, or set a boundary" in source
     assert "publishing the website is still a separate step" in source
     assert '"Delete permanently"' in source
-    assert 'disabled=confirmation != project_name' in source
+    assert "disabled=confirmation != project_name" in source
     assert "max-width: 1080px" in source
     assert 'class="home-summary"' not in source
     assert 'div[class*="st-key-project_card_"]:hover' in source
-    assert 'div[class*="st-key-project_card_"] div[class*="st-key-home_open_"] {' in source
+    assert (
+        'div[class*="st-key-project_card_"] div[class*="st-key-home_open_"] {' in source
+    )
     assert ".st-key-nav_home button:hover" in source
     assert ".st-key-nav_home button:active" in source
     assert ".st-key-nav_home button:focus-visible" in source
@@ -227,7 +247,10 @@ def test_labelling_workflow_uses_action_oriented_navigation():
     assert '"Audit History"' in source
     assert "Create labels, resolve conflicts" in source
     assert 'st.subheader("Label Review Queue")' in source
-    assert "Stops awaiting moderator review, conflict resolution, or verification." in source
+    assert (
+        "Stops awaiting moderator review, conflict resolution, or verification."
+        in source
+    )
     assert 'st.subheader("Summary")' not in source
     assert '"Admin Review Queue"' not in source
     assert '"+ Add Administrative Label"' not in source
@@ -250,6 +273,9 @@ def test_blind_coding_uses_research_workflow_hierarchy():
     assert 'st.expander("Admin preview", expanded=False)' in source
     assert '"Workspace role"' not in source
     assert '"Open blind coding"' not in source
+    assert '@st.dialog("Confirm workflow change"' in source
+    assert '"This phase transition cannot be undone."' in source
+    assert "advance_blind_phase(project_id)" in source
 
 
 def test_voting_groups_configuration_and_hides_deployment_details():
@@ -258,10 +284,15 @@ def test_voting_groups_configuration_and_hides_deployment_details():
     assert 'st.title("Community Voting")' in source
     assert 'st.subheader("Configuration")' in source
     assert 'st.subheader("Live Preview")' in source
-    for group in ["Visitor Experience", "Voting Options", "Abuse Prevention", "Result Display"]:
+    for group in [
+        "Visitor Experience",
+        "Voting Options",
+        "Abuse Prevention",
+        "Result Display",
+    ]:
         assert f'st.expander("{group}"' in source
     assert 'if not voting["enabled"]:' in source
-    assert 'return voting' in source
+    assert "return voting" in source
     assert 'if voting["enabled"]:' in source
     assert 'st.markdown("#### Persistent voting storage")' in source
     assert 'st.button("Open deployment setup"' in source
@@ -281,6 +312,47 @@ def test_preview_configuration_pages_do_not_duplicate_full_public_renderers():
     assert 'st.subheader("Available Fields")' not in visuals
     assert "render_builder_about_page" not in docs
     assert "authoritative public rendering" in docs
+
+
+def test_public_voting_requires_an_explicit_complete_response():
+    for path in [Path("public_voting.py"), Path("preview_app/public_voting.py")]:
+        source = path.read_text(encoding="utf-8")
+        default_assignment = source.split("default_index =", 1)[1].split(
+            "st.markdown(", 1
+        )[0]
+        assert "0 if preview else None" in default_assignment
+        assert "coverage_selected = selected_status in options" in source
+        assert "or not coverage_selected or sources_required" in source
+        assert "Select at least one shade source to submit this response." in source
+
+
+def test_public_filters_use_one_disclosure_instead_of_nested_expanders():
+    for path in [Path("published_app.py"), Path("preview_app/app.py")]:
+        source = path.read_text(encoding="utf-8")
+        assert 'st.expander("Map and analytics filters", expanded=False)' in source
+        assert 'st.expander("Map filters"' not in source
+        assert '"Clear filters"' in source
+        assert '"Clear filters and show stops"' in source
+
+
+def test_workspace_ux_safeguards_are_present():
+    builder = Path("builder_app.py").read_text(encoding="utf-8")
+    data_page = Path("shade_gis/pages/data_page.py").read_text(encoding="utf-8")
+    labels_page = Path("shade_gis/pages/labels_page.py").read_text(encoding="utf-8")
+    taxonomy = Path("shade_gis/taxonomy_components.py").read_text(encoding="utf-8")
+    visuals = Path("shade_gis/pages/visuals_page.py").read_text(encoding="utf-8")
+
+    assert '"Publication intent"' in data_page
+    assert "save automatically to the active project" in data_page
+    assert '"Save now"' not in data_page
+    assert 'type="primary" if current == view else "secondary"' in labels_page
+    assert 'key="label_workflow_navigation"' in labels_page
+    assert '"Reset definitions permanently"' in taxonomy
+    assert 'role="status" aria-live="polite"' in builder
+    assert '@st.dialog("Remove GIS overlay?"' in visuals
+    assert "min-height: 24.5rem" in builder
+    assert "\n            height: 24.5rem;" not in builder
+    assert "max-width: 760px" in builder
 
 
 def test_page_modules_use_explicit_dependencies_and_shared_components():
@@ -322,7 +394,9 @@ def test_data_quality_has_a_dedicated_data_menu_page():
 
 def test_manual_entry_form_does_not_use_arrow_backed_dataframe_widget():
     source = Path("shade_gis/pages/data_page.py").read_text(encoding="utf-8")
-    manual_entry_source = source.split("with manual_tab:", 1)[1].split("source_cols = st.columns", 1)[0]
+    manual_entry_source = source.split("with manual_tab:", 1)[1].split(
+        "source_cols = st.columns", 1
+    )[0]
 
     assert 'st.form("manual_entry_form", clear_on_submit=True)' in source
     assert "st.data_editor(" not in manual_entry_source
@@ -337,7 +411,9 @@ def test_taxonomy_has_a_dedicated_data_menu_page():
     assert "render_terminology_editor(methodology)" in source
     assert "render_shade_source_taxonomy_editor(methodology)" in source
     assert "render_shade_coverage_taxonomy_editor(methodology, taxonomy)" in source
-    assert '"Reset definitions"' in Path("shade_gis/taxonomy_components.py").read_text(encoding="utf-8")
+    assert '"Reset definitions"' in Path("shade_gis/taxonomy_components.py").read_text(
+        encoding="utf-8"
+    )
     assert 'with st.container(key="terminology_table")' in source
     assert 'with st.container(key="taxonomy_workspace")' in source
     assert 'with st.container(key="taxonomy_card_terminology")' in source

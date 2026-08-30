@@ -146,7 +146,11 @@ class VoterIdentity:
 
 
 def normalize_vote_sources(value: Any) -> list[str]:
-    raw_values = value if isinstance(value, (list, tuple, set)) else str(value or "").replace("|", ";").split(";")
+    raw_values = (
+        value
+        if isinstance(value, (list, tuple, set))
+        else str(value or "").replace("|", ";").split(";")
+    )
     sources: list[str] = []
     for raw_value in raw_values:
         source = _PUBLIC_SOURCE_ALIASES.get(str(raw_value).strip().lower(), "")
@@ -169,7 +173,14 @@ def source_taxonomy_help(taxonomy: list[dict[str, Any]] | None = None) -> str:
         if not isinstance(category, dict):
             continue
         canonical = _PUBLIC_SOURCE_ALIASES.get(
-            str(category.get("code") or category.get("shade_source") or category.get("name") or "").strip().lower(),
+            str(
+                category.get("code")
+                or category.get("shade_source")
+                or category.get("name")
+                or ""
+            )
+            .strip()
+            .lower(),
             "",
         )
         description = str(
@@ -180,24 +191,32 @@ def source_taxonomy_help(taxonomy: list[dict[str, Any]] | None = None) -> str:
     return taxonomy_help_text(PUBLIC_SOURCE_OPTIONS, definitions)
 
 
-def source_display_labels(taxonomy: list[dict[str, Any]] | None = None) -> dict[str, str]:
+def source_display_labels(
+    taxonomy: list[dict[str, Any]] | None = None,
+) -> dict[str, str]:
     labels = copy.deepcopy(PUBLIC_SOURCE_DISPLAY_LABELS)
     for category in taxonomy or []:
         if not isinstance(category, dict):
             continue
-        canonical = _PUBLIC_SOURCE_ALIASES.get(str(category.get("code") or "").strip().lower(), "")
+        canonical = _PUBLIC_SOURCE_ALIASES.get(
+            str(category.get("code") or "").strip().lower(), ""
+        )
         display_label = str(category.get("shade_source") or "").strip()
         if canonical and display_label:
             labels[canonical] = display_label
     return labels
 
 
-def coverage_display_labels(taxonomy: list[dict[str, Any]] | None = None) -> dict[str, str]:
+def coverage_display_labels(
+    taxonomy: list[dict[str, Any]] | None = None,
+) -> dict[str, str]:
     labels = {option: option for option in PUBLIC_COVERAGE_OPTIONS}
     for category in taxonomy or []:
         if not isinstance(category, dict):
             continue
-        canonical = _PUBLIC_COVERAGE_ALIASES.get(str(category.get("code") or "").strip().lower(), "")
+        canonical = _PUBLIC_COVERAGE_ALIASES.get(
+            str(category.get("code") or "").strip().lower(), ""
+        )
         display_label = str(category.get("shade_coverage") or "").strip()
         if canonical and display_label:
             labels[canonical] = display_label
@@ -212,8 +231,14 @@ def coverage_taxonomy_help(
     for category in taxonomy or []:
         if not isinstance(category, dict):
             continue
-        raw_name = category.get("code") or category.get("shade_coverage") or category.get("name")
-        canonical = _PUBLIC_COVERAGE_ALIASES.get(str(raw_name or "").strip().lower(), "")
+        raw_name = (
+            category.get("code")
+            or category.get("shade_coverage")
+            or category.get("name")
+        )
+        canonical = _PUBLIC_COVERAGE_ALIASES.get(
+            str(raw_name or "").strip().lower(), ""
+        )
         description = str(
             category.get("operational_definition") or category.get("description") or ""
         ).strip()
@@ -270,7 +295,9 @@ def normalize_voting_config(
         if canonical and canonical not in configured_options:
             configured_options.append(canonical)
     normalized["options"] = configured_options or list(PUBLIC_COVERAGE_OPTIONS)
-    normalized["source_question"] = str(normalized.get("source_question") or DEFAULT_VOTING_CONFIG["source_question"])
+    normalized["source_question"] = str(
+        normalized.get("source_question") or DEFAULT_VOTING_CONFIG["source_question"]
+    )
 
     normalized["minimum_votes_for_result"] = _config_int(
         normalized.get("minimum_votes_for_result"), 10, 5, 100
@@ -318,7 +345,9 @@ def community_result(
     if clean_counts:
         highest = max(clean_counts.values())
         if highest > 0:
-            leaders = [label for label, count in clean_counts.items() if count == highest]
+            leaders = [
+                label for label, count in clean_counts.items() if count == highest
+            ]
 
     sorted_counts = sorted(clean_counts.values(), reverse=True)
     leading_count = sorted_counts[0] if sorted_counts else 0
@@ -332,10 +361,9 @@ def community_result(
     elif len(leaders) != 1:
         status = "tied"
         label = "Tied"
-    elif (
-        leading_percent < max(51, min(100, int(minimum_consensus_percent)))
-        or margin < max(1, int(minimum_consensus_margin))
-    ):
+    elif leading_percent < max(
+        51, min(100, int(minimum_consensus_percent))
+    ) or margin < max(1, int(minimum_consensus_margin)):
         status = "contested"
         label = "No clear consensus"
     else:
@@ -353,7 +381,9 @@ def community_result(
 
 def _secret_or_environment(name: str) -> str:
     legacy_name = name.replace("STOP_GIS_", "SHADE_GIS_", 1)
-    environment_value = str(os.environ.get(name) or os.environ.get(legacy_name, "")).strip()
+    environment_value = str(
+        os.environ.get(name) or os.environ.get(legacy_name, "")
+    ).strip()
     if environment_value:
         return environment_value
     try:
@@ -382,7 +412,11 @@ def configured_vote_db_path(app_dir: Path | None = None) -> Path:
 
 
 def vote_store_label(database_url: str | None = None) -> str:
-    return "PostgreSQL" if (database_url or configured_vote_database_url()).strip() else "local SQLite"
+    return (
+        "PostgreSQL"
+        if (database_url or configured_vote_database_url()).strip()
+        else "local SQLite"
+    )
 
 
 def _postgres_connection(database_url: str, *, hostaddr: str = ""):
@@ -394,7 +428,9 @@ def _postgres_connection(database_url: str, *, hostaddr: str = ""):
     try:
         import psycopg
     except ImportError as exc:
-        raise VoteStorageError("PostgreSQL voting requires the psycopg package from requirements.txt.") from exc
+        raise VoteStorageError(
+            "PostgreSQL voting requires the psycopg package from requirements.txt."
+        ) from exc
     connect_kwargs: dict[str, Any] = {
         "connect_timeout": POSTGRES_CONNECT_TIMEOUT_SECONDS,
         "options": (
@@ -417,7 +453,9 @@ def _postgres_connection(database_url: str, *, hostaddr: str = ""):
             raise VoteStorageError(
                 "The configured PostgreSQL voting database could not be reached."
             ) from exc
-    raise VoteStorageError("The configured PostgreSQL voting database could not be reached.")
+    raise VoteStorageError(
+        "The configured PostgreSQL voting database could not be reached."
+    )
 
 
 class _PooledPostgresConnection:
@@ -488,11 +526,15 @@ def _sqlite_connection(path: Path):
         connection.execute("PRAGMA busy_timeout = 30000")
         return connection
     except (OSError, sqlite3.Error) as exc:
-        raise VoteStorageError(f"The local voting database is not writable: {path}") from exc
+        raise VoteStorageError(
+            f"The local voting database is not writable: {path}"
+        ) from exc
 
 
 def _connect(database_url: str | None = None, sqlite_path: Path | None = None):
-    resolved_url = (database_url if database_url is not None else configured_vote_database_url()).strip()
+    resolved_url = (
+        database_url if database_url is not None else configured_vote_database_url()
+    ).strip()
     if resolved_url:
         try:
             hostaddr = validate_vote_database_setup_url(resolved_url)
@@ -514,9 +556,13 @@ def validate_vote_database_setup_url(database_url: str) -> str:
     if parsed.scheme.lower() not in {"postgres", "postgresql"}:
         raise ValueError("Use a postgres:// or postgresql:// connection URL.")
     if not parsed.hostname or not parsed.username or not parsed.path.strip("/"):
-        raise ValueError("The PostgreSQL URL must include a user, host, and database name.")
+        raise ValueError(
+            "The PostgreSQL URL must include a user, host, and database name."
+        )
 
-    allow_private = _config_bool(_environment_value(ALLOW_PRIVATE_DATABASE_HOSTS_ENV), False)
+    allow_private = _config_bool(
+        _environment_value(ALLOW_PRIVATE_DATABASE_HOSTS_ENV), False
+    )
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     security_parameters = {
         "sslmode",
@@ -531,13 +577,18 @@ def validate_vote_database_setup_url(database_url: str) -> str:
         key.lower()
         for key, _value in query_pairs
         if key.lower() in security_parameters
-        and sum(1 for candidate, _ in query_pairs if candidate.lower() == key.lower()) > 1
+        and sum(1 for candidate, _ in query_pairs if candidate.lower() == key.lower())
+        > 1
     }
     if duplicate_security_parameters:
-        raise ValueError("PostgreSQL security parameters may appear only once in the connection URL.")
+        raise ValueError(
+            "PostgreSQL security parameters may appear only once in the connection URL."
+        )
     sslmode = str(dict(query_pairs).get("sslmode", "")).strip().lower()
     if not allow_private and sslmode not in {"require", "verify-ca", "verify-full"}:
-        raise ValueError("Remote PostgreSQL setup requires sslmode=require or stronger.")
+        raise ValueError(
+            "Remote PostgreSQL setup requires sslmode=require or stronger."
+        )
 
     try:
         addresses = {
@@ -576,7 +627,9 @@ def check_vote_database_connection(database_url: str) -> None:
     try:
         row = connection.execute("SELECT 1").fetchone()
         if not row or int(row[0]) != 1:
-            raise VoteStorageError("The PostgreSQL connection test did not return a valid response.")
+            raise VoteStorageError(
+                "The PostgreSQL connection test did not return a valid response."
+            )
         _require_postgres_version(connection)
     except VoteStorageError:
         raise
@@ -625,7 +678,9 @@ def confirm_vote_database_read_write(database_url: str) -> None:
             (probe, probe, probe),
         ).fetchone()
         if not row or str(row[0]) != "No Shade":
-            raise VoteStorageError("The temporary voting record could not be read back.")
+            raise VoteStorageError(
+                "The temporary voting record could not be read back."
+            )
         connection.execute(
             f"UPDATE shade_votes SET coverage_status = 'Limited Shade', updated_at = {placeholder} "
             f"WHERE study_id = {placeholder} AND stop_id = {placeholder} AND voter_id = {placeholder}",
@@ -667,7 +722,9 @@ def _require_postgres_version(connection: Any) -> int:
         row = connection.execute("SHOW server_version_num").fetchone()
         version = int(row[0]) if row else 0
     except Exception as exc:
-        raise VoteStorageError("The PostgreSQL server version could not be verified.") from exc
+        raise VoteStorageError(
+            "The PostgreSQL server version could not be verified."
+        ) from exc
     if version < POSTGRES_MIN_VERSION:
         raise VoteStorageError("Stop-GIS voting requires PostgreSQL 14 or newer.")
     return version
@@ -759,14 +816,25 @@ def _migrate_vote_schema(connection: Any, dialect: str) -> None:
             "The database schema is newer than this app. Upgrade the generated app; automatic downgrade is refused."
         )
     if dialect == "postgres":
-        connection.execute("ALTER TABLE shade_votes ADD COLUMN IF NOT EXISTS shade_sources TEXT NOT NULL DEFAULT ''")
-        connection.execute("ALTER TABLE shade_votes ADD COLUMN IF NOT EXISTS network_id TEXT NOT NULL DEFAULT ''")
+        connection.execute(
+            "ALTER TABLE shade_votes ADD COLUMN IF NOT EXISTS shade_sources TEXT NOT NULL DEFAULT ''"
+        )
+        connection.execute(
+            "ALTER TABLE shade_votes ADD COLUMN IF NOT EXISTS network_id TEXT NOT NULL DEFAULT ''"
+        )
     else:
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(shade_votes)").fetchall()}
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(shade_votes)").fetchall()
+        }
         if "shade_sources" not in columns:
-            connection.execute("ALTER TABLE shade_votes ADD COLUMN shade_sources TEXT NOT NULL DEFAULT ''")
+            connection.execute(
+                "ALTER TABLE shade_votes ADD COLUMN shade_sources TEXT NOT NULL DEFAULT ''"
+            )
         if "network_id" not in columns:
-            connection.execute("ALTER TABLE shade_votes ADD COLUMN network_id TEXT NOT NULL DEFAULT ''")
+            connection.execute(
+                "ALTER TABLE shade_votes ADD COLUMN network_id TEXT NOT NULL DEFAULT ''"
+            )
     connection.execute(
         "CREATE INDEX IF NOT EXISTS shade_votes_rate_limit_idx "
         "ON shade_votes (study_id, voter_id, created_at)"
@@ -905,7 +973,9 @@ def privacy_preserving_account_id(user_info: Any, secret: str) -> str:
     subject = str(normalized.get("sub") or normalized.get("email") or "").strip()
     if not subject:
         return ""
-    issuer = str(normalized.get("iss") or normalized.get("provider") or "default").strip()
+    issuer = str(
+        normalized.get("iss") or normalized.get("provider") or "default"
+    ).strip()
     digest = hmac.new(
         secret.encode("utf-8"),
         f"account\n{issuer}\n{subject}".encode("utf-8"),
@@ -1015,7 +1085,9 @@ def get_existing_vote_details(
         if not row:
             return None
         return {
-            "coverage_status": _PUBLIC_COVERAGE_ALIASES.get(str(row[0]).strip().lower(), str(row[0])),
+            "coverage_status": _PUBLIC_COVERAGE_ALIASES.get(
+                str(row[0]).strip().lower(), str(row[0])
+            ),
             "shade_sources": normalize_vote_sources(row[1]),
         }
     except Exception as exc:
@@ -1065,12 +1137,18 @@ def save_vote(
     sqlite_path: Path | None = None,
     now: datetime | None = None,
 ) -> bool:
-    values = [str(value).strip() for value in (study_id, stop_id, voter_id, coverage_status)]
+    values = [
+        str(value).strip() for value in (study_id, stop_id, voter_id, coverage_status)
+    ]
     if not all(values):
-        raise ValueError("study_id, stop_id, voter_id, and coverage_status are required")
+        raise ValueError(
+            "study_id, stop_id, voter_id, and coverage_status are required"
+        )
     study_id, stop_id, voter_id, coverage_status = values
     if len(study_id) > 256 or len(stop_id) > 256 or len(voter_id) > 256:
-        raise ValueError("study_id, stop_id, and voter_id must not exceed 256 characters")
+        raise ValueError(
+            "study_id, stop_id, and voter_id must not exceed 256 characters"
+        )
     network_id = str(network_id or "").strip()
     if len(network_id) > 256:
         raise ValueError("network_id must not exceed 256 characters")
@@ -1078,8 +1156,12 @@ def save_vote(
         network_id = ""
     coverage_status = _PUBLIC_COVERAGE_ALIASES.get(coverage_status.lower(), "")
     if not coverage_status:
-        raise ValueError(f"coverage_status must be one of: {', '.join(PUBLIC_COVERAGE_OPTIONS)}")
-    normalized_sources = [] if coverage_status == "No Shade" else normalize_vote_sources(shade_sources)
+        raise ValueError(
+            f"coverage_status must be one of: {', '.join(PUBLIC_COVERAGE_OPTIONS)}"
+        )
+    normalized_sources = (
+        [] if coverage_status == "No Shade" else normalize_vote_sources(shade_sources)
+    )
     serialized_sources = "; ".join(normalized_sources)
     timestamp_dt = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     timestamp = timestamp_dt.isoformat()
@@ -1114,7 +1196,11 @@ def save_vote(
                 f"SELECT MAX(updated_at) FROM shade_votes WHERE study_id = {placeholder} AND voter_id = {placeholder}",
                 (study_id, voter_id),
             ).fetchone()
-            latest_vote_at = _as_utc_datetime(latest_row[0]) if latest_row and latest_row[0] else None
+            latest_vote_at = (
+                _as_utc_datetime(latest_row[0])
+                if latest_row and latest_row[0]
+                else None
+            )
             if latest_vote_at:
                 elapsed = (timestamp_dt - latest_vote_at).total_seconds()
                 if elapsed < cooldown_seconds:
@@ -1135,14 +1221,23 @@ def save_vote(
                     "This visitor has reached the hourly voting limit. Please try again later.",
                     retry_after_seconds=3600,
                 )
-        if max_new_votes_per_network_per_hour is not None and network_id and not existing_row:
-            network_hourly_limit = max(1, min(200, int(max_new_votes_per_network_per_hour)))
+        if (
+            max_new_votes_per_network_per_hour is not None
+            and network_id
+            and not existing_row
+        ):
+            network_hourly_limit = max(
+                1, min(200, int(max_new_votes_per_network_per_hour))
+            )
             cutoff = (timestamp_dt - timedelta(hours=1)).isoformat()
             recent_network_row = connection.execute(
                 f"SELECT COUNT(*) FROM shade_votes WHERE study_id = {placeholder} AND network_id = {placeholder} AND created_at >= {placeholder}",
                 (study_id, network_id, cutoff),
             ).fetchone()
-            if recent_network_row and int(recent_network_row[0]) >= network_hourly_limit:
+            if (
+                recent_network_row
+                and int(recent_network_row[0]) >= network_hourly_limit
+            ):
                 raise VoteRateLimitError(
                     "This network has reached the hourly voting limit. Please try again later.",
                     retry_after_seconds=3600,
@@ -1219,7 +1314,9 @@ def get_vote_counts(
             (study_id, stop_id),
         ).fetchall()
         for status, count in rows:
-            status = _PUBLIC_COVERAGE_ALIASES.get(str(status).strip().lower(), str(status))
+            status = _PUBLIC_COVERAGE_ALIASES.get(
+                str(status).strip().lower(), str(status)
+            )
             if status in counts:
                 counts[status] += int(count)
         return counts
@@ -1278,10 +1375,13 @@ def render_voting_panel(
         if not preview:
             database_url = configured_vote_database_url()
             sqlite_path = configured_vote_db_path(app_dir)
-            st.caption(f"Voting storage: {vote_store_label(database_url)}")
+            st.caption("Your response is stored for this study.")
             identity = (
-                _request_voter_identity(database_url=database_url, sqlite_path=sqlite_path)
-                if config["abuse_protection_enabled"] or config["require_authentication"]
+                _request_voter_identity(
+                    database_url=database_url, sqlite_path=sqlite_path
+                )
+                if config["abuse_protection_enabled"]
+                or config["require_authentication"]
                 else VoterIdentity(_browser_voter_id())
             )
             if config["require_authentication"] and not identity.authenticated:
@@ -1303,9 +1403,17 @@ def render_voting_panel(
                 database_url=database_url,
                 sqlite_path=sqlite_path,
             )
-        existing_coverage = str(existing_vote["coverage_status"]) if existing_vote else ""
+        existing_coverage = (
+            str(existing_vote["coverage_status"]) if existing_vote else ""
+        )
         existing_sources = existing_vote["shade_sources"] if existing_vote else []
-        default_index = options.index(existing_coverage) if existing_coverage in options else 0
+        # Do not preselect a response for a new voter. A default choice biases the
+        # study and makes an accidental one-click submission possible.
+        default_index = (
+            options.index(existing_coverage)
+            if existing_coverage in options
+            else (0 if preview else None)
+        )
         st.markdown(
             f"**{config['question']}**",
             help=coverage_taxonomy_help(options, taxonomy),
@@ -1321,9 +1429,13 @@ def render_voting_panel(
                 config.get("shade_coverage_taxonomy")
             ).get(option, option),
         )
-        changes_disabled = preview or bool(existing_vote and not config["allow_vote_changes"])
+        coverage_selected = selected_status in options
+        changes_disabled = preview or bool(
+            existing_vote and not config["allow_vote_changes"]
+        )
         source_keys = {
-            source: f"public_vote_source_{key_token}_{source.lower()}" for source in PUBLIC_SOURCE_OPTIONS
+            source: f"public_vote_source_{key_token}_{source.lower()}"
+            for source in PUBLIC_SOURCE_OPTIONS
         }
         if selected_status == "No Shade" and not preview:
             for source_key in source_keys.values():
@@ -1334,7 +1446,9 @@ def render_voting_panel(
             help=source_taxonomy_help(config.get("shade_source_taxonomy")),
         )
         selected_sources = []
-        if selected_status == "No Shade":
+        if not coverage_selected:
+            st.caption("Choose a shade coverage option to continue.")
+        elif selected_status == "No Shade":
             st.caption("No shade source is needed when **No Shade** is selected.")
         else:
             for source in PUBLIC_SOURCE_OPTIONS:
@@ -1345,15 +1459,25 @@ def render_voting_panel(
                 if source_keys[source] not in st.session_state:
                     checkbox_args["value"] = source in existing_sources
                 if st.checkbox(
-                    source_display_labels(config.get("shade_source_taxonomy")).get(source, source),
+                    source_display_labels(config.get("shade_source_taxonomy")).get(
+                        source, source
+                    ),
                     **checkbox_args,
                 ):
                     selected_sources.append(source)
+        sources_required = bool(
+            coverage_selected
+            and selected_status != "No Shade"
+            and not selected_sources
+            and not changes_disabled
+        )
+        if sources_required:
+            st.caption("Select at least one shade source to submit this response.")
         submitted = st.button(
             str(config["submit_label"]),
             key=f"public_vote_submit_{key_token}",
             type="primary",
-            disabled=changes_disabled,
+            disabled=changes_disabled or not coverage_selected or sources_required,
             width="stretch",
         )
         if submitted and not preview:
@@ -1371,10 +1495,14 @@ def render_voting_panel(
                     and not identity.authenticated
                 ),
                 cooldown_seconds=(
-                    config["vote_cooldown_seconds"] if config["abuse_protection_enabled"] else 0
+                    config["vote_cooldown_seconds"]
+                    if config["abuse_protection_enabled"]
+                    else 0
                 ),
                 max_new_votes_per_hour=(
-                    config["max_new_votes_per_hour"] if config["abuse_protection_enabled"] else None
+                    config["max_new_votes_per_hour"]
+                    if config["abuse_protection_enabled"]
+                    else None
                 ),
                 max_new_votes_per_network_per_hour=(
                     config["max_new_votes_per_network_per_hour"]
@@ -1394,9 +1522,13 @@ def render_voting_panel(
             if saved:
                 st.success(str(config["success_message"]))
             else:
-                st.info("A vote associated with this visitor or network has already been recorded for this stop.")
+                st.info(
+                    "A vote associated with this visitor or network has already been recorded for this stop."
+                )
         elif changes_disabled and not preview:
-            st.caption("A vote associated with this visitor has already been recorded for this stop.")
+            st.caption(
+                "A vote associated with this visitor has already been recorded for this stop."
+            )
 
         if config["show_results"]:
             if preview:
@@ -1418,7 +1550,9 @@ def render_voting_panel(
                 )
                 st.markdown(f"**{config['results_label']}: {result['label']}**")
                 if config["show_detailed_counts"] and result["status"] != "pending":
-                    st.caption(" | ".join(f"{label}: {counts[label]}" for label in options))
+                    st.caption(
+                        " | ".join(f"{label}: {counts[label]}" for label in options)
+                    )
                 if result["status"] == "pending":
                     st.caption(
                         f"Totals remain hidden until at least {config['minimum_votes_for_result']} "
@@ -1430,5 +1564,6 @@ def render_voting_panel(
                     )
     except VoteRateLimitError as exc:
         st.warning(str(exc))
-    except (VoteStorageError, OSError, sqlite3.Error) as exc:
-        st.error(f"Voting storage is unavailable. {exc}")
+    except (VoteStorageError, OSError, sqlite3.Error):
+        st.error("Voting is temporarily unavailable. Your response was not submitted.")
+        st.button("Try again", key=f"public_vote_retry_{key_token}", on_click=st.rerun)

@@ -5,6 +5,34 @@ import pandas as pd
 import published_app
 
 
+def test_clear_map_filters_restores_defaults_without_touching_other_state(monkeypatch):
+    session_state = {
+        "published_show_unlabeled_stops": False,
+        "published_stop_search": "main",
+        "published_route_filter": ["10"],
+        "published_destination_filter": "hospital",
+        "published_selected_stop_id": "1001",
+    }
+    monkeypatch.setattr(published_app.st, "session_state", session_state)
+    stops = pd.DataFrame(
+        [{"stop_id": "1001", "stop_name": "Main", "routes": "10"}]
+    )
+
+    published_app.clear_map_filters(stops, "published")
+
+    assert session_state == {"published_selected_stop_id": "1001"}
+    assert not published_app.map_filters_active(
+        {
+            "show_unlabeled": True,
+            "search_query": "",
+            "selected_routes": [],
+            "destination_query": "",
+            "categorical": {},
+            "numeric": {},
+        }
+    )
+
+
 def test_load_study_preserves_leading_zero_stop_ids(db_path, monkeypatch):
     config_path = db_path.parent / "shade_study_config.json"
     stops_path = db_path.parent / "shade_study_stops.csv"

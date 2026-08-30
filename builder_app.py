@@ -2,6 +2,7 @@ import html
 import json
 import math
 import os
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -185,13 +186,13 @@ DATA_PATH = APP_DIR / "stops.txt"
 SHADE_DATA_PATH = APP_DIR / "shading_data.csv"
 APP_TITLE = "Stop-GIS Builder"
 VISUAL_MAP_HEIGHT = 500
+AUTOSAVE_STATUS_KEY = "workspace_autosave_status"
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 DEFAULT_MAX_API_BYTES = 15 * 1024 * 1024
 DEFAULT_MAX_ZIP_MEMBERS = 256
 DEFAULT_MAX_ZIP_MEMBER_BYTES = 80 * 1024 * 1024
 DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES = 150 * 1024 * 1024
 API_FETCH_TIMEOUT_SECONDS = 30
-
 
 
 DEFAULT_PROJECT = {
@@ -345,7 +346,9 @@ def rgb_to_hex(value: list[int]) -> str:
     return "#{:02x}{:02x}{:02x}".format(*rgb)
 
 
-def load_seed_dataset(taxonomy: list[dict[str, Any]], project: dict[str, Any]) -> pd.DataFrame:
+def load_seed_dataset(
+    taxonomy: list[dict[str, Any]], project: dict[str, Any]
+) -> pd.DataFrame:
     if not DATA_PATH.exists():
         return pd.DataFrame(columns=REQUIRED_STOP_FIELDS)
     stops = pd.read_csv(DATA_PATH, dtype={"stop_id": str})
@@ -355,9 +358,27 @@ def load_seed_dataset(taxonomy: list[dict[str, Any]], project: dict[str, Any]) -
         stops = stops.merge(shade.loc[:, keep_cols], on="stop_id", how="left")
     stops = prepare_stop_dataset(stops, project, taxonomy)
     demo_values = [
-        {"bench": "present", "shelter": "full", "trash_can": "yes", "lighting": "dedicated", "sidewalk_connection": "adequate"},
-        {"bench": "none", "shelter": "none", "trash_can": "no", "lighting": "nearby", "sidewalk_connection": "poor"},
-        {"bench": "damaged", "shelter": "partial", "trash_can": "no", "lighting": "none", "sidewalk_connection": "adequate"},
+        {
+            "bench": "present",
+            "shelter": "full",
+            "trash_can": "yes",
+            "lighting": "dedicated",
+            "sidewalk_connection": "adequate",
+        },
+        {
+            "bench": "none",
+            "shelter": "none",
+            "trash_can": "no",
+            "lighting": "nearby",
+            "sidewalk_connection": "poor",
+        },
+        {
+            "bench": "damaged",
+            "shelter": "partial",
+            "trash_can": "no",
+            "lighting": "none",
+            "sidewalk_connection": "adequate",
+        },
     ]
     for column in ["bench", "shelter", "trash_can", "lighting", "sidewalk_connection"]:
         if column not in stops.columns:
@@ -368,8 +389,10 @@ def load_seed_dataset(taxonomy: list[dict[str, Any]], project: dict[str, Any]) -
         values = dict(demo_values[position % len(demo_values)])
         coverage = str(stops.iloc[position].get("shade_coverage", "") or "")
         coverage_key = {
-            "No Shade": "none", "Limited Shade": "limited",
-            "Significant Shade": "significant", "Needs Review": "unclear",
+            "No Shade": "none",
+            "Limited Shade": "limited",
+            "Significant Shade": "significant",
+            "Needs Review": "unclear",
         }.get(coverage, "unclear")
         values["shade_coverage"] = coverage_key
         stops.at[stops.index[position], "assessment_values"] = values
@@ -383,7 +406,9 @@ def load_seed_dataset(taxonomy: list[dict[str, Any]], project: dict[str, Any]) -
 
 
 def empty_stop_dataset() -> pd.DataFrame:
-    return pd.DataFrame(columns=REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS + ["priority_score"])
+    return pd.DataFrame(
+        columns=REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS + ["priority_score"]
+    )
 
 
 def with_default_project_values(project: dict[str, Any]) -> dict[str, Any]:
@@ -418,7 +443,9 @@ def normalized_visualization_values(
     visualization = with_default_visualization_values(
         json.loads(json.dumps(visualization or {}, default=str))
     )
-    if "custom_charts" not in visualization and isinstance(visualization.get("custom_chart"), dict):
+    if "custom_charts" not in visualization and isinstance(
+        visualization.get("custom_chart"), dict
+    ):
         visualization["custom_charts"] = [visualization["custom_chart"]]
     for key, value in DEFAULT_VISUALIZATION.items():
         visualization.setdefault(key, json.loads(json.dumps(value)))
@@ -475,7 +502,9 @@ def create_seed_project() -> str:
             "imported_at": timestamp_with_timezone(),
         }
     ]
-    return create_project(project, taxonomy, methodology, visualization, stops, import_log)
+    return create_project(
+        project, taxonomy, methodology, visualization, stops, import_log
+    )
 
 
 def load_project_into_session(project_id: str) -> None:
@@ -502,8 +531,12 @@ def load_project_into_session(project_id: str) -> None:
     st.session_state["taxonomy"] = taxonomy
     st.session_state["methodology"] = methodology
     st.session_state["visualization"] = visualization
-    st.session_state["assessment_modes"] = normalize_modes(bundle.get("assessment_modes"))
-    st.session_state["scoring"] = json.loads(json.dumps(bundle.get("scoring") or DEFAULT_SCORING))
+    st.session_state["assessment_modes"] = normalize_modes(
+        bundle.get("assessment_modes")
+    )
+    st.session_state["scoring"] = json.loads(
+        json.dumps(bundle.get("scoring") or DEFAULT_SCORING)
+    )
     st.session_state["stops"] = stops
     st.session_state["import_log"] = bundle["import_log"]
     st.session_state.pop("deploy_page_settings_project_id", None)
@@ -519,25 +552,65 @@ def save_active_project_to_store(review_event: dict[str, Any] | None = None) -> 
     project_id = st.session_state.get("active_project_id")
     if not project_id:
         return True
+    st.session_state[AUTOSAVE_STATUS_KEY] = {
+        "state": "saving",
+        "message": "Saving changes…",
+    }
     try:
         event_id = save_project_bundle(
             project_id,
             st.session_state.get("project", DEFAULT_PROJECT.copy()),
-            st.session_state.get("taxonomy", [item.copy() for item in DEFAULT_TAXONOMY]),
+            st.session_state.get(
+                "taxonomy", [item.copy() for item in DEFAULT_TAXONOMY]
+            ),
             st.session_state.get("methodology", DEFAULT_METHODOLOGY.copy()),
-            st.session_state.get("visualization", json.loads(json.dumps(DEFAULT_VISUALIZATION))),
+            st.session_state.get(
+                "visualization", json.loads(json.dumps(DEFAULT_VISUALIZATION))
+            ),
             st.session_state.get("stops", empty_stop_dataset()),
             st.session_state.get("import_log", []),
             review_event=review_event,
-            assessment_modes=st.session_state.get("assessment_modes", DEFAULT_ASSESSMENT_MODES),
+            assessment_modes=st.session_state.get(
+                "assessment_modes", DEFAULT_ASSESSMENT_MODES
+            ),
             scoring=st.session_state.get("scoring", DEFAULT_SCORING),
         )
         if review_event is not None:
             review_event["_saved_event_id"] = event_id
+        saved_at = datetime.now().astimezone().strftime("%I:%M %p").lstrip("0")
+        st.session_state[AUTOSAVE_STATUS_KEY] = {
+            "state": "saved",
+            "message": f"All changes saved · {saved_at}",
+        }
         return True
     except ProjectConflictError as error:
+        st.session_state[AUTOSAVE_STATUS_KEY] = {
+            "state": "failed",
+            "message": "Autosave paused — reload the latest project before editing.",
+        }
         st.error(str(error))
         return False
+    except (OSError, sqlite3.Error):
+        st.session_state[AUTOSAVE_STATUS_KEY] = {
+            "state": "failed",
+            "message": "Autosave failed — your latest changes may not be stored.",
+        }
+        st.error(
+            "Autosave failed. Your latest changes may not be stored. Check the project database and try again."
+        )
+        return False
+
+
+def render_autosave_status() -> None:
+    status = st.session_state.get(AUTOSAVE_STATUS_KEY)
+    if not status or not st.session_state.get("active_project_id"):
+        return
+    state = str(status.get("state") or "saved")
+    message = html.escape(str(status.get("message") or "Autosave is on."))
+    st.markdown(
+        f'<div class="autosave-status {state}" role="status" aria-live="polite">{message}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def create_blank_project(name: str) -> str:
@@ -621,12 +694,16 @@ def study_config_payload() -> dict[str, Any]:
     public_project.pop("_store_loaded_at", None)
     methodology = with_default_methodology_values(st.session_state["methodology"])
     terminology = normalize_terminology(methodology.pop("terminology", None))
-    source_taxonomy = normalize_source_taxonomy(methodology.pop("shade_source_taxonomy", None))
+    source_taxonomy = normalize_source_taxonomy(
+        methodology.pop("shade_source_taxonomy", None)
+    )
     coverage_taxonomy = normalize_coverage_display_taxonomy(
         methodology.pop("shade_coverage_taxonomy", None),
         taxonomy,
     )
-    visualization = normalized_visualization_values(st.session_state["visualization"], taxonomy)
+    visualization = normalized_visualization_values(
+        st.session_state["visualization"], taxonomy
+    )
     visualization["voting"]["shade_source_taxonomy"] = source_taxonomy
     visualization["voting"]["shade_coverage_taxonomy"] = coverage_taxonomy
     return {
@@ -664,12 +741,18 @@ def _canonical_deployment_state(
     normalized_project.pop("_store_loaded_at", None)
     normalized_taxonomy = normalize_coverage_taxonomy(taxonomy)
     normalized_methodology = with_default_methodology_values(methodology)
-    normalized_visualization = normalized_visualization_values(visualization, normalized_taxonomy)
+    normalized_visualization = normalized_visualization_values(
+        visualization, normalized_taxonomy
+    )
     normalized_stops = stops.copy()
     if not normalized_stops.empty:
-        normalized_stops = prepare_stop_dataset(normalized_stops, normalized_project, normalized_taxonomy)
+        normalized_stops = prepare_stop_dataset(
+            normalized_stops, normalized_project, normalized_taxonomy
+        )
     if not normalized_stops.empty:
-        normalized_stops = normalized_stops.reindex(sorted(normalized_stops.columns), axis=1)
+        normalized_stops = normalized_stops.reindex(
+            sorted(normalized_stops.columns), axis=1
+        )
         if "stop_id" in normalized_stops.columns:
             normalized_stops = normalized_stops.sort_values("stop_id", kind="stable")
     payload = {
@@ -679,7 +762,9 @@ def _canonical_deployment_state(
         "methodology": normalized_methodology,
         "visualization": normalized_visualization,
         "import_log": import_log,
-        "assessment_modes": normalize_modes(assessment_modes or DEFAULT_ASSESSMENT_MODES),
+        "assessment_modes": normalize_modes(
+            assessment_modes or DEFAULT_ASSESSMENT_MODES
+        ),
         "scoring": scoring or DEFAULT_SCORING,
         "stops": normalized_stops.to_dict(orient="records"),
     }
@@ -689,7 +774,9 @@ def _canonical_deployment_state(
 def deployment_session_freshness_issue() -> str:
     project_id = str(st.session_state.get("active_project_id") or "").strip()
     if not project_id:
-        return "The active project is not saved yet. Save or reopen it before publishing."
+        return (
+            "The active project is not saved yet. Save or reopen it before publishing."
+        )
     try:
         persisted = load_project_bundle(project_id)
     except KeyError:
@@ -732,8 +819,6 @@ def active_raw_labels() -> pd.DataFrame:
     return list_shade_labels(project_id)
 
 
-
-
 def build_github_deploy_bundle(
     repo_name: str,
     deploy_mode: str = "existing",
@@ -761,7 +846,9 @@ def build_github_deploy_bundle(
             priority_weights=st.session_state["visualization"]["priority_weights"],
             deploy_mode=deploy_mode,
             commit_message=commit_message,
-            assessments=list_assessments(str(st.session_state.get("active_project_id") or "")),
+            assessments=list_assessments(
+                str(st.session_state.get("active_project_id") or "")
+            ),
         )
     )
 
@@ -784,15 +871,8 @@ def open_project(project_id: str) -> bool:
     return True
 
 
-def request_open_project(project_id: str, project_name: str) -> None:
-    st.session_state["pending_project_open"] = {
-        "id": project_id,
-        "name": project_name,
-    }
-
-
-def clear_pending_project_open() -> None:
-    st.session_state.pop("pending_project_open", None)
+def request_open_project(project_id: str, _project_name: str = "") -> None:
+    open_project(project_id)
 
 
 def clear_pending_project_settings() -> None:
@@ -804,13 +884,11 @@ def clear_pending_project_delete() -> None:
 
 
 def request_project_settings(project_id: str) -> None:
-    clear_pending_project_open()
     clear_pending_project_delete()
     st.session_state["pending_project_settings"] = project_id
 
 
 def request_project_delete(project_id: str, project_name: str) -> None:
-    clear_pending_project_open()
     clear_pending_project_settings()
     st.session_state["pending_project_delete"] = {
         "id": project_id,
@@ -835,35 +913,8 @@ def clear_loaded_project_session() -> None:
         st.session_state.pop(key, None)
 
 
-def clear_pending_main_menu() -> None:
-    st.session_state.pop("pending_main_menu", None)
-
-
 def request_main_menu() -> None:
-    clear_pending_project_open()
-    if st.session_state.get("page") == "Home":
-        clear_pending_main_menu()
-        return
-    st.session_state["pending_main_menu"] = True
-
-
-@st.dialog("Open project?", on_dismiss=clear_pending_project_open)
-def render_open_project_confirmation() -> None:
-    pending = st.session_state.get("pending_project_open") or {}
-    project_id = str(pending.get("id") or "")
-    project_name = str(pending.get("name") or "this project")
-    st.markdown("<span class='open-project-dialog-marker'></span>", unsafe_allow_html=True)
-    st.write(f"Open {project_name} and continue to its project workspace?")
-    cancel_column, open_column = st.columns(2)
-    with cancel_column:
-        if st.button("Cancel", width="stretch"):
-            clear_pending_project_open()
-            st.rerun()
-    with open_column:
-        if st.button("Open Project", type="primary", width="stretch"):
-            if open_project(project_id):
-                clear_pending_project_open()
-                st.rerun()
+    set_page("Home")
 
 
 @st.dialog("Project settings", on_dismiss=clear_pending_project_settings)
@@ -878,7 +929,9 @@ def render_project_settings() -> None:
 
     project = bundle["project"]
     project_name = str(project.get("name") or "Untitled Stop Audit")
-    st.markdown("<span class='project-settings-dialog-marker'></span>", unsafe_allow_html=True)
+    st.markdown(
+        "<span class='project-settings-dialog-marker'></span>", unsafe_allow_html=True
+    )
     st.caption("Update the details shown on your project card and published study.")
     with st.form(f"project_settings_form_{project_id}"):
         name = st.text_input(
@@ -923,7 +976,9 @@ def render_project_settings() -> None:
                 "for a public audience, but publishing the website is still a separate step."
             ),
         )
-        submitted = st.form_submit_button("Save changes", type="primary", width="stretch")
+        submitted = st.form_submit_button(
+            "Save changes", type="primary", width="stretch"
+        )
 
     if submitted:
         if not name.strip():
@@ -945,7 +1000,9 @@ def render_project_settings() -> None:
             if st.session_state.get("active_project_id") == project_id:
                 load_project_into_session(project_id)
             clear_pending_project_settings()
-            st.session_state["project_settings_notice"] = f"Saved settings for {name.strip()}."
+            st.session_state["project_settings_notice"] = (
+                f"Saved settings for {name.strip()}."
+            )
             st.rerun()
 
     st.divider()
@@ -967,7 +1024,9 @@ def render_project_delete_confirmation() -> None:
     pending = st.session_state.get("pending_project_delete") or {}
     project_id = str(pending.get("id") or "")
     project_name = str(pending.get("name") or "this project")
-    st.markdown("<span class='project-delete-dialog-marker'></span>", unsafe_allow_html=True)
+    st.markdown(
+        "<span class='project-delete-dialog-marker'></span>", unsafe_allow_html=True
+    )
     st.warning(f"This permanently deletes {project_name} and all of its project data.")
     confirmation = st.text_input(
         f'Type "{project_name}" to confirm',
@@ -999,23 +1058,6 @@ def render_project_delete_confirmation() -> None:
             st.rerun()
 
 
-@st.dialog("Return to main menu?", on_dismiss=clear_pending_main_menu)
-def render_main_menu_confirmation() -> None:
-    project_name = str(st.session_state.get("project", {}).get("name") or "this project")
-    st.markdown("<span class='main-menu-dialog-marker'></span>", unsafe_allow_html=True)
-    st.write(f"Leave {project_name} and return to your project list?")
-    cancel_column, menu_column = st.columns(2)
-    with cancel_column:
-        if st.button("Cancel", key="cancel_main_menu", width="stretch"):
-            clear_pending_main_menu()
-            st.rerun()
-    with menu_column:
-        if st.button("Main Menu", key="confirm_main_menu", type="primary", width="stretch"):
-            clear_pending_main_menu()
-            set_page("Home")
-            st.rerun()
-
-
 def format_project_updated(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -1030,7 +1072,9 @@ def format_project_updated(value: Any) -> str:
     return f"Updated {updated.strftime('%b %d, %Y').replace(' 0', ' ')}"
 
 
-def project_label_progress(labeled_count: int, location_count: int) -> tuple[float, str]:
+def project_label_progress(
+    labeled_count: int, location_count: int
+) -> tuple[float, str]:
     """Return the exact bar width and a concise, non-misleading percentage label."""
     if location_count <= 0 or labeled_count <= 0:
         return 0.0, "0%"
@@ -1098,24 +1142,6 @@ def render_home_page() -> None:
             border-color: #14532d;
             color: white;
         }
-        div[data-testid="stDialog"]:has(.open-project-dialog-marker) button[kind="primary"] {
-            background: #166534;
-            border-color: #166534;
-            color: white;
-        }
-        div[data-testid="stDialog"]:has(.open-project-dialog-marker) button[kind="primary"]:hover {
-            background: #14532d;
-            border-color: #14532d;
-        }
-        div[data-testid="stDialog"]:has(.main-menu-dialog-marker) button[kind="primary"] {
-            background: #166534;
-            border-color: #166534;
-            color: white;
-        }
-        div[data-testid="stDialog"]:has(.main-menu-dialog-marker) button[kind="primary"]:hover {
-            background: #14532d;
-            border-color: #14532d;
-        }
         div[data-testid="stDialog"]:has(.project-settings-dialog-marker) button[kind="primary"] {
             background: #166534;
             border-color: #166534;
@@ -1137,8 +1163,7 @@ def render_home_page() -> None:
             box-shadow: 0 1px 2px rgba(15, 48, 30, 0.04);
             cursor: pointer;
             box-sizing: border-box;
-            height: 24.5rem;
-            overflow: hidden;
+            min-height: 24.5rem;
             padding: 1.25rem;
             position: relative;
             transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
@@ -1161,15 +1186,17 @@ def render_home_page() -> None:
             left: 0;
             position: absolute;
             right: 0;
+            top: 0;
             z-index: 5;
         }
         div[class*="st-key-project_card_"] div[class*="st-key-home_open_"] button {
             bottom: 0;
             cursor: pointer;
-            height: 24.5rem;
+            height: 100%;
             left: 0;
             opacity: 0;
             position: absolute;
+            top: 0;
             width: 100%;
         }
         div[class*="st-key-project_card_"] div[class*="st-key-project_settings_"] {
@@ -1212,6 +1239,7 @@ def render_home_page() -> None:
             letter-spacing: -0.012em;
             line-height: 1.35;
             margin: 0;
+            overflow-wrap: anywhere;
             padding-right: 3rem;
         }
         .project-card-location {
@@ -1326,13 +1354,17 @@ def render_home_page() -> None:
         with action_column:
             with st.popover("+ New Project", width="stretch"):
                 st.markdown("**Create a stop audit**")
-                st.caption("Start with an empty project and add your own transit or GIS data.")
+                st.caption(
+                    "Start with an empty project and add your own transit or GIS data."
+                )
                 new_project_name = st.text_input(
                     "Project name",
                     key="home_new_project_name",
                     placeholder="e.g. Downtown transit stop audit",
                 )
-                if st.button("Create project", key="home_create_project", width="stretch"):
+                if st.button(
+                    "Create project", key="home_create_project", width="stretch"
+                ):
                     project_id = create_blank_project(new_project_name)
                     load_project_into_session(project_id)
                     set_page("Data")
@@ -1409,7 +1441,7 @@ def render_header() -> str:
         ("Dataset", "Data"),
         ("Labelling", "Labels"),
         ("Build", "Preview"),
-        ("Export", "Deploy"),
+        ("Publish", "Deploy"),
     ]
     secondary_navigation = {
         "Dataset": [
@@ -1434,7 +1466,7 @@ def render_header() -> str:
         "Visuals": "Build",
         "Docs": "Build",
         "Preview": "Build",
-        "Deploy": "Export",
+        "Deploy": "Publish",
     }
     pages = ["Home", *page_sections]
     if st.session_state.get("page") not in pages:
@@ -1562,20 +1594,62 @@ def render_header() -> str:
         .st-key-header_subnav [data-testid="stColumn"] button {
             width: auto !important;
         }
-        div[data-testid="stDialog"]:has(.main-menu-dialog-marker) button[kind="primary"] {
-            background: #166534;
-            border-color: #166534;
-            color: white;
+        .autosave-status {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 999px;
+            bottom: 1rem;
+            box-shadow: 0 0.35rem 1rem rgba(15, 48, 30, 0.12);
+            color: #166534;
+            font-size: 0.8rem;
+            font-weight: 650;
+            padding: 0.45rem 0.75rem;
+            position: fixed;
+            right: 1rem;
+            z-index: 999;
         }
-        div[data-testid="stDialog"]:has(.main-menu-dialog-marker) button[kind="primary"]:hover {
-            background: #14532d;
-            border-color: #14532d;
+        .autosave-status.failed {
+            background: #fff7ed;
+            border-color: #fdba74;
+            color: #9a3412;
         }
         @media (max-width: 900px) {
             [data-testid="stMainBlockContainer"] { padding-left: 1rem; padding-right: 1rem; }
             .st-key-nav_home button, .st-key-nav_home button p { font-size: 25px; }
             div[class*="st-key-primary_nav_"] button { font-size: 14px; padding: 0.5rem; }
             .st-key-header_project [data-testid="stPopover"] > button { min-width: 44px; }
+        }
+        @media (max-width: 760px) {
+            .autosave-status {
+                bottom: 0.6rem;
+                left: 0.75rem;
+                max-width: calc(100vw - 1.5rem);
+                right: auto;
+            }
+            .st-key-app_header { min-height: 0; }
+            div[data-testid="stHorizontalBlock"]:has(.st-key-header_project) {
+                flex-wrap: wrap;
+            }
+            div[data-testid="stHorizontalBlock"]:has(.st-key-header_project)
+            > [data-testid="stColumn"] {
+                flex: 1 1 100% !important;
+                width: 100% !important;
+            }
+            div[data-testid="stHorizontalBlock"]:has(.st-key-header_project)
+            div[class*="st-key-primary_nav_"] button {
+                font-size: 13px;
+                padding-left: 0.35rem;
+                padding-right: 0.35rem;
+            }
+            .st-key-header_subnav {
+                overflow-x: auto;
+                scrollbar-width: thin;
+            }
+            .st-key-header_subnav [data-testid="stHorizontalBlock"] {
+                flex-wrap: nowrap;
+                min-width: max-content;
+                padding-bottom: 0.2rem;
+            }
         }
         </style>
         """,
@@ -1606,7 +1680,9 @@ def render_header() -> str:
                         args=(destination,),
                     )
             with project_selector:
-                project_name = str(st.session_state.get("project", {}).get("name") or "Project")
+                project_name = str(
+                    st.session_state.get("project", {}).get("name") or "Project"
+                )
                 selector_label = (
                     project_name
                     if len(project_name) <= 24
@@ -1624,11 +1700,16 @@ def render_header() -> str:
                         st.button(
                             project.get("name") or "Untitled Stop Audit",
                             key=f"header_project_{project_id}",
-                            type="primary" if project_id == active_project_id else "secondary",
+                            type="primary"
+                            if project_id == active_project_id
+                            else "secondary",
                             disabled=project_id == active_project_id,
                             width="stretch",
                             on_click=request_open_project,
-                            args=(project_id, project.get("name") or "Untitled Stop Audit"),
+                            args=(
+                                project_id,
+                                project.get("name") or "Untitled Stop Audit",
+                            ),
                         )
                     st.divider()
                     st.button(
@@ -1655,8 +1736,6 @@ def render_header() -> str:
                             on_click=set_page,
                             args=(destination,),
                         )
-    if st.session_state.get("pending_main_menu"):
-        render_main_menu_confirmation()
     return st.session_state["page"]
 
 
@@ -1699,6 +1778,5 @@ def main() -> None:
         render_deploy_page()
     else:
         render_data_page()
-    if st.session_state.get("pending_project_open"):
-        render_open_project_confirmation()
     save_active_project_to_store()
+    render_autosave_status()

@@ -48,6 +48,38 @@ from shade_gis.builder_visuals import (
 )
 
 
+PENDING_OVERLAY_REMOVAL_KEY = "pending_gis_overlay_removal"
+
+
+def clear_pending_overlay_removal() -> None:
+    st.session_state.pop(PENDING_OVERLAY_REMOVAL_KEY, None)
+
+
+@st.dialog("Remove GIS overlay?", on_dismiss=clear_pending_overlay_removal)
+def render_overlay_removal_confirmation(visualization: dict[str, Any]) -> None:
+    overlays = visualization.get("gis_overlays", [])
+    index = st.session_state.get(PENDING_OVERLAY_REMOVAL_KEY)
+    if not isinstance(index, int) or not 0 <= index < len(overlays):
+        clear_pending_overlay_removal()
+        st.warning("This overlay is no longer available.")
+        return
+    name = str(overlays[index].get("name") or f"GIS overlay {index + 1}")
+    st.warning(
+        f'Remove "{name}" from this project? Its uploaded geometry and display settings will be deleted.'
+    )
+    keep_column, remove_column = st.columns(2)
+    if keep_column.button("Keep overlay", width="stretch"):
+        clear_pending_overlay_removal()
+        st.rerun()
+    if remove_column.button(
+        "Remove overlay", type="primary", width="stretch", key="confirm_overlay_removal"
+    ):
+        overlays.pop(index)
+        visualization["gis_overlays"] = overlays
+        clear_pending_overlay_removal()
+        st.rerun()
+
+
 def visual_map_render_key(
     visualization: dict[str, Any], taxonomy: list[dict[str, Any]]
 ) -> str:
@@ -322,10 +354,10 @@ def render_gis_overlay_controls(visualization: dict[str, Any]) -> None:
                 st.error(f"Could not import GIS overlay: {error}")
 
     if not overlays:
+        clear_pending_overlay_removal()
         st.caption("No uploaded GIS overlays yet.")
         return
 
-    delete_index: int | None = None
     for index, overlay in enumerate(overlays):
         label = f"{overlay.get('name', f'GIS overlay {index + 1}')} ({overlay.get('category', 'Other')})"
         with st.expander(label, expanded=False):
@@ -376,14 +408,11 @@ def render_gis_overlay_controls(visualization: dict[str, Any]) -> None:
                 f"{meta.get('geometry_types', 'Unknown geometry')}"
             )
             if st.button("Remove overlay", key=f"remove_gis_overlay_{index}"):
-                delete_index = index
+                st.session_state[PENDING_OVERLAY_REMOVAL_KEY] = index
 
-    if delete_index is not None:
-        overlays.pop(delete_index)
-        visualization["gis_overlays"] = overlays
-        st.rerun()
-    else:
-        visualization["gis_overlays"] = overlays
+    visualization["gis_overlays"] = overlays
+    if st.session_state.get(PENDING_OVERLAY_REMOVAL_KEY) is not None:
+        render_overlay_removal_confirmation(visualization)
 
 
 def render_visuals_page() -> None:

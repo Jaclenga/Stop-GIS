@@ -814,7 +814,9 @@ def render_deploy_page() -> None:
                 st.rerun()
     else:
         with st.container(key="deploy_publish"):
-            publish_clicked = st.button("Publish app", type="primary", width="stretch")
+            publish_clicked = st.button(
+                "Publish website", type="primary", width="stretch"
+            )
         st.markdown('<div class="deploy-estimate">This usually takes 1–3 minutes.</div>', unsafe_allow_html=True)
         if publish_clicked:
             st.session_state.pop(DEPLOYMENT_UNPUBLISHED_KEY, None)

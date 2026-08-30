@@ -1278,7 +1278,7 @@ def render_voting_panel(
         if not preview:
             database_url = configured_vote_database_url()
             sqlite_path = configured_vote_db_path(app_dir)
-            st.caption(f"Voting storage: {vote_store_label(database_url)}")
+            st.caption("Your response is stored for this study.")
             identity = (
                 _request_voter_identity(database_url=database_url, sqlite_path=sqlite_path)
                 if config["abuse_protection_enabled"] or config["require_authentication"]
@@ -1305,7 +1305,13 @@ def render_voting_panel(
             )
         existing_coverage = str(existing_vote["coverage_status"]) if existing_vote else ""
         existing_sources = existing_vote["shade_sources"] if existing_vote else []
-        default_index = options.index(existing_coverage) if existing_coverage in options else 0
+        # Do not preselect a response for a new voter. A default choice biases the
+        # study and makes an accidental one-click submission possible.
+        default_index = (
+            options.index(existing_coverage)
+            if existing_coverage in options
+            else (0 if preview else None)
+        )
         st.markdown(
             f"**{config['question']}**",
             help=coverage_taxonomy_help(options, taxonomy),
@@ -1321,7 +1327,10 @@ def render_voting_panel(
                 config.get("shade_coverage_taxonomy")
             ).get(option, option),
         )
-        changes_disabled = preview or bool(existing_vote and not config["allow_vote_changes"])
+        coverage_selected = selected_status in options
+        changes_disabled = preview or bool(
+            existing_vote and not config["allow_vote_changes"]
+        )
         source_keys = {
             source: f"public_vote_source_{key_token}_{source.lower()}" for source in PUBLIC_SOURCE_OPTIONS
         }
@@ -1334,7 +1343,9 @@ def render_voting_panel(
             help=source_taxonomy_help(config.get("shade_source_taxonomy")),
         )
         selected_sources = []
-        if selected_status == "No Shade":
+        if not coverage_selected:
+            st.caption("Choose a shade coverage option to continue.")
+        elif selected_status == "No Shade":
             st.caption("No shade source is needed when **No Shade** is selected.")
         else:
             for source in PUBLIC_SOURCE_OPTIONS:
@@ -1349,11 +1360,19 @@ def render_voting_panel(
                     **checkbox_args,
                 ):
                     selected_sources.append(source)
+        sources_required = bool(
+            coverage_selected
+            and selected_status != "No Shade"
+            and not selected_sources
+            and not changes_disabled
+        )
+        if sources_required:
+            st.caption("Select at least one shade source to submit this response.")
         submitted = st.button(
             str(config["submit_label"]),
             key=f"public_vote_submit_{key_token}",
             type="primary",
-            disabled=changes_disabled,
+            disabled=changes_disabled or not coverage_selected or sources_required,
             width="stretch",
         )
         if submitted and not preview:
@@ -1430,5 +1449,6 @@ def render_voting_panel(
                     )
     except VoteRateLimitError as exc:
         st.warning(str(exc))
-    except (VoteStorageError, OSError, sqlite3.Error) as exc:
-        st.error(f"Voting storage is unavailable. {exc}")
+    except (VoteStorageError, OSError, sqlite3.Error):
+        st.error("Voting is temporarily unavailable. Your response was not submitted.")
+        st.button("Try again", key=f"public_vote_retry_{key_token}", on_click=st.rerun)

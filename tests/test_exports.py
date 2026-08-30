@@ -490,7 +490,7 @@ def test_deploy_page_requires_destination_settings_before_publishing():
 
     assert "max-width: 900px" in source
     assert 'STAGES = ("Check project", "Prepare website", "Publish", "Verify website")' in source
-    assert 'st.button("Publish app", type="primary", width="stretch")' in source
+    assert '"Publish website", type="primary", width="stretch"' in source
     assert "This usually takes 1–3 minutes." in source
     assert 'st.expander("Settings", expanded=expanded)' in source
     assert '"GitHub username"' in source

@@ -29,7 +29,11 @@ from platform_store import (
     list_shade_labels,
 )
 from stop_gis.assessment_components import render_assessment_form
-from stop_gis.assessment_modes import assessment_values_from_record, normalize_modes, reliability_for_mode
+from stop_gis.assessment_modes import (
+    assessment_values_from_record,
+    normalize_modes,
+    reliability_for_mode,
+)
 from shade_gis.builder_labels import (
     RESOLVED_REVIEW_STATUSES,
     label_source_code,
@@ -100,7 +104,10 @@ def confidence_level_from_score(score: Any) -> str:
         return "Medium"
     if pd.isna(numeric_score):
         return "Medium"
-    return min(CONFIDENCE_LEVEL_SCORES, key=lambda label: abs(CONFIDENCE_LEVEL_SCORES[label] - numeric_score))
+    return min(
+        CONFIDENCE_LEVEL_SCORES,
+        key=lambda label: abs(CONFIDENCE_LEVEL_SCORES[label] - numeric_score),
+    )
 
 
 def label_code_definition_tables(
@@ -125,7 +132,9 @@ def label_code_definition_tables(
                 "Code": item.get("shade_coverage", ""),
                 "Definition": item.get("operational_definition", ""),
             }
-            for item in normalize_coverage_display_taxonomy(coverage_taxonomy, active_taxonomy)
+            for item in normalize_coverage_display_taxonomy(
+                coverage_taxonomy, active_taxonomy
+            )
         ]
     )
     sources = pd.DataFrame(
@@ -145,7 +154,9 @@ def label_code_definition_tables(
         for item in active_taxonomy
         if str(item.get("name", "") or "").strip()
     ]
-    map_labels = pd.DataFrame(map_label_rows, columns=["Code", "Definition"]).drop_duplicates(
+    map_labels = pd.DataFrame(
+        map_label_rows, columns=["Code", "Definition"]
+    ).drop_duplicates(
         subset=["Code"],
         keep="first",
     )
@@ -192,7 +203,9 @@ def label_code_definition_tables(
     }
 
 
-def render_label_code_helper(taxonomy: list[dict[str, Any]], title: str = "Label/code definitions") -> None:
+def render_label_code_helper(
+    taxonomy: list[dict[str, Any]], title: str = "Label/code definitions"
+) -> None:
     with st.expander(title, expanded=False):
         methodology = st.session_state.get("methodology", {})
         terminology = methodology.get("terminology")
@@ -219,61 +232,56 @@ def render_label_workflow_navigation() -> str:
     if current not in LABEL_WORKFLOW_OPTIONS:
         current = DEFAULT_LABEL_WORKFLOW
         st.session_state["label_workflow_mode"] = current
-    st.caption("Choose a labelling task.")
-    queue_col, assessment_col, adjudicate_col, submit_col, history_col, _ = st.columns(
-        [1, 1.15, 1.2, 1, 1, 2]
+    st.markdown(
+        """
+        <style>
+        .st-key-label_workflow_navigation [data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap;
+        }
+        .st-key-label_workflow_navigation [data-testid="stHorizontalBlock"]
+        > [data-testid="stColumn"] {
+            flex: 1 1 9.5rem !important;
+            min-width: 9.5rem !important;
+            width: auto !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-    queue_col.button(
-        "Review Queue",
-        type="secondary",
-        width="stretch",
-        key="label_action_queue",
-        on_click=set_label_workflow,
-        args=("Review Queue",),
-    )
-    assessment_col.button(
-        "+ Submit Assessment",
-        type="primary",
-        width="stretch",
-        key="assessment_action_submit",
-        on_click=set_label_workflow,
-        args=("Submit Assessment",),
-    )
-    adjudicate_col.button(
-        "Adjudicate",
-        type="secondary",
-        width="stretch",
-        key="assessment_action_adjudicate",
-        on_click=set_label_workflow,
-        args=("Adjudicate Assessment",),
-    )
-    submit_col.button(
-        "+ Submit Label",
-        type="secondary",
-        width="stretch",
-        key="label_action_submit",
-        on_click=set_label_workflow,
-        args=("Submit Label",),
-    )
-    history_col.button(
-        "Audit History",
-        type="secondary",
-        width="stretch",
-        key="label_action_history",
-        on_click=set_label_workflow,
-        args=("Audit History",),
-    )
+    actions = [
+        ("Review Queue", "Review Queue", "label_action_queue"),
+        ("+ Submit Assessment", "Submit Assessment", "assessment_action_submit"),
+        ("Adjudicate", "Adjudicate Assessment", "assessment_action_adjudicate"),
+        ("+ Submit Label", "Submit Label", "label_action_submit"),
+        ("Audit History", "Audit History", "label_action_history"),
+    ]
+    with st.container(key="label_workflow_navigation"):
+        st.caption("Choose a labelling task. The highlighted task is currently open.")
+        action_columns = st.columns(len(actions))
+        for column, (label, view, key) in zip(action_columns, actions, strict=True):
+            column.button(
+                label,
+                type="primary" if current == view else "secondary",
+                width="stretch",
+                key=key,
+                on_click=set_label_workflow,
+                args=(view,),
+            )
     return current
 
 
-def render_confidence_level_buttons(label: str, default_score: Any, key: str) -> tuple[str, float]:
+def render_confidence_level_buttons(
+    label: str, default_score: Any, key: str
+) -> tuple[str, float]:
     options = list(CONFIDENCE_LEVEL_SCORES)
     default_label = confidence_level_from_score(default_score)
     if hasattr(st, "segmented_control"):
         selected = st.segmented_control(label, options, default=default_label, key=key)
         selected = selected or default_label
     else:
-        selected = st.radio(label, options, index=options.index(default_label), horizontal=True, key=key)
+        selected = st.radio(
+            label, options, index=options.index(default_label), horizontal=True, key=key
+        )
     return selected, CONFIDENCE_LEVEL_SCORES[selected]
 
 
@@ -302,7 +310,11 @@ def sync_review_queue_stop_picker(queue_records: pd.DataFrame) -> None:
         st.session_state["review_queue_stop_index"] = stop_ids.index(selected_stop_id)
         return
     current_index = st.session_state.get("review_queue_stop_index")
-    if not isinstance(current_index, int) or current_index < 0 or current_index >= len(stop_ids):
+    if (
+        not isinstance(current_index, int)
+        or current_index < 0
+        or current_index >= len(stop_ids)
+    ):
         st.session_state["review_queue_stop_index"] = 0
 
 
@@ -323,7 +335,9 @@ def filter_review_queue_records(
             + " "
             + filtered["routes"].fillna("").astype(str)
         ).str.lower()
-        filtered = filtered[haystack.str.contains(re.escape(queue_search.strip().lower()), na=False)]
+        filtered = filtered[
+            haystack.str.contains(re.escape(queue_search.strip().lower()), na=False)
+        ]
     if only_conflicts and "disagreement_flag" in filtered.columns:
         filtered = filtered[filtered["disagreement_flag"].astype(bool)]
     return filtered.copy()
@@ -354,7 +368,9 @@ def render_review_queue_selector(
 
     filter_cols = st.columns([1.2, 1.1, 1.1], vertical_alignment="bottom")
     status_options = list(REVIEW_STATUS_COLORS)
-    default_statuses = [status for status in REVIEW_QUEUE_DEFAULT_STATUSES if status in status_options]
+    default_statuses = [
+        status for status in REVIEW_QUEUE_DEFAULT_STATUSES if status in status_options
+    ]
     with filter_cols[0]:
         selected_statuses = st.multiselect(
             "Queue statuses",
@@ -365,14 +381,20 @@ def render_review_queue_selector(
     with filter_cols[1]:
         queue_search = st.text_input("Search queue", key="review_queue_search")
     with filter_cols[2]:
-        only_conflicts = st.checkbox("Only disagreements", value=False, key="review_queue_conflicts_only")
+        only_conflicts = st.checkbox(
+            "Only disagreements", value=False, key="review_queue_conflicts_only"
+        )
 
-    filtered = filter_review_queue_records(queue, selected_statuses, queue_search, only_conflicts)
+    filtered = filter_review_queue_records(
+        queue, selected_statuses, queue_search, only_conflicts
+    )
 
     if filtered.empty:
         st.info("No stops match the review queue filters.")
         return None, None, pd.DataFrame()
-    st.dataframe(review_queue_display_table(filtered).head(200), width="stretch", hide_index=True)
+    st.dataframe(
+        review_queue_display_table(filtered).head(200), width="stretch", hide_index=True
+    )
 
     queue_records = filtered.reset_index(drop=True)
     sync_review_queue_stop_picker(queue_records)
@@ -387,19 +409,38 @@ def render_review_queue_selector(
     selected_stop_id = str(selected_stop.get("stop_id", ""))
     st.session_state["label_selected_stop_id"] = selected_stop_id
 
-    stop_labels = labels[labels["stop_id"].astype(str) == selected_stop_id] if not labels.empty else pd.DataFrame()
+    stop_labels = (
+        labels[labels["stop_id"].astype(str) == selected_stop_id]
+        if not labels.empty
+        else pd.DataFrame()
+    )
     detail_cols = st.columns([1.25, 1, 1.25, 1, 1])
-    detail_cols[0].metric("Current map label", normalize_shade_category_label(selected_stop.get("shading", "Needs Review")))
-    detail_cols[1].metric("Status", str(selected_stop.get("review_status", "Unlabeled") or "Unlabeled"))
-    detail_cols[2].metric("Most common raw label", normalize_shade_category_label(selected_stop.get("majority_label", "")) or "Not enough labels")
-    detail_cols[3].metric("Agreement", f"{float(selected_stop.get('agreement_pct', 0) or 0):.1f}%")
-    detail_cols[4].metric("Submitted labels", int(float(selected_stop.get("label_count", 0) or 0)))
+    detail_cols[0].metric(
+        "Current map label",
+        normalize_shade_category_label(selected_stop.get("shading", "Needs Review")),
+    )
+    detail_cols[1].metric(
+        "Status", str(selected_stop.get("review_status", "Unlabeled") or "Unlabeled")
+    )
+    detail_cols[2].metric(
+        "Most common raw label",
+        normalize_shade_category_label(selected_stop.get("majority_label", ""))
+        or "Not enough labels",
+    )
+    detail_cols[3].metric(
+        "Agreement", f"{float(selected_stop.get('agreement_pct', 0) or 0):.1f}%"
+    )
+    detail_cols[4].metric(
+        "Submitted labels", int(float(selected_stop.get("label_count", 0) or 0))
+    )
 
     if stop_labels.empty:
         st.info("No raw labels are attached to this stop yet.")
     else:
         st.markdown("#### Raw Label Comparison")
-        st.dataframe(raw_label_comparison_table(stop_labels), width="stretch", hide_index=True)
+        st.dataframe(
+            raw_label_comparison_table(stop_labels), width="stretch", hide_index=True
+        )
 
     return selected_stop_id, selected_stop, queue_records
 
@@ -415,32 +456,48 @@ def render_admin_review_decision(
     coverage_labels = project_coverage_display_labels(taxonomy)
     source_labels = project_source_display_labels()
     current_coverage = previous["shade_coverage"]
-    coverage_index = coverage_options.index(current_coverage) if current_coverage in coverage_options else len(coverage_options) - 1
-    current_sources = [source for source in normalized_shade_sources(previous["shade_sources"]) if source in SHADE_SOURCE_OPTIONS]
+    coverage_index = (
+        coverage_options.index(current_coverage)
+        if current_coverage in coverage_options
+        else len(coverage_options) - 1
+    )
+    current_sources = [
+        source
+        for source in normalized_shade_sources(previous["shade_sources"])
+        if source in SHADE_SOURCE_OPTIONS
+    ]
     current_confidence = previous["confidence"]
     try:
         confidence_default = float(current_confidence)
     except (TypeError, ValueError):
         confidence_default = 0.85
     confidence_default = max(0.0, min(1.0, confidence_default))
-    decision_scope = hashlib.sha256(f"{project_id}:{selected_stop_id}".encode("utf-8")).hexdigest()[:16]
+    decision_scope = hashlib.sha256(
+        f"{project_id}:{selected_stop_id}".encode("utf-8")
+    ).hexdigest()[:16]
 
     def decision_key(name: str) -> str:
         return f"review_{decision_scope}_{name}"
 
     st.markdown("#### Admin Review Decision")
-    action = st.selectbox("Decision type", REVIEW_ACTION_OPTIONS, key=decision_key("action"))
+    action = st.selectbox(
+        "Decision type", REVIEW_ACTION_OPTIONS, key=decision_key("action")
+    )
     default_status = REVIEW_ACTION_STATUS_DEFAULTS.get(action, "Needs Review")
     with st.form(decision_key("admin_review_decision_form"), clear_on_submit=False):
         render_label_code_helper(taxonomy, "Review label/code definitions")
         top_cols = st.columns([1, 1])
         with top_cols[0]:
-            actor_id = st.text_input("Reviewer or admin ID", key=decision_key("actor_id"))
+            actor_id = st.text_input(
+                "Reviewer or admin ID", key=decision_key("actor_id")
+            )
         with top_cols[1]:
             actor_role = st.selectbox(
                 "Reviewer role",
                 LABELER_ROLE_OPTIONS,
-                index=LABELER_ROLE_OPTIONS.index("Project Admin") if "Project Admin" in LABELER_ROLE_OPTIONS else 0,
+                index=LABELER_ROLE_OPTIONS.index("Project Admin")
+                if "Project Admin" in LABELER_ROLE_OPTIONS
+                else 0,
                 key=decision_key("actor_role"),
             )
 
@@ -476,13 +533,16 @@ def render_admin_review_decision(
                 with final_source_cols[index]:
                     if st.checkbox(
                         source_labels.get(source, source),
-                        value=source in current_sources and final_coverage != "No Shade",
+                        value=source in current_sources
+                        and final_coverage != "No Shade",
                         key=decision_key(f"final_source_{source.lower()}"),
                         disabled=final_coverage == "No Shade",
                     ):
                         final_sources.append(source)
         notes = st.text_area("Decision notes", key=decision_key("notes"), height=110)
-        decision_submitted = st.form_submit_button("Apply review decision", type="primary")
+        decision_submitted = st.form_submit_button(
+            "Apply review decision", type="primary"
+        )
 
     if decision_submitted:
         if not selected_stop_id.strip():
@@ -491,7 +551,9 @@ def render_admin_review_decision(
             if final_coverage == "No Shade":
                 final_sources = []
             final_sources_text = "; ".join(final_sources)
-            final_category = shade_category_from_coverage_and_sources(final_coverage, final_sources)
+            final_category = shade_category_from_coverage_and_sources(
+                final_coverage, final_sources
+            )
             apply_review_decision_to_stop(
                 selected_stop_id,
                 final_category,
@@ -528,14 +590,20 @@ def render_admin_review_decision(
             st.rerun()
 
 
-def render_review_queue(project_id: str, stops: pd.DataFrame, labels: pd.DataFrame, taxonomy: list[dict[str, Any]]) -> str | None:
-    selected_stop_id, selected_stop, queue_records = render_review_queue_selector(stops, labels)
+def render_review_queue(
+    project_id: str,
+    stops: pd.DataFrame,
+    labels: pd.DataFrame,
+    taxonomy: list[dict[str, Any]],
+) -> str | None:
+    selected_stop_id, selected_stop, queue_records = render_review_queue_selector(
+        stops, labels
+    )
     if not selected_stop_id or selected_stop is None:
         return None
     render_shared_label_reference_map(queue_records, selected_stop_id, taxonomy)
     render_admin_review_decision(project_id, selected_stop_id, selected_stop, taxonomy)
     return selected_stop_id
-
 
 
 def render_review_audit_history(project_id: str, selected_stop_id: str | None) -> None:
@@ -546,7 +614,9 @@ def render_review_audit_history(project_id: str, selected_stop_id: str | None) -
         key="show_selected_review_history",
         disabled=not bool(selected_stop_id),
     )
-    history = list_review_history(project_id, selected_stop_id if show_selected and selected_stop_id else None)
+    history = list_review_history(
+        project_id, selected_stop_id if show_selected and selected_stop_id else None
+    )
     if history.empty:
         st.info("No review decisions have been recorded yet.")
         return
@@ -575,7 +645,6 @@ def render_review_audit_history(project_id: str, selected_stop_id: str | None) -
     )
 
 
-
 def selected_stop_reference_dataset(stops: pd.DataFrame, stop_id: str) -> pd.DataFrame:
     if stops.empty or "stop_id" not in stops.columns:
         return pd.DataFrame(columns=stops.columns)
@@ -584,14 +653,17 @@ def selected_stop_reference_dataset(stops: pd.DataFrame, stop_id: str) -> pd.Dat
     if selected.empty:
         return selected
     if {"stop_lat", "stop_lon"}.issubset(selected.columns):
-        coordinates = selected[["stop_lat", "stop_lon"]].apply(pd.to_numeric, errors="coerce")
+        coordinates = selected[["stop_lat", "stop_lon"]].apply(
+            pd.to_numeric, errors="coerce"
+        )
         selected = selected.loc[coordinates.notna().all(axis=1)].copy()
         selected[["stop_lat", "stop_lon"]] = coordinates.loc[selected.index]
     return selected
 
 
-
-def stop_reference_map_datasets(stops: pd.DataFrame, selected_stop_id: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def stop_reference_map_datasets(
+    stops: pd.DataFrame, selected_stop_id: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     if stops.empty or "stop_id" not in stops.columns:
         empty = pd.DataFrame(columns=stops.columns)
         return empty, empty
@@ -600,14 +672,17 @@ def stop_reference_map_datasets(stops: pd.DataFrame, selected_stop_id: str) -> t
         return empty, empty
 
     mappable = stops.copy()
-    coordinates = mappable[["stop_lat", "stop_lon"]].apply(pd.to_numeric, errors="coerce")
+    coordinates = mappable[["stop_lat", "stop_lon"]].apply(
+        pd.to_numeric, errors="coerce"
+    )
     mappable = mappable.loc[coordinates.notna().all(axis=1)].copy()
     if mappable.empty:
         return mappable, mappable
     mappable[["stop_lat", "stop_lon"]] = coordinates.loc[mappable.index]
-    selected = mappable.loc[mappable["stop_id"].astype(str) == str(selected_stop_id)].copy()
+    selected = mappable.loc[
+        mappable["stop_id"].astype(str) == str(selected_stop_id)
+    ].copy()
     return mappable, selected
-
 
 
 def build_stop_reference_deck(
@@ -620,7 +695,9 @@ def build_stop_reference_deck(
     if mappable_stops.empty or selected_stop.empty:
         return None
 
-    configured_opacity = max(0.1, min(1.0, float(visualization.get("marker_opacity", 0.82))))
+    configured_opacity = max(
+        0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))
+    )
     map_visualization = dict(visualization)
     map_visualization["marker_opacity"] = max(0.1, configured_opacity * 0.35)
     deck = build_deck_chart(mappable_stops, taxonomy, map_visualization)
@@ -628,7 +705,9 @@ def build_stop_reference_deck(
     marker_size = max(4, min(48, int(map_visualization.get("marker_size", 7))))
     selected_visualization = dict(map_visualization)
     selected_visualization["marker_opacity"] = 1.0
-    selected_visualization["marker_size"] = min(48, max(marker_size + 4, int(marker_size * 1.8)))
+    selected_visualization["marker_size"] = min(
+        48, max(marker_size + 4, int(marker_size * 1.8))
+    )
     selected_deck = build_deck_chart(selected_stop, taxonomy, selected_visualization)
     selected_layers = [
         layer
@@ -643,10 +722,12 @@ def build_stop_reference_deck(
     return deck
 
 
-
-def stop_id_from_reference_map_selection(selection_event: Any, mappable_stops: pd.DataFrame) -> str | None:
-    return published_app.selected_stop_id_from_map_selection(selection_event, mappable_stops)
-
+def stop_id_from_reference_map_selection(
+    selection_event: Any, mappable_stops: pd.DataFrame
+) -> str | None:
+    return published_app.selected_stop_id_from_map_selection(
+        selection_event, mappable_stops
+    )
 
 
 def render_stop_reference_map(
@@ -659,7 +740,9 @@ def render_stop_reference_map(
     if mappable_stops.empty or selected_stop.empty:
         st.info("No map location is available for the selected stop.")
         return None
-    deck = build_stop_reference_deck(mappable_stops, selected_stop_id, taxonomy, visualization)
+    deck = build_stop_reference_deck(
+        mappable_stops, selected_stop_id, taxonomy, visualization
+    )
     if deck is None:
         st.info("No map location is available for the selected stop.")
         return None
@@ -674,7 +757,6 @@ def render_stop_reference_map(
     return stop_id_from_reference_map_selection(selection, mappable_stops)
 
 
-
 def sync_label_stop_picker(stop_options: pd.DataFrame) -> None:
     if stop_options.empty or "stop_id" not in stop_options.columns:
         return
@@ -685,7 +767,11 @@ def sync_label_stop_picker(stop_options: pd.DataFrame) -> None:
         st.session_state["label_selected_stop_id"] = selected_stop_id
     selected_index = stop_ids.index(selected_stop_id)
     current_index = st.session_state.get("label_stop_index")
-    if not isinstance(current_index, int) or current_index < 0 or current_index >= len(stop_ids):
+    if (
+        not isinstance(current_index, int)
+        or current_index < 0
+        or current_index >= len(stop_ids)
+    ):
         st.session_state["label_stop_index"] = selected_index
     elif stop_ids[current_index] != selected_stop_id:
         st.session_state["label_stop_index"] = selected_index
@@ -697,7 +783,9 @@ def normalize_shade_category_label(value: Any) -> str:
         return ""
     if ";" in text:
         return "; ".join(
-            normalized for part in text.split(";") if (normalized := normalize_shade_category_label(part))
+            normalized
+            for part in text.split(";")
+            if (normalized := normalize_shade_category_label(part))
         )
     return normalize_shade_coverage(text, "Needs Review")
 
@@ -758,8 +846,13 @@ def review_queue_display_table(queue: pd.DataFrame) -> pd.DataFrame:
             {
                 "Stop": stop_picker_label(row),
                 "Status": str(row.get("review_status", "Unlabeled") or "Unlabeled"),
-                "Current map label": normalize_shade_category_label(row.get("shading", "")),
-                "Most common raw label": normalize_shade_category_label(row.get("majority_label", "")) or "Not enough labels",
+                "Current map label": normalize_shade_category_label(
+                    row.get("shading", "")
+                ),
+                "Most common raw label": normalize_shade_category_label(
+                    row.get("majority_label", "")
+                )
+                or "Not enough labels",
                 "Labels": label_count,
                 "Agreement": f"{agreement:.1f}%",
                 "Needs attention": attention,
@@ -795,7 +888,6 @@ def raw_label_comparison_table(stop_labels: pd.DataFrame) -> pd.DataFrame:
     for column in display.columns:
         display[column] = display[column].astype(str)
     return display
-
 
 
 def infer_shade_sources_from_category(shade_category: str) -> str:
@@ -838,7 +930,9 @@ def shade_category_from_type(shade_type: str, shade_coverage: str) -> str:
     return normalize_shade_coverage(shade_coverage, "Needs Review")
 
 
-def shade_category_from_coverage_and_sources(shade_coverage: str, shade_sources: list[str]) -> str:
+def shade_category_from_coverage_and_sources(
+    shade_coverage: str, shade_sources: list[str]
+) -> str:
     return normalize_shade_coverage(shade_coverage, "Needs Review")
 
 
@@ -856,7 +950,6 @@ def raw_label_form_defaults(selected_stop: pd.Series) -> tuple[str, list[str]]:
         inferred_source = infer_shade_sources_from_category(current_category)
         sources = [inferred_source] if inferred_source else []
     return coverage, ([] if coverage == "No Shade" else sources)
-
 
 
 def apply_label_to_current_stop(
@@ -880,7 +973,6 @@ def apply_label_to_current_stop(
     st.session_state["stops"] = stops
 
 
-
 def apply_review_decision_to_stop(
     stop_id: str,
     shade_category: str,
@@ -895,7 +987,13 @@ def apply_review_decision_to_stop(
     mask = stops["stop_id"].astype(str) == str(stop_id)
     if not mask.any():
         return
-    for column in ["shading", "shade_coverage", "shade_sources", "confidence", "review_status"]:
+    for column in [
+        "shading",
+        "shade_coverage",
+        "shade_sources",
+        "confidence",
+        "review_status",
+    ]:
         if column not in stops.columns:
             stops[column] = ""
     stops.loc[mask, "shading"] = shade_category
@@ -908,7 +1006,6 @@ def apply_review_decision_to_stop(
     else:
         stops.loc[mask, "review_resolved_at"] = ""
     st.session_state["stops"] = stops
-
 
 
 def render_raw_label_collection(
@@ -936,9 +1033,19 @@ def render_raw_label_collection(
     st.session_state["label_selected_stop_id"] = selected_stop_id
 
     detail_cols = st.columns([1, 1, 1])
-    detail_cols[0].metric("Current label", str(selected_stop.get("shading", "Needs Review") or "Needs Review"))
-    detail_cols[1].metric("Review status", str(selected_stop.get("review_status", "Unlabeled") or "Unlabeled"))
-    selected_stop_labels = labels[labels["stop_id"].astype(str) == selected_stop_id] if not labels.empty else pd.DataFrame()
+    detail_cols[0].metric(
+        "Current label",
+        str(selected_stop.get("shading", "Needs Review") or "Needs Review"),
+    )
+    detail_cols[1].metric(
+        "Review status",
+        str(selected_stop.get("review_status", "Unlabeled") or "Unlabeled"),
+    )
+    selected_stop_labels = (
+        labels[labels["stop_id"].astype(str) == selected_stop_id]
+        if not labels.empty
+        else pd.DataFrame()
+    )
     detail_cols[2].metric("Raw labels for stop", len(selected_stop_labels))
 
     render_shared_label_reference_map(stops, selected_stop_id, taxonomy)
@@ -947,12 +1054,22 @@ def render_raw_label_collection(
     source_labels = project_source_display_labels()
     st.subheader("Administrative Shade Label")
     render_label_code_helper(taxonomy, "Raw label/code definitions")
-    manual_source_index = LABEL_SOURCE_OPTIONS.index("Manual review") if "Manual review" in LABEL_SOURCE_OPTIONS else 0
-    default_role = "Reviewer" if "Reviewer" in LABELER_ROLE_OPTIONS else LABELER_ROLE_OPTIONS[0]
+    manual_source_index = (
+        LABEL_SOURCE_OPTIONS.index("Manual review")
+        if "Manual review" in LABEL_SOURCE_OPTIONS
+        else 0
+    )
+    default_role = (
+        "Reviewer" if "Reviewer" in LABELER_ROLE_OPTIONS else LABELER_ROLE_OPTIONS[0]
+    )
 
     st.markdown("##### Label")
     coverage_labels = SHADE_COVERAGE_OPTIONS
-    coverage_index = coverage_labels.index(coverage_default) if coverage_default in coverage_labels else 0
+    coverage_index = (
+        coverage_labels.index(coverage_default)
+        if coverage_default in coverage_labels
+        else 0
+    )
     shade_coverage = st.selectbox(
         "Coverage",
         coverage_labels,
@@ -974,7 +1091,9 @@ def render_raw_label_collection(
                 selected_sources.append(source)
     shade_sources = [] if shade_coverage == "No Shade" else selected_sources
     shade_sources_text = "; ".join(shade_sources)
-    shade_category = shade_category_from_coverage_and_sources(shade_coverage, shade_sources)
+    shade_category = shade_category_from_coverage_and_sources(
+        shade_coverage, shade_sources
+    )
 
     st.markdown("##### Assessment")
     _, confidence = render_confidence_level_buttons(
@@ -1046,7 +1165,13 @@ def render_raw_label_collection(
             )
             if apply_current:
                 previous = stop_review_snapshot(selected_stop)
-                apply_label_to_current_stop(selected_stop_id, shade_category, shade_coverage, shade_sources_text, confidence)
+                apply_label_to_current_stop(
+                    selected_stop_id,
+                    shade_category,
+                    shade_coverage,
+                    shade_sources_text,
+                    confidence,
+                )
                 review_event = {
                     "stop_id": selected_stop_id,
                     "actor_id": labeler_id,
@@ -1068,10 +1193,13 @@ def render_raw_label_collection(
                 }
                 if not save_active_project_to_store(review_event=review_event):
                     load_project_into_session(project_id)
-                    st.warning(f"Saved raw label {label_id}, but the stale map snapshot was not updated.")
+                    st.warning(
+                        f"Saved raw label {label_id}, but the stale map snapshot was not updated."
+                    )
                     return
             st.success(f"Saved raw label {label_id}.")
             st.rerun()
+
 
 def render_raw_label_history(project_id: str) -> None:
     st.subheader("Submitted Label History")
@@ -1110,10 +1238,14 @@ def render_review_label_section(
     labels: pd.DataFrame,
     taxonomy: list[dict[str, Any]],
 ) -> None:
-    selected_stop_id, selected_stop, queue_records = render_review_queue_selector(stops, labels)
+    selected_stop_id, selected_stop, queue_records = render_review_queue_selector(
+        stops, labels
+    )
     if selected_stop_id and selected_stop is not None:
         render_shared_label_reference_map(queue_records, selected_stop_id, taxonomy)
-        render_admin_review_decision(project_id, selected_stop_id, selected_stop, taxonomy)
+        render_admin_review_decision(
+            project_id, selected_stop_id, selected_stop, taxonomy
+        )
 
 
 def render_assessment_collection(project_id: str, stops: pd.DataFrame) -> None:
@@ -1124,15 +1256,23 @@ def render_assessment_collection(project_id: str, stops: pd.DataFrame) -> None:
     stop_options = stops.reset_index(drop=True)
     labels = [stop_picker_label(row) for _, row in stop_options.iterrows()]
     selected_index = st.selectbox(
-        "Stop to assess", range(len(stop_options)),
-        format_func=lambda index: labels[index], key="assessment_stop_index",
+        "Stop to assess",
+        range(len(stop_options)),
+        format_func=lambda index: labels[index],
+        key="assessment_stop_index",
     )
     selected_stop = stop_options.iloc[int(selected_index)]
     stop_id = str(selected_stop.get("stop_id", ""))
     reviewer_cols = st.columns(3)
-    reviewer_id = reviewer_cols[0].text_input("Reviewer ID", key="assessment_reviewer_id")
-    reviewer_role = reviewer_cols[1].selectbox("Reviewer role", LABELER_ROLE_OPTIONS, key="assessment_reviewer_role")
-    evidence_method = reviewer_cols[2].selectbox("Evidence method", LABEL_SOURCE_OPTIONS, key="assessment_evidence_method")
+    reviewer_id = reviewer_cols[0].text_input(
+        "Reviewer ID", key="assessment_reviewer_id"
+    )
+    reviewer_role = reviewer_cols[1].selectbox(
+        "Reviewer role", LABELER_ROLE_OPTIONS, key="assessment_reviewer_role"
+    )
+    evidence_method = reviewer_cols[2].selectbox(
+        "Evidence method", LABEL_SOURCE_OPTIONS, key="assessment_evidence_method"
+    )
     payload = render_assessment_form(
         st.session_state.get("assessment_modes", []),
         key_prefix=f"assessment:{stop_id}",
@@ -1150,7 +1290,9 @@ def render_assessment_collection(project_id: str, stops: pd.DataFrame) -> None:
     )
     assessment_id = add_assessment(project_id, payload, apply_current=True)
     load_project_into_session(project_id)
-    st.success(f"Saved immutable assessment {assessment_id} and updated the current stop view.")
+    st.success(
+        f"Saved immutable assessment {assessment_id} and updated the current stop view."
+    )
     st.rerun()
 
 
@@ -1256,7 +1398,9 @@ def render_labels_page() -> None:
             reliability = pd.DataFrame(
                 [
                     reliability_for_mode(independent_assessments, mode)
-                    for mode in normalize_modes(st.session_state.get("assessment_modes", []))
+                    for mode in normalize_modes(
+                        st.session_state.get("assessment_modes", [])
+                    )
                     if mode["enabled"]
                 ]
             )

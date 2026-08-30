@@ -404,7 +404,9 @@ def configure_assessment_display(
         for field in MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
     }
     display_columns = [
-        column for column in configured.get("display_columns", []) if column not in mode_keys
+        column
+        for column in configured.get("display_columns", [])
+        if column not in mode_keys
     ]
     for mode in normalized_modes:
         filter_fields = MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
@@ -430,7 +432,9 @@ def assessment_summary_tables(
     return {
         mode["key"]: categorical_summary(df, mode)
         for mode in (normalize_modes(modes) if modes else [])
-        if mode["enabled"] and mode["display"]["summary"] and mode["value_type"] in {"categorical", "boolean"}
+        if mode["enabled"]
+        and mode["display"]["summary"]
+        and mode["value_type"] in {"categorical", "boolean"}
     }
 
 
@@ -1064,7 +1068,8 @@ def categorical_map_filter_columns(df: pd.DataFrame) -> list[str]:
     columns = [
         column
         for column in BASE_CATEGORICAL_MAP_FILTERS
-        if column not in FILTER_EXCLUDED_FIELDS and categorical_filter_options(df, column)
+        if column not in FILTER_EXCLUDED_FIELDS
+        and categorical_filter_options(df, column)
     ]
     for column in df.columns:
         if column in columns or column in FILTER_EXCLUDED_FIELDS:
@@ -1081,7 +1086,8 @@ def numeric_map_filter_columns(df: pd.DataFrame) -> list[str]:
     columns = [
         column
         for column in BASE_NUMERIC_MAP_FILTERS
-        if column not in FILTER_EXCLUDED_FIELDS and numeric_filter_bounds(df, column) is not None
+        if column not in FILTER_EXCLUDED_FIELDS
+        and numeric_filter_bounds(df, column) is not None
     ]
     for column in df.columns:
         if column in columns or column in FILTER_EXCLUDED_FIELDS:
@@ -1129,8 +1135,43 @@ def current_map_filters(df: pd.DataFrame, key_prefix: str) -> dict[str, Any]:
     return filters
 
 
+def clear_map_filters(df: pd.DataFrame, key_prefix: str) -> None:
+    keys = {
+        f"{key_prefix}_show_unlabeled_stops",
+        f"{key_prefix}_stop_search",
+        f"{key_prefix}_route_filter",
+        f"{key_prefix}_destination_filter",
+    }
+    keys.update(
+        f"{key_prefix}_{column}_filter"
+        for column in categorical_map_filter_columns(df)
+    )
+    keys.update(
+        f"{key_prefix}_{column}_range" for column in numeric_map_filter_columns(df)
+    )
+    for key in keys:
+        st.session_state.pop(key, None)
+
+
+def map_filters_active(filters: dict[str, Any]) -> bool:
+    return bool(
+        not filters.get("show_unlabeled", True)
+        or filters.get("search_query")
+        or filters.get("selected_routes")
+        or filters.get("destination_query")
+        or any(filters.get("categorical", {}).values())
+        or any(
+            tuple(values.get("selected", ())) != tuple(values.get("bounds", ()))
+            for values in filters.get("numeric", {}).values()
+        )
+    )
+
+
 def render_map_filter_controls(df: pd.DataFrame, key_prefix: str) -> dict[str, Any]:
-    with st.expander("Map filters", expanded=True):
+    # Callers already place these controls in the single disclosure labelled
+    # "Map and analytics filters". A second nested expander added duplicate
+    # navigation and made the controls take two clicks to reach.
+    with st.container():
         primary_cols = st.columns([1, 2, 2])
         primary_cols[0].toggle(
             "Show unlabeled bus stops",
@@ -1182,7 +1223,15 @@ def render_map_filter_controls(df: pd.DataFrame, key_prefix: str) -> dict[str, A
                 placeholder="Destination or nearby place",
                 key=f"{key_prefix}_destination_filter",
             )
-    return current_map_filters(df, key_prefix)
+        filters = current_map_filters(df, key_prefix)
+        st.button(
+            "Clear filters",
+            key=f"{key_prefix}_clear_filters",
+            disabled=not map_filters_active(filters),
+            on_click=clear_map_filters,
+            args=(df, key_prefix),
+        )
+    return filters
 
 
 def filter_map_stops(
@@ -1221,9 +1270,11 @@ def filter_map_stops(
             wanted = set(map(str, selected))
             filtered = filtered[
                 filtered[column].map(
-                    lambda value: bool(wanted.intersection(map(str, value)))
-                    if isinstance(value, (list, tuple, set))
-                    else str(value).strip() in wanted
+                    lambda value: (
+                        bool(wanted.intersection(map(str, value)))
+                        if isinstance(value, (list, tuple, set))
+                        else str(value).strip() in wanted
+                    )
                 )
             ]
     for column, config in filters.get("numeric", {}).items():
@@ -2067,8 +2118,17 @@ def render_taxonomy_legend(taxonomy: list[dict[str, Any]]) -> None:
 def render_methodology(config: dict[str, Any]) -> None:
     project = config.get("project", {})
     methodology = config.get("methodology", {})
-    st.title(methodology.get("title") or project.get("name") or "Bus Stop Infrastructure Audit")
-    st.markdown(f"### {methodology.get('summary', '')}")
+    st.title(
+        methodology.get("title")
+        or project.get("name")
+        or "Bus Stop Infrastructure Audit"
+    )
+    summary = str(methodology.get("summary", "") or "").strip()
+    if summary:
+        st.markdown(
+            f'<p class="study-summary">{html.escape(summary)}</p>',
+            unsafe_allow_html=True,
+        )
     st.caption(
         f"{project.get('agency', 'Transit agency')} | {project.get('region', 'Region')} | "
         f"dataset v{project.get('dataset_version', 'draft')} | methodology v{project.get('methodology_version', 'draft')}"
@@ -2132,7 +2192,9 @@ def json_safe_geojson_property(value: Any) -> Any:
     if value is None or value is pd.NA:
         return None
     if isinstance(value, dict):
-        return {str(key): json_safe_geojson_property(item) for key, item in value.items()}
+        return {
+            str(key): json_safe_geojson_property(item) for key, item in value.items()
+        }
     if isinstance(value, (list, tuple)):
         return [json_safe_geojson_property(item) for item in value]
     if isinstance(value, set):
@@ -2455,20 +2517,30 @@ def published_disagreement_queue(
         )
         resolved_at = pd.Series(pd.NaT, index=queue.index, dtype="datetime64[ns, UTC]")
         if "review_resolved_at" in status_rows.columns:
-            resolved_values = pd.to_datetime(status_rows["review_resolved_at"], errors="coerce", utc=True)
-            resolved_lookup = dict(zip(status_rows["_stop_key"], resolved_values, strict=False))
+            resolved_values = pd.to_datetime(
+                status_rows["review_resolved_at"], errors="coerce", utc=True
+            )
+            resolved_lookup = dict(
+                zip(status_rows["_stop_key"], resolved_values, strict=False)
+            )
             resolved_at = pd.to_datetime(
                 queue_stop_keys.map(resolved_lookup), errors="coerce", utc=True
             )
-        latest_label_at = pd.Series(pd.NaT, index=queue.index, dtype="datetime64[ns, UTC]")
+        latest_label_at = pd.Series(
+            pd.NaT, index=queue.index, dtype="datetime64[ns, UTC]"
+        )
         clean_labels = clean_label_values(labels)
         if "created_at" in clean_labels.columns:
             clean_labels = clean_labels.copy()
-            clean_labels["created_at"] = pd.to_datetime(clean_labels["created_at"], errors="coerce", utc=True)
+            clean_labels["created_at"] = pd.to_datetime(
+                clean_labels["created_at"], errors="coerce", utc=True
+            )
             latest_by_stop = clean_labels.groupby("stop_id")["created_at"].max()
             latest_label_at = queue_stop_keys.map(latest_by_stop)
-        resolution_is_current = resolved_status & resolved_at.notna() & (
-            latest_label_at.isna() | (resolved_at >= latest_label_at)
+        resolution_is_current = (
+            resolved_status
+            & resolved_at.notna()
+            & (latest_label_at.isna() | (resolved_at >= latest_label_at))
         )
         queue = queue[~resolution_is_current]
     return queue.sort_values(
@@ -2508,7 +2580,9 @@ def agreement_overview_markup(metrics: dict[str, int | float | None]) -> str:
     """
 
 
-def render_agreement_metrics(labels: pd.DataFrame, stops: pd.DataFrame | None = None) -> None:
+def render_agreement_metrics(
+    labels: pd.DataFrame, stops: pd.DataFrame | None = None
+) -> None:
     st.markdown("#### Agreement")
     st.caption("Overview of annotation quality and review status.")
     if labels.empty:
@@ -2643,7 +2717,10 @@ def assessment_export_frames(
     """Apply mode export visibility to current and immutable observations."""
     normalized_modes = normalize_modes(modes) if modes else []
     if not normalized_modes:
-        return stops.copy(), assessments.copy() if assessments is not None else pd.DataFrame()
+        return (
+            stops.copy(),
+            assessments.copy() if assessments is not None else pd.DataFrame(),
+        )
     all_keys = {mode["key"] for mode in normalized_modes}
     visible_keys = {
         mode["key"]
@@ -2671,7 +2748,9 @@ def assessment_export_frames(
             }
         )
 
-    exported_assessments = assessments.copy() if assessments is not None else pd.DataFrame()
+    exported_assessments = (
+        assessments.copy() if assessments is not None else pd.DataFrame()
+    )
     for column in ["assessment_values", "comments", "confidence"]:
         if column in exported_assessments.columns:
             exported_assessments[column] = exported_assessments[column].map(
@@ -2706,9 +2785,7 @@ def export_file_catalog(
     )
     stops_csv = dataframe_to_safe_csv(exported_stops)
     stops_geojson = dataframe_to_geojson(exported_stops).encode("utf-8")
-    labels_csv = (
-        dataframe_to_safe_csv(raw_labels) if not raw_labels.empty else b""
-    )
+    labels_csv = dataframe_to_safe_csv(raw_labels) if not raw_labels.empty else b""
     assessments_csv = (
         dataframe_to_safe_csv(exported_assessments)
         if not exported_assessments.empty
@@ -2772,7 +2849,8 @@ def export_file_catalog(
                 "size": readable_file_size(len(assessments_csv)),
                 "updated": compact_timestamp(
                     str(exported_assessments["created_at"].max())
-                    if not exported_assessments.empty and "created_at" in exported_assessments
+                    if not exported_assessments.empty
+                    and "created_at" in exported_assessments
                     else "",
                     "No assessments",
                 ),
@@ -2870,7 +2948,12 @@ def main() -> None:
 
     st.set_page_config(page_title=project.get("name", "Stop Audit"), layout="wide")
     st.title(project.get("name", "Stop Audit"))
-    st.markdown(f"### {methodology.get('summary', '')}")
+    summary = str(methodology.get("summary", "") or "").strip()
+    if summary:
+        st.markdown(
+            f'<p class="study-summary">{html.escape(summary)}</p>',
+            unsafe_allow_html=True,
+        )
     st.caption(
         f"{project.get('agency', '')} | {project.get('region', '')} | dataset v{project.get('dataset_version', 'draft')}"
     )
@@ -2893,6 +2976,14 @@ def main() -> None:
         with tabs[0]:
             if visible_stops.empty:
                 st.info("No stops match the current visibility settings.")
+                if map_filters_active(filters):
+                    st.button(
+                        "Clear filters and show stops",
+                        key="published_empty_clear_filters",
+                        type="primary",
+                        on_click=clear_map_filters,
+                        args=(stops, "published"),
+                    )
             else:
                 map_cols = st.columns([2, 1])
                 with map_cols[0]:
