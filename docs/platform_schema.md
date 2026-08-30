@@ -1,15 +1,17 @@
-# Stop-GIS Platform Schema
+# Stop-GIS platform schema
+
+[Documentation home](README.md) · [Architecture invariants](architecture_invariants.md) · [Migration guide](migrating-from-shade-gis.md)
 
 This document describes the durable project schema implemented by the Streamlit builder and the Postgres-ready relational schema in `sql/schema.sql`.
 
-## Platform Backend
+## Platform backend
 
 The builder uses a local SQLite database by default. On Windows, the database is created under
 `%LOCALAPPDATA%\Stop-GIS\stop_gis_builder.sqlite3` to avoid OneDrive file-locking issues; on
 other systems it falls back to `platform_data/stop_gis_builder.sqlite3`. Set `STOP_GIS_DB_PATH`
 to point the app at a different SQLite database file. The database stores multiple projects and
 treats Streamlit session state as a live editing cache, not the durable source of record.
-Deployment destination settings entered on the Deploy page are stored per project in
+Deployment destination settings entered on the Publish page are stored per project in
 `project_settings.deployment_json`; they are restored when that project is reopened and are not
 included in the generated public study configuration.
 
@@ -65,7 +67,7 @@ Methodology citation and bibliography text support grouped hanging-indent format
 templates: unindented lines render as group labels, and indented lines render as citation or
 bibliography entries.
 
-## Bus Stops
+## Bus stops
 
 The builder accepts GTFS-compatible stops, mapped tabular files, spatial files, API responses, and manually entered stop records.
 
@@ -154,7 +156,7 @@ all stops and review completion against labeled stops. A compact status message 
 in the collapsed `Dataset Preview` expander, but only the selected 25-, 50-, or 100-row page is
 rendered; the full dataset is never mounted as one browser table.
 
-## Shade Taxonomies
+## Shade taxonomies
 
 The default terminology defines the unit used when assessing shade. Project editors can revise,
 add, or remove these terms from the Taxonomy page:
@@ -195,7 +197,7 @@ The `shading` field remains a derived map category for coloring, filtering, summ
 display. It mirrors `shade_coverage`; source labels stay only in `shade_sources` so source and
 coverage are independently queryable and never appear in the same choice list.
 
-## Raw Shade Labels
+## Raw shade labels
 
 The `Dataset Review` page writes every submitted assessment to `shade_labels` instead of replacing earlier
 labels. Each label records the stop ID, optional image reference, reviewer or contributor ID,
@@ -216,7 +218,7 @@ Reviewer-based metrics use `labeler_id` when present; otherwise they fall back t
 role/source combination. These metrics summarize reliability and do not overwrite raw labels or
 current stop fields.
 
-## Blind Inter-Rater Coding
+## Blind inter-rater coding
 
 Blind coding is a separate research workflow from ordinary `shade_labels`. A protocol moves forward
 through `setup`, `coding`, `adjudication`, and `closed` phases and cannot move backward. Setup fixes a
@@ -255,7 +257,7 @@ reference map, final coverage/source decision, and audit trail live exclusively 
 Resolution timestamps are compared with raw-label timestamps so a label submitted after the latest
 decision reopens the stop automatically.
 
-## Review Workflow
+## Review workflow
 
 The `Dataset Review` page is for moderation and dataset curation. It includes a role-neutral review queue
 built from current stop statuses, raw-label counts,
@@ -327,7 +329,7 @@ fields are available: summary statistics, shade distribution, stops without shad
 review, agreement statistics, shade by route, shade by neighborhood, shade vs. ridership, and
 highest-priority stops. Custom charts remain available below the dashboard.
 
-## Preview Exports
+## Preview exports
 
 The `Preview` page exports:
 
@@ -344,7 +346,7 @@ assessment exports remain visible but disabled when their corresponding history 
 keeps the export layout stable as the project progresses. Dataset source, format, row count, and import timestamp are shown separately in
 the `Dataset Provenance` section below the file catalog rather than as an unlabeled dataframe.
 
-The `Deploy` page presents publishing as a four-stage wizard: `Check project`, `Prepare website`,
+The **Publish** page presents publishing as a four-stage wizard: `Check project`, `Prepare website`,
 `Publish`, and `Verify website`. It detects the local GitHub repository and default branch, reduces
 readiness failures to one outcome-level blocker, builds the public package, updates the repository
 from a clean temporary clone, and verifies a known public URL. Existing connected Streamlit sites
@@ -378,7 +380,7 @@ destinations, and eligible dataset-specific attributes when those fields exist, 
 select a stop, inspect a stop-detail panel, and show or hide stops whose shade label is still
 `Needs Review` without changing the exported dataset.
 
-## Review And Release Entities
+## Review and release entities
 
 `images` and `releases` remain durable schema foundations for richer evidence and publication
 workflows. Raw label submission, admin review decisions, dispute resolution, expert overrides, and

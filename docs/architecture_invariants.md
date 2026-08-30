@@ -1,8 +1,10 @@
 # Stop-GIS architecture invariants
 
-This audit replaces repeated edge-case scans with a small set of boundaries and
-state transitions that must remain true across the builder, published app,
-persistence layer, deployment workflow, and Android client.
+[Documentation home](README.md) · [UX guide](user-experience.md) · [Platform schema](platform_schema.md)
+
+These invariants replace repeated edge-case fixes with a small set of boundaries
+and state transitions that must remain true across the builder, published app,
+persistence layer, deployment workflow, Android client, and user experience.
 
 ## Root-cause map
 
@@ -19,6 +21,9 @@ persistence layer, deployment workflow, and Android client.
 | Mixed persistence revisions | Related reads relied on implicit SQLite behavior | Explicit read transaction in `load_project_bundle` | One returned bundle represents one database snapshot |
 | Blind-coding race/statistic drift | Intent was read before locking; unequal unit sizes were weighted incorrectly | Locked protocol comparison and coincidence-normalized reliability | Assessment-unit changes abort stale assignment requests; each unit contributes correctly to alpha |
 | Mobile evidence deletion | Cleanup inferred ownership only from saved observations | Protected draft URIs plus legacy-backup URI inventory | Active drafts and backed-up legacy evidence are never orphan-cleaned |
+| Builder/public UX drift | Standalone public code and builder preview evolved independently | Shared behavior plus cross-copy tests | Navigation, filters, study summaries, and voting requirements remain consistent across surfaces |
+| Confirmation fatigue and accidental loss | Safe and destructive actions used the same interaction pattern | [UX confirmation policy](user-experience.md#confirmation-and-recovery) | Safe navigation is direct; destructive or irreversible actions are confirmed or reversible |
+| Filter dead ends | Empty results offered no route back to visible data | Shared map-filter reset behavior | Every filter surface can restore defaults without clearing unrelated project state |
 
 ## State-transition invariants
 
@@ -58,6 +63,21 @@ persistence layer, deployment workflow, and Android client.
 - Activity/process recreation supplies active draft URIs to cleanup.
 - A skipped legacy record is preserved in the legacy backup, and every photo URI
   referenced by that backup remains protected.
+
+### User experience
+
+`intent -> action -> feedback -> recovery`
+
+- Safe navigation completes directly; destructive and irreversible actions
+  explain their impact before committing.
+- Autosave exposes a persistent saved or failed state.
+- Research inputs that could bias observations have no implicit default.
+- Filtered empty states provide a one-step return to visible results.
+- Long user content and the 390-pixel mobile baseline do not create clipping or
+  page-level horizontal overflow.
+
+The complete interaction requirements and review checklist live in
+[user-experience.md](user-experience.md).
 
 ## Test strategy
 

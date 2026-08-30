@@ -256,7 +256,7 @@ def render_label_workflow_navigation() -> str:
         ("Audit History", "Audit History", "label_action_history"),
     ]
     with st.container(key="label_workflow_navigation"):
-        st.caption("Choose a labelling task. The highlighted task is currently open.")
+        st.caption("Choose a labeling task. The highlighted task is currently open.")
         action_columns = st.columns(len(actions))
         for column, (label, view, key) in zip(action_columns, actions, strict=True):
             column.button(
@@ -1356,7 +1356,7 @@ def render_assessment_adjudication(project_id: str, stops: pd.DataFrame) -> None
 def render_labels_page() -> None:
     st.title("Dataset Review")
     st.markdown(
-        "Create labels, resolve conflicts, and inspect the dataset's labelling history."
+        "Create labels, resolve conflicts, and inspect the dataset's labeling history."
     )
     project_id = st.session_state.get("active_project_id")
     stops = st.session_state.get("stops", pd.DataFrame())

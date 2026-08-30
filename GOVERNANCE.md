@@ -29,7 +29,7 @@ Maintainers are expected to:
 Changes are more likely to be accepted when they:
 
 - improve the reusable platform rather than a single local deployment
-- reduce ambiguity in data import, labeling, or export behavior
+- reduce ambiguity in data import, labeling, or publishing behavior
 - add validation, testing, or documentation
 - preserve local reviewability for future JOSS-style evaluation
 

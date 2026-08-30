@@ -8,7 +8,7 @@ prototype. The current support target is:
 - local Streamlit use on a developer machine
 - reproducible test runs with `pytest`
 - builder workflows covered by the documented import, labeling, visualization,
-  preview, and export paths
+  preview, and publishing paths
 
 ## Best way to ask for help
 
@@ -16,6 +16,9 @@ prototype. The current support target is:
 - Include the operating system, Python version, input format, and exact steps to
   reproduce the issue.
 - Attach small sample data when possible instead of screenshots alone.
+- For UX reports, include the viewport size, input method, expected recovery
+  path, and whether keyboard or assistive technology was involved. See the
+  [UX guide](docs/user-experience.md).
 
 ## Response expectations
 

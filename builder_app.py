@@ -1248,35 +1248,6 @@ def render_home_page() -> None:
             line-height: 1.5;
             margin: 0.8rem 0 0;
         }
-        .project-card-badge {
-            align-items: center;
-            background: #e9f8ee;
-            border: 1px solid #b9e8c7;
-            border-radius: 999px;
-            color: #166534;
-            display: inline-flex;
-            font-size: 0.76rem;
-            font-weight: 700;
-            gap: 0.35rem;
-            margin-top: 0.85rem;
-            padding: 0.22rem 0.55rem;
-            width: fit-content;
-        }
-        .project-card-badge::before {
-            background: #22c55e;
-            border-radius: 50%;
-            content: "";
-            height: 0.45rem;
-            width: 0.45rem;
-        }
-        .project-card-badge.private {
-            background: #f1f4f2;
-            border-color: #d7ddd9;
-            color: #52605a;
-        }
-        .project-card-badge.private::before {
-            background: #87938c;
-        }
         .project-location-label {
             color: #166534;
             font-size: 0.72rem;
@@ -1383,8 +1354,6 @@ def render_home_page() -> None:
             agency = html.escape(str(project.get("agency") or "No agency"))
             region = html.escape(str(project.get("region") or "No location set"))
             version = html.escape(str(project.get("dataset_version") or "draft"))
-            visibility = html.escape(str(project.get("visibility") or "Private"))
-            visibility_class = "public" if visibility.lower() == "public" else "private"
             updated = html.escape(format_project_updated(project.get("updated_at")))
             location_count = int(project.get("location_count") or 0)
             labeled_count = int(project.get("labeled_count") or 0)
@@ -1401,7 +1370,6 @@ def render_home_page() -> None:
                             <div class="project-card-topline">
                                 <h2 class="project-card-title">{name}</h2>
                             </div>
-                            <span class="project-card-badge {visibility_class}">{visibility}</span>
                             <p class="project-card-location"><span class="project-location-label">Location</span> · {region} · {agency}</p>
                             <p class="project-card-meta">Dataset v{version} · {updated}</p>
                             <div class="project-progress-label"><span>Label progress</span><strong>{label_percent_text}</strong></div>
@@ -1439,7 +1407,7 @@ def render_home_page() -> None:
 def render_header() -> str:
     primary_navigation = [
         ("Dataset", "Data"),
-        ("Labelling", "Labels"),
+        ("Labeling", "Labels"),
         ("Build", "Preview"),
         ("Publish", "Deploy"),
     ]
@@ -1449,7 +1417,7 @@ def render_header() -> str:
             ("Quality", "Data Quality"),
             ("Taxonomy", "Taxonomy"),
         ],
-        "Labelling": [
+        "Labeling": [
             ("Dataset Review", "Labels"),
             ("Intercoder Review", "Blind Coding"),
             ("Community Voting", "Voting"),
@@ -1460,9 +1428,9 @@ def render_header() -> str:
         "Data": "Dataset",
         "Data Quality": "Dataset",
         "Taxonomy": "Dataset",
-        "Labels": "Labelling",
-        "Blind Coding": "Labelling",
-        "Voting": "Labelling",
+        "Labels": "Labeling",
+        "Blind Coding": "Labeling",
+        "Voting": "Labeling",
         "Visuals": "Build",
         "Docs": "Build",
         "Preview": "Build",

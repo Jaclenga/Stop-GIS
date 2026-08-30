@@ -1,5 +1,7 @@
 # Stop-GIS Android app
 
+[Documentation home](../docs/README.md) · [Platform documentation](../README.md)
+
 Offline-first field capture for Stop-GIS observations. A surveyor selects a bus stop, takes a photo,
 records the mobile client's enabled assessment fields, adds optional notes, and saves the observation on the device.
 The current field UI exposes the coordinated shade modes; its versioned payload also carries generic

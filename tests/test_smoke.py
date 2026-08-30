@@ -186,7 +186,7 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
     preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert '("Dataset", "Data")' in builder_source
-    assert '("Labelling", "Labels")' in builder_source
+    assert '("Labeling", "Labels")' in builder_source
     assert '("Build", "Preview")' in builder_source
     assert '("Publish", "Deploy")' in builder_source
     assert '"Dataset": [' in builder_source
@@ -223,6 +223,7 @@ def test_builder_has_project_home_and_clickable_brand_navigation():
     assert 'with st.container(key="home_page")' in source
     assert 'f"Open project: {name}"' in source
     assert 'key=f"project_settings_{project_id}"' in source
+    assert "project-card-badge" not in source
     assert "it does not move the map, filter data, or set a boundary" in source
     assert "publishing the website is still a separate step" in source
     assert '"Delete permanently"' in source
@@ -238,7 +239,7 @@ def test_builder_has_project_home_and_clickable_brand_navigation():
     assert ".st-key-nav_home button:focus-visible" in source
 
 
-def test_labelling_workflow_uses_action_oriented_navigation():
+def test_labeling_workflow_uses_action_oriented_navigation():
     source = Path("shade_gis/pages/labels_page.py").read_text(encoding="utf-8")
 
     assert 'st.title("Dataset Review")' in source

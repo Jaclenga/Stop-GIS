@@ -1168,7 +1168,7 @@ def map_filters_active(filters: dict[str, Any]) -> bool:
 
 
 def render_map_filter_controls(df: pd.DataFrame, key_prefix: str) -> dict[str, Any]:
-    # Callers already place these controls in the single disclosure labelled
+    # Callers already place these controls in the single disclosure labeled
     # "Map and analytics filters". A second nested expander added duplicate
     # navigation and made the controls take two clicks to reach.
     with st.container():

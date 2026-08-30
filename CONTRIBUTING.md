@@ -16,6 +16,11 @@ consistent with the platform direction.
 ## Before you start
 
 - Read [README.md](README.md) for the current app scope and local run steps.
+- Use the [documentation hub](docs/README.md) to find the guide that owns the
+  behavior you are changing.
+- Read [docs/user-experience.md](docs/user-experience.md) before changing
+  navigation, forms, feedback, destructive actions, responsive layout, or
+  public-facing copy.
 - Check [docs/platform_schema.md](docs/platform_schema.md) before changing the
   platform data model.
 - Prefer changes that generalize the platform instead of adding one-off
@@ -26,7 +31,7 @@ consistent with the platform direction.
 
 ```bash
 pip install -r requirements/requirements-test.txt
-streamlit run app.py
+streamlit run streamlit_app.py
 pytest -q
 ```
 
@@ -44,6 +49,10 @@ pytest -q -m ui
 - Add or update tests when behavior changes.
 - Update user-facing docs when features, workflows, or schema expectations
   change.
+- Keep the builder preview and generated standalone application behavior in
+  sync.
+- Preserve accessible names, keyboard focus, status announcements, recovery
+  paths, and narrow-screen behavior for user-interface changes.
 - Keep the bundled Tampa files treated as starter data unless a change is
   explicitly about refreshing them.
 - Avoid introducing secrets, private URLs, or machine-specific paths into the
@@ -57,6 +66,8 @@ pytest -q -m ui
 - `pytest -q -m ui` was run for navigation or interaction changes, or the PR
   explains why it was skipped.
 - `README.md` and related docs were updated when behavior changed.
+- User-visible changes satisfy the
+  [UX contributor checklist](docs/user-experience.md#contributor-checklist).
 
 ## Design direction
 
@@ -67,6 +78,8 @@ design, prefer the reusable platform. That includes:
 - importer and schema generality over one dataset path
 - explicit validation over silent coercion
 - documented workflows over implicit behavior
+- direct navigation for safe actions and confirmation for destructive actions
+- recoverable empty and failure states over dead ends
 
 ## Questions
 

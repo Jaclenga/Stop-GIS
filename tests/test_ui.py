@@ -176,9 +176,9 @@ def choose_streamlit_selectbox_option(
 def navigate_workspace_page(page, page_name: str, heading: str) -> None:
     """Navigate through the task tab and optional second-level tab."""
     sections = {
-        "Dataset Review": ("Labelling", "Dataset Review", "Dataset Review"),
-        "Intercoder Review": ("Labelling", "Dataset Review", "Dataset Review"),
-        "Community Voting": ("Labelling", "Dataset Review", "Dataset Review"),
+        "Dataset Review": ("Labeling", "Dataset Review", "Dataset Review"),
+        "Intercoder Review": ("Labeling", "Dataset Review", "Dataset Review"),
+        "Community Voting": ("Labeling", "Dataset Review", "Dataset Review"),
         "Visuals": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
         "Docs": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
         "Preview": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
@@ -341,7 +341,7 @@ def test_builder_header_home_and_grouped_menus(
             playwright_api.expect(
                 page.get_by_role("button", name="Use manual entries", exact=True)
             ).to_be_disabled(timeout=30_000)
-            for tab_name in ["Dataset", "Labelling", "Build", "Publish"]:
+            for tab_name in ["Dataset", "Labeling", "Build", "Publish"]:
                 playwright_api.expect(
                     page.get_by_role("button", name=tab_name, exact=True)
                 ).to_be_visible(timeout=30_000)
@@ -349,7 +349,7 @@ def test_builder_header_home_and_grouped_menus(
                 page.get_by_role("button", name="Tampa Bus Stop Infras...", exact=True)
             ).to_be_visible(timeout=30_000)
 
-            page.get_by_role("button", name="Labelling", exact=True).click(
+            page.get_by_role("button", name="Labeling", exact=True).click(
                 timeout=30_000
             )
             page.get_by_role("heading", name="Dataset Review", exact=True).wait_for(
@@ -380,7 +380,6 @@ def test_builder_header_home_and_grouped_menus(
             ).to_have_count(0)
         finally:
             browser.close()
-
 
 def test_project_settings_can_edit_and_delete_a_project(
     playwright_api, streamlit_server: StreamlitServer
@@ -1004,7 +1003,7 @@ def test_mobile_workspace_navigation_wraps_without_page_overflow(
             )
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
-            page.get_by_role("button", name="Labelling", exact=True).click(
+            page.get_by_role("button", name="Labeling", exact=True).click(
                 timeout=30_000
             )
             page.get_by_role("heading", name="Dataset Review", exact=True).wait_for(

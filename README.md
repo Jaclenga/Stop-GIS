@@ -1,77 +1,69 @@
 # Stop-GIS
 
-Stop-GIS is an open-source platform for building reproducible audits of public-transit stop infrastructure, amenities, accessibility, and passenger comfort.
+Stop-GIS is an open-source platform for reproducible audits of public-transit
+stop infrastructure, amenities, accessibility, and passenger comfort.
 
-Researchers, transit agencies, municipalities, and community organizations can configure a study, import stops, collect independent observations, review disagreements, analyze results on maps and dashboards, and publish a versioned Streamlit study without building a new data application for every audit.
+Researchers, transit agencies, municipalities, and community organizations can
+configure a study, import stops, collect independent observations, review
+disagreements, analyze results, and publish a versioned Streamlit website
+without building a new data application for every audit.
+
+## Start here
+
+- [Install and run Stop-GIS](#quick-start)
+- [Understand the product workflow](#workflow)
+- [Browse all documentation](docs/README.md)
+- [Review the user-experience guidelines](docs/user-experience.md)
+- [Contribute to the project](CONTRIBUTING.md)
+- [Get support](SUPPORT.md)
 
 ## What Stop-GIS assesses
 
-An administrator enables only the assessment modes needed by a project. Built-in definitions cover:
+An administrator enables only the assessment modes needed by a project.
+Built-in definitions cover:
 
-- benches, shelters, trash cans, lighting, and passenger information;
-- sidewalk connections, boarding pads, wheelchair accessibility, curb ramps, and crosswalks;
-- bike racks, cleanliness, and traffic exposure;
-- coordinated shade coverage and shade source modes, including natural, purpose-built, and incidental shade;
-- additional study-defined categorical, multi-select, boolean, numeric, or text attributes.
+- stop amenities such as benches, shelters, lighting, trash cans, and passenger
+  information;
+- accessibility features such as boarding pads, sidewalks, curb ramps,
+  crosswalks, and wheelchair access;
+- passenger-comfort factors such as shade, cleanliness, and traffic exposure;
+- custom categorical, multi-select, boolean, numeric, or text observations.
 
-Each mode has a stable key, display label, description, operational definition, value type, allowed values, optional ordinal order, multi-select behavior, comment and confidence settings, required/enabled state, scoring metadata, and map/filter/summary/export visibility. The initial catalog is configuration rather than a fixed database schema, so new modes can be added without adding SQL columns.
+Each mode has a stable key, display label, operational definition, value type,
+allowed values, collection settings, and visibility rules. New modes do not
+require new database columns.
 
-## Starter templates
+### Starter templates
 
-- **Basic Stop Amenities:** bench, shelter, trash can, lighting, and passenger information.
-- **Accessibility Audit:** sidewalk connection, boarding pad, wheelchair accessibility, curb ramp, and crosswalk.
-- **Passenger Comfort:** bench, shelter, shade coverage/source, lighting, cleanliness, and traffic exposure.
-- **Custom:** start from the catalog and choose fields manually.
+| Template | Initial focus |
+| --- | --- |
+| Basic Stop Amenities | Benches, shelters, trash cans, lighting, and passenger information |
+| Accessibility Audit | Sidewalks, boarding pads, wheelchair access, curb ramps, and crosswalks |
+| Passenger Comfort | Amenities, shade, lighting, cleanliness, and traffic exposure |
+| Custom | A project-specific selection from the assessment catalog |
 
-Templates are starting points. Labels, definitions, allowed values, requirements, order, display surfaces, and scoring can be changed per project.
+Templates are starting points. Teams can change labels, definitions, allowed
+values, requirements, ordering, display surfaces, and scoring.
 
-## Research workflow
+## Workflow
 
-1. Create a project and select a template or configure modes manually.
-2. Import stops from GTFS, CSV, GeoJSON, Shapefile, an HTTP API, or manual entry. Source data does not need assessment columns, and arbitrary imported attributes are preserved.
-3. Collect immutable reviewer submissions with evidence method, comments, per-mode confidence, timestamps, and reviewer identity.
-4. Review conflicts, retain the independent ratings, and append adjudications and review-history events.
-5. Filter maps and inspect popups using enabled mode values. Build categorical counts and percentages, optionally grouped by route, municipality, agency, or imported attributes.
-6. Export raw observations and current reviewed projections, or create a standalone deployment bundle.
+1. **Create** a project and select a template or configure assessment modes.
+2. **Import** stops from GTFS, CSV, GeoJSON, Shapefile, an HTTP API, or manual
+   entry. Arbitrary imported attributes are preserved.
+3. **Collect** immutable reviewer submissions with evidence method, comments,
+   confidence, timestamps, and reviewer identity.
+4. **Review** conflicts while retaining independent observations and appending
+   adjudications and audit-history events.
+5. **Analyze** enabled modes on maps, filters, tables, and dashboards.
+6. **Publish** a standalone, versioned study website or download its data.
 
-## Data model
+Stop-GIS automatically saves the active project, validates publication data,
+requires confirmation for destructive workflow changes, and provides recovery
+actions for filtered empty states. See the
+[user-experience guide](docs/user-experience.md) for the complete interaction
+model and accessibility expectations.
 
-Stop-GIS uses an additive generic model:
-
-- `assessment_modes` stores each project's JSON-compatible mode definitions.
-- `assessments` stores immutable submissions with `assessment_values_json`, per-mode comments, and per-mode confidence.
-- a stop's current reviewed projection is stored in its existing `extra_json`, including an `assessment_values` object, and materialized as ordinary columns for maps and exports.
-- `review_history` retains moderator decisions.
-- optional scoring profiles live in `project_settings.scoring_json`.
-
-This avoids one permanent SQL column per amenity. Existing `shade_taxonomy`, `shade_labels`, `shading`, `shade_coverage`, and `shade_sources` identifiers remain as compatibility projections. They are not the architecture for new modes.
-
-See [docs/platform_schema.md](docs/platform_schema.md) for schema and migration details.
-
-## Shade compatibility
-
-Shade remains a first-class assessment subject through two coordinated modes:
-
-- `shade_coverage`: `none`, `limited`, `significant`, or `unclear` (ordinal);
-- `shade_source`: `natural`, `purpose_built`, `incidental`, or `unclear` (multi-select nominal).
-
-Opening an older project automatically creates these mode definitions from its shade taxonomy. Stored shade observations are not deleted or rewritten. New generic assessments update the legacy shade columns as projections when applied to the current stop view, so existing maps, voting deployments, and exports continue to work.
-
-## Optional scores
-
-Stop-GIS includes disabled-by-default Comfort and Accessibility score profiles. A profile explicitly records its included modes, weights, value-to-score mappings, and missing-value policy. Raw observations remain available and weights travel with the project configuration.
-
-Missing and `unclear` observations are excluded by default. They become zero only when a project explicitly chooses the `zero` policy. Derived scores are study-specific analytical constructs—not objective, universal measures of stop quality.
-
-## Inter-rater reliability
-
-Independent and adjudicated submissions are distinct and append-only. Reliability calculations use independent submissions only. Mode definitions specify nominal, ordinal, interval, or ratio measurement levels, and generic reliability helpers calculate coincidence-weighted per-mode agreement and Krippendorff alpha using that level. The established blind shade-coding workflow remains available during the compatibility period.
-
-## Demo data
-
-The bundled Tampa/HART project demonstrates benches, shelters, trash cans, lighting, sidewalk connections, and shade coverage for a small subset of stops. Every added amenity observation is marked as example data. It is not a complete or current inventory of HART infrastructure and must not be presented as one.
-
-## Installation
+## Quick start
 
 Python 3.11 or newer is recommended.
 
@@ -82,42 +74,73 @@ pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-Run tests with:
+Run the automated tests with:
 
 ```powershell
-pytest -q
+pytest -q -m "not ui"
+pytest -q -m ui
 ```
+
+The UI suite requires the packages in `requirements/requirements-ui.txt` and a
+Playwright Chromium installation. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+complete development setup.
 
 ## Configuration
 
-The primary local database variable is `STOP_GIS_DB_PATH`. If unset, Stop-GIS first discovers an existing legacy database and otherwise uses:
+The primary local database variable is `STOP_GIS_DB_PATH`. If it is unset,
+Stop-GIS discovers an existing compatible database or uses:
 
 ```text
 %LOCALAPPDATA%\Stop-GIS\stop_gis_builder.sqlite3
 ```
 
-The equivalent import limits are `STOP_GIS_MAX_UPLOAD_BYTES`, `STOP_GIS_MAX_API_BYTES`, `STOP_GIS_MAX_ZIP_MEMBERS`, `STOP_GIS_MAX_ZIP_MEMBER_BYTES`, and `STOP_GIS_MAX_ZIP_UNCOMPRESSED_BYTES`. API network controls are `STOP_GIS_ALLOWED_API_HOSTS` and `STOP_GIS_ALLOW_PRIVATE_API_URLS`.
+Import limits use the `STOP_GIS_MAX_*` variables. API access can be constrained
+with `STOP_GIS_ALLOWED_API_HOSTS` and `STOP_GIS_ALLOW_PRIVATE_API_URLS`.
+Hosted voting uses `STOP_GIS_VOTE_DATABASE_URL`,
+`STOP_GIS_VOTE_FINGERPRINT_SECRET`, and related deployment settings documented
+in the generated deployment package.
 
-Voting deployments use `STOP_GIS_VOTE_DATABASE_URL`, `STOP_GIS_VOTE_DB_PATH`, `STOP_GIS_VOTE_FINGERPRINT_SECRET`, `STOP_GIS_ALLOW_PRIVATE_DATABASE_HOSTS`, and `STOP_GIS_TRUST_PROXY_HEADERS`.
+Former `SHADE_GIS_*` variables remain fallback aliases for compatibility. See
+[the migration guide](docs/migrating-from-shade-gis.md) before changing an
+existing installation.
 
-For backward compatibility, the corresponding `SHADE_GIS_*` variables are accepted when a new variable is not set. Existing `.shade_gis_votes.sqlite3`, `shade_study_*.csv/json`, `static/shade_gis_identity.json`, the `shade_votes` tables, and the `shade_gis` Python import package remain recognized so installed studies can update safely.
+## Architecture at a glance
 
-## Package layout
+- `assessment_modes` stores each project's validated mode definitions.
+- `assessments` stores immutable submissions and per-mode evidence.
+- each stop keeps a separate current reviewed projection for maps and exports.
+- `review_history` retains moderator decisions.
+- optional scoring profiles live in project settings and travel with exports.
 
-- `stop_gis/assessment_modes.py`: generic mode definitions, validation, filters, summaries, scoring, and reliability.
-- `stop_gis/assessment_components.py`: builder and reviewer controls for configured modes.
-- `shade_gis/`: compatibility implementation modules retained for existing imports and deployment scripts; new application imports resolve through `stop_gis`.
-- `platform_store.py`: SQLite store and additive migration logic.
-- `sql/schema.sql` and `sql/migrations/003_stop_gis_assessment_modes.sql`: PostgreSQL schema and migration.
-- `builder_app.py`: project builder.
-- `published_app.py`: generated public study runtime.
+Independent and adjudicated observations remain distinct. Reliability metrics
+use independent submissions only and respect each mode's measurement level.
+Optional scores are study-specific analytical constructs, not universal
+measures of stop quality.
 
-## Migration notes
+Shade remains a first-class compatibility subject through coordinated coverage
+and source modes. Existing shade data, voting deployments, databases, and
+internal identifiers are upgraded additively rather than renamed in place.
 
-SQLite migration runs on startup and only adds `project_settings.scoring_json`, `assessment_modes`, and `assessments`. It seeds shade modes for pre-existing projects and leaves all legacy rows in place. PostgreSQL deployments can apply `003_stop_gis_assessment_modes.sql`.
+## Documentation
 
-The compatibility layer intentionally retains old internal identifiers where renaming would break persisted databases, installed Android data, generated deployment ownership checks, or environment configuration. Public product text and new APIs use Stop-GIS terminology.
+The [documentation hub](docs/README.md) organizes guides by task and audience.
+Key references include:
+
+- [User experience and accessibility](docs/user-experience.md)
+- [Data quality workflow](docs/data_quality.md)
+- [Platform schema](docs/platform_schema.md)
+- [Architecture invariants](docs/architecture_invariants.md)
+- [Shade-GIS migration](docs/migrating-from-shade-gis.md)
+- [Android field client](android_app/README.md)
+
+## Demo data
+
+The bundled Tampa/HART project is a small workflow demonstration. Its amenity
+observations are example data, not a complete or current HART inventory.
 
 ## License and citation
 
-Stop-GIS is released under the MIT License. Cite the software version and archive the study configuration, mode definitions, raw observations, scoring profiles, and exported dataset used in an analysis. See [CITATION.cff](CITATION.cff).
+Stop-GIS is released under the MIT License. Cite the software version and
+archive the study configuration, assessment definitions, raw observations,
+scoring profiles, and exported dataset used in an analysis. Citation metadata
+is available in [CITATION.cff](CITATION.cff).

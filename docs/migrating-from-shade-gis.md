@@ -1,5 +1,7 @@
 # Migrating existing projects to Stop-GIS
 
+[Documentation home](README.md) · [Platform schema](platform_schema.md)
+
 The upgrade is additive and runs when the SQLite store is initialized.
 
 1. Stop-GIS accepts `STOP_GIS_DB_PATH` first and the former database-path variable as a fallback.

@@ -8,6 +8,9 @@ pre-release phase while the reusable platform stabilizes.
 ## [Unreleased]
 
 ### Added
+- A task-oriented documentation hub and user-experience guide covering
+  navigation, autosave feedback, confirmations, filter recovery, responsive
+  behavior, public study semantics, and community-voting validity safeguards.
 - Independent inter-rater coding by standardized image or transit stop, with versioned protocols,
   randomized neutral assignments, bundled stop evidence, recorded field/map/image review methods,
   immutable multi-field ratings, phase-gated agreement, adjudication, and research exports.
@@ -22,10 +25,15 @@ pre-release phase while the reusable platform stabilizes.
   per-row downloads, and a separate Dataset Provenance section.
 
 ### Changed
-- Clarified Labelling information architecture: Dataset Review now leads with moderation, Intercoder Review
+- Streamlined safe navigation, standardized publishing terminology, added
+  accessible autosave feedback and filter recovery actions, made project cards
+  content-responsive, and added confirmation before GIS overlay removal.
+- Public voting now requires an explicit complete response and presents
+  user-focused storage failure recovery without backend implementation details.
+- Clarified Labeling information architecture: Dataset Review now leads with moderation, Intercoder Review
   follows Study Setup → Review Materials → Study Progress, and Community Voting pairs grouped configuration
   with a live preview while moving versioning, role preview, and deployment guidance into disclosures.
-- Reorganized Labelling into `Dataset Review`, `Intercoder Review`, and `Community Voting`, with separate
+- Reorganized Labeling into `Dataset Review`, `Intercoder Review`, and `Community Voting`, with separate
   submit-label, review-queue, and audit-history views and clearer moderator-facing queue copy.
 - Redesigned the terminology and taxonomy workspace as a centered, research-oriented card layout
   with lighter tables, roomier wrapped definitions, sentence-case headings, and compact inline actions.

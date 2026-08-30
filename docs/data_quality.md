@@ -1,5 +1,7 @@
 # Data quality workflow
 
+[Documentation home](README.md) · [UX guide](user-experience.md)
+
 The dedicated **Data Quality** page under **Dataset → Quality** is the final validation surface for the
 active project dataset. Open it after importing or replacing stops and after registering project
 images. The dashboard runs
@@ -39,7 +41,7 @@ The banner reports **Publication-ready** only when:
 - the active dataset contains at least one stop; and
 - all five validation checks have zero affected records.
 
-The Deploy page and deployment bundle builder enforce this result. A dataset with any blocking
+The **Publish** page and deployment bundle builder enforce this result. A dataset with any blocking
 finding cannot be packaged or published; **Open Data Quality** returns to the affected-record review
 workflow so the source records can be corrected first. This guard is evaluated again for updates to
 an already-published study, so an earlier successful deployment does not bypass current data checks.
