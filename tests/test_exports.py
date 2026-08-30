@@ -117,8 +117,8 @@ def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, me
         assert "psycopg_pool>=3.2,<4" in bundle.read("requirements.txt").decode("utf-8")
         assert "Authlib>=1.3.2,<2" in bundle.read("requirements.txt").decode("utf-8")
         secrets_example = bundle.read(".streamlit/secrets.toml.example").decode("utf-8")
-        assert 'SHADE_GIS_VOTE_DATABASE_URL = "postgresql://RUNTIME_USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"' in secrets_example
-        assert 'SHADE_GIS_VOTE_FINGERPRINT_SECRET = "YOUR_BROWSER_GENERATED_SECRET"' in secrets_example
+        assert 'STOP_GIS_VOTE_DATABASE_URL = "postgresql://RUNTIME_USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"' in secrets_example
+        assert 'STOP_GIS_VOTE_FINGERPRINT_SECRET = "YOUR_BROWSER_GENERATED_SECRET"' in secrets_example
         assert "postgresql://user:password@" not in secrets_example.lower()
         assert "CREATE UNIQUE INDEX IF NOT EXISTS shade_votes_network_unique_idx" in bundle.read(
             "migrations/001_public_voting.sql"
@@ -507,7 +507,7 @@ def test_deploy_page_requires_destination_settings_before_publishing():
     assert "_remember_target_settings(project, target)" in source
     assert 'repository = f"{username}/{destination}" if username and destination else ""' in source
     assert '"Repository address"' not in source
-    assert "Visibility can only be selected when Shade-GIS creates a new repository." in source
+    assert "Visibility can only be selected when Stop-GIS creates a new repository." in source
     assert "change its visibility in the repository's GitHub settings." in source
     assert 'render_stages("Verify website", set(STAGES[:3]))' not in source
     assert "\n        render_stages()\n" not in source
@@ -571,10 +571,10 @@ def test_deploy_readme_documents_existing_private_repo_flow(project):
     assert "PUBLISH" in readme
     assert "-AllowPublicTarget" in readme
     assert ".env*" in readme
-    assert "SHADE_GIS_VOTE_DATABASE_URL" in readme
+    assert "STOP_GIS_VOTE_DATABASE_URL" in readme
     assert "Local SQLite remains suitable only for local evaluation" in readme
     assert "only the public preview" in readme
-    assert "protects a repository-root Shade-GIS builder" in readme
+    assert "protects a repository-root Stop-GIS builder" in readme
     assert "upgrades that active runtime in place" in readme
     assert "refreshes the generated" in readme
     assert "`shade_study_stops.csv`, `shade_study_raw_labels.csv`, and `shade_study_config.json`" in readme

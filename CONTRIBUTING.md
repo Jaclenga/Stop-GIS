@@ -1,4 +1,4 @@
-# Contributing to Shade Study Builder
+# Contributing to Stop-GIS Builder
 
 Thanks for considering a contribution. This project is still early, so the goal
 of these guidelines is to make changes easier to review and easier to keep

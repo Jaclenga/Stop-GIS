@@ -560,7 +560,7 @@ def _render_settings(
             key="deploy_visibility",
             disabled=st.session_state.get("deploy_mode") != "create",
             help=(
-                "Visibility can only be selected when Shade-GIS creates a new repository. "
+                "Visibility can only be selected when Stop-GIS creates a new repository. "
                 "For an existing repository, change its visibility in the repository's GitHub settings."
             ),
         )
@@ -568,12 +568,12 @@ def _render_settings(
             "Hosted website address",
             key="deploy_public_url",
             placeholder="https://your-study.streamlit.app",
-            help="Optional. Add an existing website address so Shade-GIS can verify it after publishing.",
+            help="Optional. Add an existing website address so Stop-GIS can verify it after publishing.",
         )
         st.markdown("##### Hosting")
         st.caption(
             f"The automatic package uses Streamlit Community Cloud and `{target.entrypoint}`. "
-            "A connected site updates automatically when Shade-GIS publishes repository changes."
+            "A connected site updates automatically when Stop-GIS publishes repository changes."
         )
         if target.mode == "create":
             st.link_button("Open repository setup", github_new_repo_url(project, target.repository))
@@ -623,8 +623,8 @@ def render_deploy_page() -> None:
     render_deploy_styles()
     st.title("Publish website")
     st.markdown(
-        f'<p class="deploy-intro">Turn <strong>{html.escape(project.get("name", "this shade study"))}</strong> '
-        "into a public website. Shade-GIS prepares the files, publishes them, and checks the result.</p>",
+        f'<p class="deploy-intro">Turn <strong>{html.escape(project.get("name", "this stop audit"))}</strong> '
+        "into a public website. Stop-GIS prepares the files, publishes them, and checks the result.</p>",
         unsafe_allow_html=True,
     )
 
@@ -674,7 +674,7 @@ def render_deploy_page() -> None:
     if readiness.ready and existing_package:
         readiness = replace(
             readiness,
-            message="Shade-GIS found the existing website and is ready to publish an update.",
+            message="Stop-GIS found the existing website and is ready to publish an update.",
         )
     bundle_stem = slugify_repo_name(target.repository.split("/")[-1] or project.get("name", "shade-study"))
     bundle_name = f"{bundle_stem}.zip"

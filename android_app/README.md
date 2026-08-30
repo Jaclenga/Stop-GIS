@@ -1,7 +1,9 @@
-# Shade-GIS Android app
+# Stop-GIS Android app
 
-Offline-first field capture for Shade-GIS observations. A surveyor selects a bus stop, takes a photo,
-records shade coverage and sources, adds optional notes, and saves the observation on the device.
+Offline-first field capture for Stop-GIS observations. A surveyor selects a bus stop, takes a photo,
+records the mobile client's enabled assessment fields, adds optional notes, and saves the observation on the device.
+The current field UI exposes the coordinated shade modes; its versioned payload also carries generic
+`assessment_values` so additional configured modes can be added without another storage format.
 
 ## Run the app
 
@@ -24,7 +26,7 @@ and JDK 17 for Android Gradle Plugin 8.1.
 ## Observation schema (version 1)
 
 The file is a JSON object with `schema_version` and an `observations` array. Observation fields use the
-same snake_case vocabulary as the Shade-GIS platform:
+same snake_case vocabulary as the Stop-GIS platform:
 
 | Field | Type | Rule |
 | --- | --- | --- |
@@ -36,6 +38,7 @@ same snake_case vocabulary as the Shade-GIS platform:
 | `photo_uri` | string | URI for the durable app-private photo. |
 | `shade_coverage` | enum | `No Shade`, `Limited Shade`, or `Significant Shade`. |
 | `shade_sources` | enum array | `Natural`, `Purpose-built`, and/or `Incidental`. Empty when coverage is `No Shade`. |
+| `assessment_values` | object of string arrays | Generic mode-keyed values; existing clients populate `shade_coverage` and `shade_source`. |
 | `notes` | string | Optional, at most 500 characters. |
 | `captured_at` | string | ISO-8601 UTC instant. |
 

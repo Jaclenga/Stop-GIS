@@ -7,6 +7,7 @@ import io
 import json
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -78,6 +79,7 @@ class DeploymentBundleSpec:
     priority_weights: dict[str, float]
     deploy_mode: str = "existing"
     commit_message: str = DEFAULT_DEPLOY_COMMIT_MESSAGE
+    assessments: pd.DataFrame | None = None
 
 
 def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
@@ -99,8 +101,12 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
     files: dict[str, bytes] = {
         "app.py": published_app_source().encode("utf-8"),
         "public_voting.py": public_voting_source().encode("utf-8"),
+        # Legacy artifact names remain stable so existing deployment/update
+        # scripts can upgrade safely; the contents and public UI are Stop-GIS.
         "shade_study_stops.csv": stops.to_csv(index=False).encode("utf-8"),
         "shade_study_config.json": spec.config_json.encode("utf-8"),
+        "stop_gis/__init__.py": (Path(__file__).resolve().parents[2] / "stop_gis" / "__init__.py").read_bytes(),
+        "stop_gis/assessment_modes.py": (Path(__file__).resolve().parents[2] / "stop_gis" / "assessment_modes.py").read_bytes(),
         "requirements.txt": RUNTIME_REQUIREMENTS.encode("utf-8"),
         ".streamlit/config.toml": STREAMLIT_CONFIG.encode("utf-8"),
         ".streamlit/secrets.toml.example": secrets_example().encode("utf-8"),
@@ -115,6 +121,8 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
     }
     if not spec.raw_labels.empty:
         files["shade_study_raw_labels.csv"] = spec.raw_labels.to_csv(index=False).encode("utf-8")
+    if spec.assessments is not None and not spec.assessments.empty:
+        files["stop_audit_assessments.csv"] = spec.assessments.to_csv(index=False).encode("utf-8")
     release_hashes = {
         name: hashlib.sha256(content).hexdigest()
         for name, content in sorted(files.items())
@@ -140,7 +148,7 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
     manifest_core = {
         "schema_version": 1,
         "study_id": spec.study_id,
-        "project_name": str(spec.project.get("name", "Shade Study")),
+        "project_name": str(spec.project.get("name", "Stop Audit")),
         "repository": repository,
         "deploy_mode": spec.deploy_mode,
         "commit_message": commit_message,

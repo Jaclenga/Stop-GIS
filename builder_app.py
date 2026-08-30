@@ -25,6 +25,7 @@ from platform_store import (
     delete_project,
     init_database,
     list_images,
+    list_assessments,
     list_review_history,
     list_shade_labels,
     list_projects,
@@ -172,12 +173,17 @@ from shade_gis.shade_dimensions import (
     normalize_source_taxonomy,
     normalize_terminology,
 )
+from stop_gis.assessment_modes import (
+    DEFAULT_SCORING_PROFILES,
+    modes_for_template,
+    normalize_modes,
+)
 
 
 APP_DIR = Path(__file__).parent
 DATA_PATH = APP_DIR / "stops.txt"
 SHADE_DATA_PATH = APP_DIR / "shading_data.csv"
-APP_TITLE = "Shade Study Builder"
+APP_TITLE = "Stop-GIS Builder"
 VISUAL_MAP_HEIGHT = 500
 DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 DEFAULT_MAX_API_BYTES = 15 * 1024 * 1024
@@ -189,12 +195,12 @@ API_FETCH_TIMEOUT_SECONDS = 30
 
 
 DEFAULT_PROJECT = {
-    "name": "Tampa Bus Stop Shade Study",
+    "name": "Tampa Bus Stop Infrastructure Demo",
     "agency": "Hillsborough Area Regional Transit (HART)",
     "region": "Tampa, Florida",
     "description": (
-        "A reusable shade inventory project seeded with Tampa-area GTFS stops, "
-        "shade classifications, and optional dataset attributes."
+        "An example Stop-GIS audit seeded with Tampa-area GTFS stops and clearly "
+        "labeled demonstration observations for amenities, access, and shade."
     ),
     "owners": "Open transit and climate research contributors",
     "visibility": "Public",
@@ -211,22 +217,22 @@ SHADE_SOURCE_TAXONOMY = [dict(item) for item in CORE_SHADE_SOURCE_TAXONOMY]
 SHADE_COVERAGE_TAXONOMY = [dict(item) for item in CORE_SHADE_COVERAGE_TAXONOMY]
 
 DEFAULT_METHODOLOGY = {
-    "title": "Bus Stop Shade Study",
-    "summary": "Visualizing bus stop shade for a more comfortable and resilient transit system.",
+    "title": "Bus Stop Infrastructure Audit",
+    "summary": "Auditing bus-stop infrastructure, accessibility, amenities, shade, and passenger comfort.",
     "purpose": (
-        "Tampa's hot and humid climate can make waiting for transit uncomfortable, particularly at bus stops "
-        "with limited protection from direct sunlight. Inspired by research examining the relationship between "
-        "bus stop shade, heat exposure, and transit use, this project explores how shade is distributed across "
-        "a transit network and provides a platform for community-driven data collection.\n\n"
-        "The bundled Tampa/HART starter study combines official bus stop locations from HART's GTFS feed with "
-        "a small handcrafted example: 34 bus stop datapoints were manually analyzed using Google Maps imagery, "
-        "accepted by project admin Jack Lenga, and coded for visible shade conditions at the passenger waiting area. The goal is to support "
-        "transportation planning, accessibility research, resilience initiatives, and public understanding of "
-        "the rider experience.\n\n"
-        "By identifying which stops provide meaningful shade and which do not, a shade study can help highlight "
-        "opportunities for shelter installation, vegetation, maintenance, and other improvements that make "
-        "transit more comfortable and accessible for riders. Research on thermal comfort at bus stops has shown "
-        "that the waiting environment plays an important role in how riders perceive public transportation."
+        "This demonstration shows how a transit agency or research team can create a reproducible inventory "
+        "of stop amenities, pedestrian connections, accessibility, and passenger-comfort conditions. The "
+        "bundled Tampa/HART data combines official GTFS stop locations with a small set of clearly marked "
+        "example observations. It is intended to demonstrate the Stop-GIS workflow, not to claim a complete "
+        "or current inventory of HART facilities.\n\n"
+        "Administrators choose the modes relevant to their research question and define how reviewers should "
+        "apply each value. Raw independent observations remain available after review and adjudication."
+    ),
+    "assessment_method": (
+        "Reviewers assess one stop at a time using only the modes enabled for this project. "
+        "Each value follows its displayed operational definition; optional mode-level comments and "
+        "confidence are stored with reviewer identity, evidence method, and timestamp. Independent "
+        "submissions remain immutable when an administrator later adjudicates a current value."
     ),
     "shade_method": (
         "Classifications should describe visible shade reaching the passenger waiting area, not merely nearby "
@@ -251,16 +257,16 @@ DEFAULT_METHODOLOGY = {
     ),
     "data_sources": (
         "- Hillsborough Area Regional Transit (HART) GTFS stops and routes\n"
-        "- Tampa/HART starter shade review sample: 34 manually analyzed and admin-accepted bus stop datapoints\n"
-        "- Google Maps imagery used for manual waiting-area shade review\n"
-        "- Expert, field-audit, imported, or community-submitted shade labels\n"
+        "- Small example amenity, accessibility, and passenger-comfort observations\n"
+        "- Example imagery-based waiting-area shade reviews\n"
+        "- Expert, field-audit, imported, or community-submitted assessments\n"
         "- Optional project-specific attributes and GIS overlays"
     ),
     "contributors": "Project team, reviewers, and community contributors",
     "citation": (
         "Dataset release:\n"
-        "    Shade Study Builder contributors. (2026). Tampa/HART starter shade review sample (Version 0.1.0) [Data set]. Shade-GIS.\n"
-        "    Author or Organization. (Year). Title of local shade study release (Version number) [Data set]. Publisher. URL"
+        "    Stop-GIS contributors. (2026). Tampa/HART stop-audit demonstration (Version 0.1.0) [Data set]. Stop-GIS.\n"
+        "    Author or Organization. (Year). Title of local stop-audit release (Version number) [Data set]. Publisher. URL"
     ),
     "bibliography": (
         "Works referenced:\n"
@@ -271,16 +277,19 @@ DEFAULT_METHODOLOGY = {
         "    Author, A. A., & Author, B. B. (Year). Title of article. Title of Journal, volume(issue), page range. https://doi.org/xxxxx"
     ),
     "limitations": (
-        "The bundled starter data is a demonstration sample, not a complete published shade inventory. "
+        "The bundled starter data is example data, not a complete or current infrastructure inventory. "
         "Google Maps image dates, camera angle, season, time of day, temporary obstructions, incomplete "
         "street-level coverage, and reviewer uncertainty can all affect visible shade labels. Published "
         "releases should document these limitations and perform a project-specific review before use."
     ),
-    "release_history": "- 0.1.0: Draft project configuration with Tampa/HART starter dataset and 34 manually reviewed, admin-accepted example datapoints",
+    "release_history": "- 0.1.0: Draft Stop-GIS configuration with Tampa/HART stops and a small set of example observations",
     "terminology": [dict(item) for item in DEFAULT_TERMINOLOGY],
     "shade_source_taxonomy": [dict(item) for item in SHADE_SOURCE_TAXONOMY],
     "shade_coverage_taxonomy": [dict(item) for item in SHADE_COVERAGE_TAXONOMY],
 }
+
+DEFAULT_ASSESSMENT_MODES = modes_for_template("passenger_comfort")
+DEFAULT_SCORING = json.loads(json.dumps(DEFAULT_SCORING_PROFILES))
 
 REVIEW_STATUS_COLORS = {
     "Unlabeled": [148, 163, 184],
@@ -344,7 +353,33 @@ def load_seed_dataset(taxonomy: list[dict[str, Any]], project: dict[str, Any]) -
         shade = pd.read_csv(SHADE_DATA_PATH, dtype={"stop_id": str})
         keep_cols = [column for column in shade.columns if column != "stop_name"]
         stops = stops.merge(shade.loc[:, keep_cols], on="stop_id", how="left")
-    return prepare_stop_dataset(stops, project, taxonomy)
+    stops = prepare_stop_dataset(stops, project, taxonomy)
+    demo_values = [
+        {"bench": "present", "shelter": "full", "trash_can": "yes", "lighting": "dedicated", "sidewalk_connection": "adequate"},
+        {"bench": "none", "shelter": "none", "trash_can": "no", "lighting": "nearby", "sidewalk_connection": "poor"},
+        {"bench": "damaged", "shelter": "partial", "trash_can": "no", "lighting": "none", "sidewalk_connection": "adequate"},
+    ]
+    for column in ["bench", "shelter", "trash_can", "lighting", "sidewalk_connection"]:
+        if column not in stops.columns:
+            stops[column] = ""
+    stops["assessment_values"] = [{} for _ in range(len(stops))]
+    stops["example_data_notice"] = ""
+    for position in range(min(12, len(stops))):
+        values = dict(demo_values[position % len(demo_values)])
+        coverage = str(stops.iloc[position].get("shade_coverage", "") or "")
+        coverage_key = {
+            "No Shade": "none", "Limited Shade": "limited",
+            "Significant Shade": "significant", "Needs Review": "unclear",
+        }.get(coverage, "unclear")
+        values["shade_coverage"] = coverage_key
+        stops.at[stops.index[position], "assessment_values"] = values
+        for key, value in values.items():
+            if key != "shade_coverage":
+                stops.at[stops.index[position], key] = value
+        stops.at[stops.index[position], "example_data_notice"] = (
+            "Example data only; not a complete or current infrastructure inventory."
+        )
+    return stops
 
 
 def empty_stop_dataset() -> pd.DataFrame:
@@ -419,9 +454,13 @@ def create_seed_project() -> str:
     project = DEFAULT_PROJECT.copy()
     taxonomy = [item.copy() for item in DEFAULT_TAXONOMY]
     methodology = DEFAULT_METHODOLOGY.copy()
+    methodology["assessment_modes"] = json.loads(json.dumps(DEFAULT_ASSESSMENT_MODES))
     visualization = json.loads(json.dumps(DEFAULT_VISUALIZATION))
     stops = load_seed_dataset(taxonomy, project)
-    test_seed_limit = os.environ.get("SHADE_GIS_TEST_MAX_SEED_ROWS", "").strip()
+    test_seed_limit = (
+        os.environ.get("STOP_GIS_TEST_MAX_SEED_ROWS")
+        or os.environ.get("SHADE_GIS_TEST_MAX_SEED_ROWS", "")
+    ).strip()
     if test_seed_limit:
         try:
             limit = max(int(test_seed_limit), 1)
@@ -430,7 +469,7 @@ def create_seed_project() -> str:
         stops = stops.head(limit).copy()
     import_log = [
         {
-            "source": "Seed Tampa GTFS and shade CSV",
+            "source": "Stop-GIS Tampa/HART demonstration data",
             "format": "CSV",
             "rows": len(stops),
             "imported_at": timestamp_with_timezone(),
@@ -463,6 +502,8 @@ def load_project_into_session(project_id: str) -> None:
     st.session_state["taxonomy"] = taxonomy
     st.session_state["methodology"] = methodology
     st.session_state["visualization"] = visualization
+    st.session_state["assessment_modes"] = normalize_modes(bundle.get("assessment_modes"))
+    st.session_state["scoring"] = json.loads(json.dumps(bundle.get("scoring") or DEFAULT_SCORING))
     st.session_state["stops"] = stops
     st.session_state["import_log"] = bundle["import_log"]
     st.session_state.pop("deploy_page_settings_project_id", None)
@@ -470,7 +511,10 @@ def load_project_into_session(project_id: str) -> None:
 
 
 def save_active_project_to_store(review_event: dict[str, Any] | None = None) -> bool:
-    if os.environ.get("SHADE_GIS_TEST_DISABLE_AUTO_SAVE", "").strip() == "1":
+    if (
+        os.environ.get("STOP_GIS_TEST_DISABLE_AUTO_SAVE")
+        or os.environ.get("SHADE_GIS_TEST_DISABLE_AUTO_SAVE", "")
+    ).strip() == "1":
         return True
     project_id = st.session_state.get("active_project_id")
     if not project_id:
@@ -485,6 +529,8 @@ def save_active_project_to_store(review_event: dict[str, Any] | None = None) -> 
             st.session_state.get("stops", empty_stop_dataset()),
             st.session_state.get("import_log", []),
             review_event=review_event,
+            assessment_modes=st.session_state.get("assessment_modes", DEFAULT_ASSESSMENT_MODES),
+            scoring=st.session_state.get("scoring", DEFAULT_SCORING),
         )
         if review_event is not None:
             review_event["_saved_event_id"] = event_id
@@ -498,10 +544,10 @@ def create_blank_project(name: str) -> str:
     project = DEFAULT_PROJECT.copy()
     project.update(
         {
-            "name": name.strip() or "Untitled Shade Study",
+            "name": name.strip() or "Untitled Stop Audit",
             "agency": "",
             "region": "",
-            "description": "A reusable bus stop shade study project.",
+            "description": "A reproducible audit of bus-stop infrastructure and passenger experience.",
             "dataset_version": "draft",
             "methodology_version": "draft",
             "source_name": "",
@@ -509,10 +555,12 @@ def create_blank_project(name: str) -> str:
             "source_url": "",
         }
     )
+    methodology = DEFAULT_METHODOLOGY.copy()
+    methodology["assessment_modes"] = json.loads(json.dumps(DEFAULT_ASSESSMENT_MODES))
     return create_project(
         project,
         [item.copy() for item in DEFAULT_TAXONOMY],
-        DEFAULT_METHODOLOGY.copy(),
+        methodology,
         json.loads(json.dumps(DEFAULT_VISUALIZATION)),
         empty_stop_dataset(),
         [],
@@ -583,8 +631,12 @@ def study_config_payload() -> dict[str, Any]:
     visualization["voting"]["shade_coverage_taxonomy"] = coverage_taxonomy
     return {
         "study_id": st.session_state.get("active_project_id")
-        or slugify_repo_name(st.session_state["project"].get("name", "shade-study")),
+        or slugify_repo_name(st.session_state["project"].get("name", "stop-audit")),
         "project": public_project,
+        "assessment_modes": normalize_modes(
+            st.session_state.get("assessment_modes", DEFAULT_ASSESSMENT_MODES)
+        ),
+        "scoring": st.session_state.get("scoring", DEFAULT_SCORING),
         "taxonomy": taxonomy,
         "terminology": terminology,
         "shade_source_taxonomy": source_taxonomy,
@@ -603,6 +655,8 @@ def _canonical_deployment_state(
     visualization: dict[str, Any],
     stops: pd.DataFrame,
     import_log: list[dict[str, Any]],
+    assessment_modes: list[dict[str, Any]] | None = None,
+    scoring: list[dict[str, Any]] | None = None,
 ) -> str:
     normalized_project = with_default_project_values(project)
     normalized_project.pop("deployment", None)
@@ -625,6 +679,8 @@ def _canonical_deployment_state(
         "methodology": normalized_methodology,
         "visualization": normalized_visualization,
         "import_log": import_log,
+        "assessment_modes": normalize_modes(assessment_modes or DEFAULT_ASSESSMENT_MODES),
+        "scoring": scoring or DEFAULT_SCORING,
         "stops": normalized_stops.to_dict(orient="records"),
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
@@ -647,6 +703,8 @@ def deployment_session_freshness_issue() -> str:
         st.session_state.get("visualization", {}),
         st.session_state.get("stops", empty_stop_dataset()),
         st.session_state.get("import_log", []),
+        st.session_state.get("assessment_modes", DEFAULT_ASSESSMENT_MODES),
+        st.session_state.get("scoring", DEFAULT_SCORING),
     )
     persisted_state = _canonical_deployment_state(
         project_id,
@@ -656,6 +714,8 @@ def deployment_session_freshness_issue() -> str:
         persisted["visualization"],
         persisted["stops"],
         persisted["import_log"],
+        persisted.get("assessment_modes", DEFAULT_ASSESSMENT_MODES),
+        persisted.get("scoring", DEFAULT_SCORING),
     )
     if current_state != persisted_state:
         return (
@@ -701,6 +761,7 @@ def build_github_deploy_bundle(
             priority_weights=st.session_state["visualization"]["priority_weights"],
             deploy_mode=deploy_mode,
             commit_message=commit_message,
+            assessments=list_assessments(str(st.session_state.get("active_project_id") or "")),
         )
     )
 
@@ -765,6 +826,8 @@ def clear_loaded_project_session() -> None:
         "taxonomy",
         "methodology",
         "visualization",
+        "assessment_modes",
+        "scoring",
         "stops",
         "import_log",
         "deploy_page_settings_project_id",
@@ -814,7 +877,7 @@ def render_project_settings() -> None:
         return
 
     project = bundle["project"]
-    project_name = str(project.get("name") or "Untitled Shade Study")
+    project_name = str(project.get("name") or "Untitled Stop Audit")
     st.markdown("<span class='project-settings-dialog-marker'></span>", unsafe_allow_html=True)
     st.caption("Update the details shown on your project card and published study.")
     with st.form(f"project_settings_form_{project_id}"):
@@ -1261,13 +1324,13 @@ def render_home_page() -> None:
                 unsafe_allow_html=True,
             )
         with action_column:
-            with st.popover("＋ New Project", width="stretch"):
-                st.markdown("**Create a shade study**")
+            with st.popover("+ New Project", width="stretch"):
+                st.markdown("**Create a stop audit**")
                 st.caption("Start with an empty project and add your own transit or GIS data.")
                 new_project_name = st.text_input(
                     "Project name",
                     key="home_new_project_name",
-                    placeholder="e.g. Downtown transit shade study",
+                    placeholder="e.g. Downtown transit stop audit",
                 )
                 if st.button("Create project", key="home_create_project", width="stretch"):
                     project_id = create_blank_project(new_project_name)
@@ -1283,7 +1346,7 @@ def render_home_page() -> None:
         card_columns = st.columns(2, gap="large")
         for index, project in enumerate(projects):
             project_id = str(project["id"])
-            project_name = str(project.get("name") or "Untitled Shade Study")
+            project_name = str(project.get("name") or "Untitled Stop Audit")
             name = html.escape(project_name)
             agency = html.escape(str(project.get("agency") or "No agency"))
             region = html.escape(str(project.get("region") or "No location set"))
@@ -1520,7 +1583,7 @@ def render_header() -> str:
     )
     on_home_page = st.session_state["page"] == "Home"
     if on_home_page:
-        st.button("Shade-GIS", key="nav_home", on_click=request_main_menu)
+        st.button("Stop-GIS", key="nav_home", on_click=request_main_menu)
     else:
         active_section = page_sections[st.session_state["page"]]
         with st.container(key="app_header"):
@@ -1530,7 +1593,7 @@ def render_header() -> str:
                 vertical_alignment="center",
             )
             with brand:
-                st.button("Shade-GIS", key="nav_home", on_click=request_main_menu)
+                st.button("Stop-GIS", key="nav_home", on_click=request_main_menu)
             nav_columns = navigation.columns(len(primary_navigation), gap="small")
             for column, (label, destination) in zip(nav_columns, primary_navigation):
                 with column:
@@ -1559,13 +1622,13 @@ def render_header() -> str:
                     for project in list_projects():
                         project_id = project["id"]
                         st.button(
-                            project.get("name") or "Untitled Shade Study",
+                            project.get("name") or "Untitled Stop Audit",
                             key=f"header_project_{project_id}",
                             type="primary" if project_id == active_project_id else "secondary",
                             disabled=project_id == active_project_id,
                             width="stretch",
                             on_click=request_open_project,
-                            args=(project_id, project.get("name") or "Untitled Shade Study"),
+                            args=(project_id, project.get("name") or "Untitled Stop Audit"),
                         )
                     st.divider()
                     st.button(
@@ -1639,4 +1702,3 @@ def main() -> None:
     if st.session_state.get("pending_project_open"):
         render_open_project_confirmation()
     save_active_project_to_store()
-

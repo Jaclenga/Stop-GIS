@@ -15,4 +15,4 @@ GRANT USAGE, SELECT ON SEQUENCE shade_votes_id_seq TO shade_gis_app;
 
 -- Re-run the three explicit GRANT statements after a migration recreates a
 -- voting table or sequence. Do not grant default table privileges: this owner
--- may also create private builder tables in a shared Shade-GIS database.
+-- may also create private builder tables in a shared Stop-GIS database.

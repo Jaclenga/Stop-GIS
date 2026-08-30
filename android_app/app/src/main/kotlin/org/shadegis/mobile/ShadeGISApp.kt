@@ -196,7 +196,7 @@ private fun ObservationScreen() {
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Shade-GIS", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("Stop-GIS", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Text(
                         "Document the shade that reaches the passenger waiting area.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

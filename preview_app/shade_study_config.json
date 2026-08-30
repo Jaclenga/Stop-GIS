@@ -1,10 +1,10 @@
 {
   "study_id": "61647656-222c-4312-a61f-6fe1b168a743",
   "project": {
-    "name": "Tampa Bus Stop Shade Study",
+    "name": "Tampa Bus Stop Infrastructure Demo",
     "agency": "Hillsborough Area Regional Transit (HART)",
     "region": "Tampa, Florida",
-    "description": "A reusable shade inventory project seeded with Tampa-area GTFS stops, shade classifications, and heat-context fields.",
+    "description": "A Stop-GIS demonstration of stop amenities, access, shade, and passenger comfort. Example data only; not a complete or current infrastructure inventory.",
     "owners": "Open transit and climate research contributors",
     "visibility": "Public",
     "dataset_version": "0.1.0",
@@ -13,6 +13,15 @@
     "source_license": "Agency GTFS terms",
     "source_url": ""
   },
+  "assessment_modes": [
+    {"key": "bench", "label": "Bench", "value_type": "categorical", "allowed_values": ["none", "present", "damaged", "unclear"], "enabled": true, "sort_order": 1},
+    {"key": "shelter", "label": "Shelter", "value_type": "categorical", "allowed_values": ["none", "partial", "full", "damaged", "unclear"], "enabled": true, "sort_order": 2},
+    {"key": "trash_can", "label": "Trash can", "value_type": "categorical", "allowed_values": ["yes", "no", "unclear"], "enabled": true, "sort_order": 3},
+    {"key": "lighting", "label": "Lighting", "value_type": "categorical", "allowed_values": ["none", "nearby", "dedicated", "unclear"], "enabled": true, "sort_order": 4},
+    {"key": "sidewalk_connection", "label": "Sidewalk connection", "value_type": "categorical", "allowed_values": ["none", "poor", "adequate", "unclear"], "enabled": true, "sort_order": 5},
+    {"key": "shade_coverage", "label": "Shade coverage", "value_type": "categorical", "allowed_values": ["none", "limited", "significant", "unclear"], "ordering": ["none", "limited", "significant", "unclear"], "measurement_level": "ordinal", "enabled": true, "sort_order": 6}
+  ],
+  "scoring": [],
   "taxonomy": [
     {
       "name": "No Shade",
@@ -80,15 +89,15 @@
     }
   ],
   "methodology": {
-    "title": "Bus Stop Shade Study",
-    "summary": "Preparing a reproducible, city-wide shade inventory from GTFS bus stop data.",
+    "title": "Bus Stop Infrastructure Audit",
+    "summary": "Auditing bus-stop infrastructure, accessibility, amenities, shade, and passenger comfort.",
     "purpose": "This project helps researchers, transit agencies, and municipalities collect, review, visualize, and publish standardized bus stop shade datasets.",
     "shade_method": "Waiting Area: The designated location where passengers would reasonably stand or sit while waiting to board the bus, including any bus stop pad, sidewalk immediately adjacent to the bus stop sign, or seating within a bus shelter. Grass, landscaping, roadway, bicycle lanes, and areas not reasonably intended for waiting are excluded. Classifications should describe visible shade reaching the passenger waiting area, not merely nearby trees or structures. Store raw labels and consensus labels so future reviewers can reproduce decisions.",
     "data_sources": "- GTFS stops and routes\n- Expert or crowdsourced shade labels\n- Optional environmental, demographic, and transportation overlays",
     "contributors": "Project team, reviewers, and community contributors",
     "citation": "Dataset release:\n    Author or Organization. (Year). Title of dataset or study release (Version number) [Data set]. Publisher. URL",
     "bibliography": "Works referenced:\n    Author, A. A., & Author, B. B. (Year). Title of article. Title of Journal, volume(issue), page range. https://doi.org/xxxxx\n    Author or Organization. (Year). Title of report. Publisher. URL",
-    "limitations": "Imagery date, time of day, season, and reviewer uncertainty can affect shade labels. Published releases should document these limitations.",
+    "limitations": "Example data only; not a complete or current infrastructure inventory. Imagery date, season, and reviewer uncertainty can affect observations.",
     "release_history": "- 0.1.0: Draft project configuration and starter dataset"
   },
   "visualization": {
@@ -219,7 +228,7 @@
   },
   "import_log": [
     {
-      "source": "Seed Tampa GTFS and shade CSV",
+      "source": "Stop-GIS Tampa/HART demonstration data",
       "format": "CSV",
       "rows": 2315,
       "imported_at": "2026-06-30T03:32:48-04:00"

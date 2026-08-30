@@ -1,4 +1,4 @@
-"""Central data-quality checks for active Shade-GIS project datasets."""
+"""Central data-quality checks for active Stop-GIS project datasets."""
 
 from __future__ import annotations
 

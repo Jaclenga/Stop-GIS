@@ -1,4 +1,4 @@
-# Shade-GIS architecture invariants
+# Stop-GIS architecture invariants
 
 This audit replaces repeated edge-case scans with a small set of boundaries and
 state transitions that must remain true across the builder, published app,
@@ -8,7 +8,9 @@ persistence layer, deployment workflow, and Android client.
 
 | Recurring bug family | Root cause | Canonical boundary | Enforced invariant |
 | --- | --- | --- | --- |
-| Mixed stop identifiers | Consumers independently called `str()` or `astype(str)` | `shade_gis.identifiers.canonical_identifier` at import and analytics boundaries | Scalar representations of the same numeric ID compare equally; textual leading zeros remain meaningful |
+| Mixed stop identifiers | Consumers independently called `str()` or `astype(str)` | `stop_gis.identifiers.canonical_identifier` at import and analytics boundaries | Scalar representations of the same numeric ID compare equally; textual leading zeros remain meaningful |
+| Mode-schema drift | Amenities were represented as ad hoc permanent columns | `stop_gis.assessment_modes` validation plus `assessment_modes` persistence | A mode key has one validated definition per project; arbitrary new modes require no schema column |
+| Lost independent ratings | Current reviewed values overwrote raw submissions | Append-only `assessments` plus separate current stop projection | Independent ratings and adjudications remain reproducible after the current map value changes |
 | Nested classification values | Imported tabular values were assumed to be scalar | Scalar validation in `builder_imports` classification normalizers | Lists, arrays, and mappings become review-safe fallback values instead of reaching scalar-only pandas operations |
 | Builder/published analytics drift | Standalone published code duplicates analytical behavior | Cross-implementation invariant tests | Majority, reliability, and disagreement results remain equivalent for the same normalized data |
 | Stale deployment success | Repository identity and UI state were not tied to all published content | Release fingerprint plus target-and-bundle result key | Any hosted-runtime change invalidates verification; any target or bundle change invalidates cached success |

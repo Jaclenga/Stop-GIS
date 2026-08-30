@@ -50,6 +50,7 @@ data class ShadeObservation(
     @Json(name = "photo_uri") val photoUri: String,
     @Json(name = "shade_coverage") val shadeCoverage: ShadeCoverage,
     @Json(name = "shade_sources") val shadeSources: List<ShadeSource>,
+    @Json(name = "assessment_values") val assessmentValues: Map<String, List<String>> = emptyMap(),
     @Json(name = "notes") val notes: String,
     @Json(name = "captured_at") val capturedAt: String,
 ) {
@@ -99,6 +100,22 @@ data class ShadeObservation(
                 photoUri = photoUri,
                 shadeCoverage = coverage,
                 shadeSources = ShadeSource.entries.filter(normalizedSources::contains),
+                assessmentValues = mapOf(
+                    "shade_coverage" to listOf(
+                        when (coverage) {
+                            ShadeCoverage.NO_SHADE -> "none"
+                            ShadeCoverage.LIMITED_SHADE -> "limited"
+                            ShadeCoverage.SIGNIFICANT_SHADE -> "significant"
+                        }
+                    ),
+                    "shade_source" to ShadeSource.entries.filter(normalizedSources::contains).map {
+                        when (it) {
+                            ShadeSource.NATURAL -> "natural"
+                            ShadeSource.PURPOSE_BUILT -> "purpose_built"
+                            ShadeSource.INCIDENTAL -> "incidental"
+                        }
+                    },
+                ),
                 notes = notes.trim(),
                 capturedAt = capturedAt.toString(),
             )

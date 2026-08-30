@@ -1,4 +1,4 @@
-"""Durable storage helpers for the Shade Study Builder platform."""
+"""Durable storage helpers for the Stop-GIS Builder platform."""
 
 from __future__ import annotations
 
@@ -13,6 +13,14 @@ from typing import Any
 
 import pandas as pd
 
+from stop_gis.assessment_modes import (
+    AssessmentValidationError,
+    apply_assessment_values,
+    legacy_shade_modes,
+    normalize_modes,
+    validate_assessment_values,
+)
+
 
 APP_DIR = Path(__file__).parent
 _ACTIVE_DATABASE_PATH: Path | None = None
@@ -25,23 +33,39 @@ PROJECT_STORE_INITIALIZED_KEY = "project_store_initialized"
 def default_database_path() -> Path:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / "Shade-GIS" / "shade_study_builder.sqlite3"
+        return Path(local_app_data) / "Stop-GIS" / "stop_gis_builder.sqlite3"
+    return APP_DIR / "platform_data" / "stop_gis_builder.sqlite3"
+
+
+def legacy_database_path() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "Stop-GIS" / "shade_study_builder.sqlite3"
     return APP_DIR / "platform_data" / "shade_study_builder.sqlite3"
 
 
 def fallback_database_paths() -> list[Path]:
     return [
+        Path.home() / ".stop-gis" / "stop_gis_builder.sqlite3",
+        Path(tempfile.gettempdir()) / "Stop-GIS" / "stop_gis_builder.sqlite3",
         Path.home() / ".shade-gis" / "shade_study_builder.sqlite3",
-        Path(tempfile.gettempdir()) / "Shade-GIS" / "shade_study_builder.sqlite3",
+        Path(tempfile.gettempdir()) / "Stop-GIS" / "shade_study_builder.sqlite3",
     ]
 
 
 def candidate_database_paths() -> list[Path]:
     candidates = []
-    configured = os.environ.get("SHADE_GIS_DB_PATH")
+    configured = os.environ.get("STOP_GIS_DB_PATH") or os.environ.get("SHADE_GIS_DB_PATH")
     if configured:
         candidates.append(Path(configured))
-    candidates.append(default_database_path())
+    preferred = default_database_path()
+    legacy = legacy_database_path()
+    # Discover an existing Stop-GIS store before creating a new empty store.
+    # It is upgraded in place without renaming legacy tables or deleting data.
+    if legacy.exists() and not preferred.exists():
+        candidates.append(legacy)
+    candidates.append(preferred)
+    candidates.append(legacy)
     candidates.extend(fallback_database_paths())
 
     unique = []
@@ -180,8 +204,8 @@ def choose_database_path() -> Path:
         return candidate
 
     if last_error:
-        raise sqlite3.OperationalError(f"No writable Shade-GIS database path is available: {last_error}") from last_error
-    raise sqlite3.OperationalError("No writable Shade-GIS database path is available")
+        raise sqlite3.OperationalError(f"No writable Stop-GIS database path is available: {last_error}") from last_error
+    raise sqlite3.OperationalError("No writable Stop-GIS database path is available")
 
 
 def database_status() -> dict[str, Any]:
@@ -380,6 +404,63 @@ def migrate_shade_source_labels(conn: sqlite3.Connection) -> None:
                 )
 
 
+def assessment_mode_record(project_id: str, mode: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        project_id,
+        mode["key"],
+        mode["label"],
+        mode["description"],
+        mode["operational_definition"],
+        mode["value_type"],
+        json.dumps(mode["allowed_values"], ensure_ascii=True),
+        json.dumps(mode["ordering"], ensure_ascii=True),
+        int(mode["multiple"]),
+        int(mode["allow_comment"]),
+        int(mode["collect_confidence"]),
+        int(mode["enabled"]),
+        int(mode["required"]),
+        int(mode["sort_order"]),
+        mode["measurement_level"],
+        json.dumps(mode["scoring"], ensure_ascii=True),
+        json.dumps(mode["display"], ensure_ascii=True),
+    )
+
+
+def migrate_legacy_projects_to_assessment_modes(conn: sqlite3.Connection) -> None:
+    """Seed mode definitions for projects created before Stop-GIS.
+
+    Legacy shade tables and columns remain untouched.  The generic shade modes
+    are projections over those values, which makes this migration additive and
+    safe to run repeatedly.
+    """
+    projects = conn.execute("SELECT id FROM projects").fetchall()
+    for project_row in projects:
+        project_id = str(project_row[0])
+        exists = conn.execute(
+            "SELECT 1 FROM assessment_modes WHERE project_id = ? LIMIT 1", (project_id,)
+        ).fetchone()
+        if exists:
+            continue
+        taxonomy = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT name, description, color, sort_order FROM shade_taxonomy WHERE project_id = ? ORDER BY sort_order",
+                (project_id,),
+            ).fetchall()
+        ]
+        conn.executemany(
+            """
+            INSERT INTO assessment_modes (
+                project_id, mode_key, label, description, operational_definition,
+                value_type, allowed_values_json, ordering_json, multiple,
+                allow_comment, collect_confidence, enabled, required, sort_order,
+                measurement_level, scoring_json, display_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [assessment_mode_record(project_id, mode) for mode in legacy_shade_modes(taxonomy)],
+        )
+
+
 def init_database(path: Path | None = None) -> Path:
     db_path = Path(path) if path is not None else database_path()
     with connect(db_path) as conn:
@@ -390,6 +471,10 @@ def init_database(path: Path | None = None) -> Path:
         if "deployment_json" not in project_settings_columns:
             conn.execute(
                 "ALTER TABLE project_settings ADD COLUMN deployment_json TEXT NOT NULL DEFAULT '{}'"
+            )
+        if "scoring_json" not in project_settings_columns:
+            conn.execute(
+                "ALTER TABLE project_settings ADD COLUMN scoring_json TEXT NOT NULL DEFAULT '[]'"
             )
         protocol_columns = {
             str(row[1]) for row in conn.execute("PRAGMA table_info(blind_protocols)").fetchall()
@@ -406,6 +491,7 @@ def init_database(path: Path | None = None) -> Path:
                 "ALTER TABLE blind_ratings ADD COLUMN review_method TEXT NOT NULL DEFAULT 'standardized_image'"
             )
         migrate_shade_source_labels(conn)
+        migrate_legacy_projects_to_assessment_modes(conn)
         conn.commit()
     return db_path
 
@@ -433,6 +519,12 @@ def list_projects(path: Path | None = None) -> list[dict[str, Any]]:
                            SELECT 1
                            FROM shade_labels AS sl
                            WHERE sl.project_id = s.project_id AND sl.stop_id = s.stop_id
+                       )
+                       OR EXISTS (
+                           SELECT 1
+                           FROM assessments AS assessment
+                           WHERE assessment.project_id = s.project_id
+                             AND assessment.stop_id = s.stop_id
                        )
                    THEN 1 ELSE 0 END), 0) AS labeled_count,
                    COUNT(s.stop_id) - COALESCE(SUM(CASE WHEN s.review_status IN (
@@ -859,6 +951,245 @@ def review_event_values(
     )
 
 
+def list_assessment_modes(project_id: str, path: Path | None = None) -> list[dict[str, Any]]:
+    init_database(path)
+    with connect(path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM assessment_modes
+            WHERE project_id = ?
+            ORDER BY sort_order, label COLLATE NOCASE
+            """,
+            (project_id,),
+        ).fetchall()
+    modes = []
+    for row in rows:
+        modes.append(
+            {
+                "key": row["mode_key"],
+                "label": row["label"],
+                "description": row["description"],
+                "operational_definition": row["operational_definition"],
+                "value_type": row["value_type"],
+                "allowed_values": json.loads(row["allowed_values_json"] or "[]"),
+                "ordering": json.loads(row["ordering_json"] or "[]"),
+                "multiple": bool(row["multiple"]),
+                "allow_comment": bool(row["allow_comment"]),
+                "collect_confidence": bool(row["collect_confidence"]),
+                "enabled": bool(row["enabled"]),
+                "required": bool(row["required"]),
+                "sort_order": int(row["sort_order"]),
+                "measurement_level": row["measurement_level"],
+                "scoring": json.loads(row["scoring_json"] or "{}"),
+                "display": json.loads(row["display_json"] or "{}"),
+            }
+        )
+    return normalize_modes(modes)
+
+
+def save_assessment_modes(
+    project_id: str,
+    modes: list[dict[str, Any]],
+    path: Path | None = None,
+    *,
+    connection: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
+    normalized = normalize_modes(modes)
+    owns_connection = connection is None
+    conn = connection or connect(path)
+    try:
+        conn.execute("DELETE FROM assessment_modes WHERE project_id = ?", (project_id,))
+        conn.executemany(
+            """
+            INSERT INTO assessment_modes (
+                project_id, mode_key, label, description, operational_definition,
+                value_type, allowed_values_json, ordering_json, multiple,
+                allow_comment, collect_confidence, enabled, required, sort_order,
+                measurement_level, scoring_json, display_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [assessment_mode_record(project_id, mode) for mode in normalized],
+        )
+        if owns_connection:
+            conn.commit()
+    finally:
+        if owns_connection:
+            conn.close()
+    return normalized
+
+
+def add_assessment(
+    project_id: str,
+    assessment: dict[str, Any],
+    path: Path | None = None,
+    *,
+    apply_current: bool = False,
+) -> str:
+    """Append an immutable independent or adjudicated stop assessment."""
+    init_database(path)
+    modes = list_assessment_modes(project_id, path)
+    values = validate_assessment_values(modes, assessment.get("assessment_values", {}))
+    comments = assessment.get("comments") if isinstance(assessment.get("comments"), dict) else {}
+    confidence = assessment.get("confidence") if isinstance(assessment.get("confidence"), dict) else {}
+    definitions = {mode["key"]: mode for mode in modes}
+    for key in comments:
+        if key not in values or not definitions[key]["allow_comment"]:
+            raise AssessmentValidationError(f"Comments are not enabled for assessment mode {key}.")
+    clean_confidence: dict[str, float] = {}
+    for key, value in confidence.items():
+        if key not in values or not definitions[key]["collect_confidence"]:
+            raise AssessmentValidationError(f"Confidence is not enabled for assessment mode {key}.")
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= float(value) <= 1:
+            raise AssessmentValidationError(f"Confidence for {key} must be between 0 and 1.")
+        clean_confidence[key] = float(value)
+    submission_type = str(assessment.get("submission_type", "independent")).strip().lower()
+    if submission_type not in {"independent", "adjudication"}:
+        raise AssessmentValidationError("submission_type must be independent or adjudication.")
+    supersedes_id = clean_scalar(assessment.get("supersedes_id", "")) or None
+    if supersedes_id and submission_type != "adjudication":
+        raise AssessmentValidationError("Only an adjudication may supersede an assessment.")
+    assessment_id = str(uuid.uuid4())
+    now = utc_timestamp()
+    stop_id = clean_scalar(assessment.get("stop_id", ""))
+    if not stop_id:
+        raise AssessmentValidationError("An assessment requires a stop_id.")
+    with connect(path) as conn:
+        if supersedes_id:
+            superseded = conn.execute(
+                "SELECT project_id, stop_id FROM assessments WHERE id = ?",
+                (supersedes_id,),
+            ).fetchone()
+            if superseded is None:
+                raise AssessmentValidationError(
+                    f"Superseded assessment {supersedes_id} was not found."
+                )
+            if (
+                str(superseded["project_id"]) != str(project_id)
+                or str(superseded["stop_id"]) != stop_id
+            ):
+                raise AssessmentValidationError(
+                    "An adjudication may only supersede an assessment for the same project and stop."
+                )
+        conn.execute(
+            """
+            INSERT INTO assessments (
+                id, project_id, stop_id, reviewer_id, reviewer_role, evidence_method,
+                assessment_values_json, comments_json, confidence_json,
+                submission_type, supersedes_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                assessment_id,
+                project_id,
+                stop_id,
+                clean_scalar(assessment.get("reviewer_id", "")),
+                clean_scalar(assessment.get("reviewer_role", "")),
+                clean_scalar(assessment.get("evidence_method", "manual")) or "manual",
+                json.dumps(values, ensure_ascii=True),
+                json.dumps(clean_json_value(comments), ensure_ascii=True),
+                json.dumps(clean_confidence, ensure_ascii=True),
+                submission_type,
+                supersedes_id,
+                now,
+            ),
+        )
+        if apply_current:
+            row = conn.execute(
+                "SELECT * FROM stops WHERE project_id = ? AND stop_id = ?", (project_id, stop_id)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Stop {stop_id} was not found in project {project_id}")
+            current = stops_dataframe([row]).iloc[0].to_dict()
+            updated = apply_assessment_values(current, values)
+            next_status = "Accepted" if submission_type == "adjudication" else "Needs Review"
+            conn.execute(
+                "UPDATE stops SET extra_json = ?, shading = ?, shade_coverage = ?, shade_sources = ?, review_status = ?, updated_at = ? WHERE project_id = ? AND stop_id = ?",
+                (
+                    json.dumps({key: clean_json_value(value) for key, value in updated.items() if key not in STOP_FIELDS}, ensure_ascii=True),
+                    clean_scalar(updated.get("shading", "")),
+                    clean_scalar(updated.get("shade_coverage", "")),
+                    clean_scalar(updated.get("shade_sources", "")),
+                    next_status,
+                    now,
+                    project_id,
+                    stop_id,
+                ),
+            )
+            event_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO review_history (
+                    id, project_id, stop_id, actor_id, action, from_status,
+                    to_status, notes, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                review_event_values(
+                    project_id,
+                    {
+                        "stop_id": stop_id,
+                        "actor_id": assessment.get("reviewer_id", ""),
+                        "action": "Assessment adjudicated" if submission_type == "adjudication" else "Assessment applied",
+                        "from_status": current.get("review_status", "Unlabeled"),
+                        "to_status": next_status,
+                        "assessment_id": assessment_id,
+                        "assessment_values": values,
+                    },
+                    event_id,
+                    now,
+                ),
+            )
+        # Assessment writes participate in the same optimistic project revision
+        # used by bundle saves. Without this, a stale builder session can erase
+        # a newly applied current projection while leaving no conflict signal.
+        conn.execute(
+            "UPDATE projects SET updated_at = ? WHERE id = ?",
+            (now, project_id),
+        )
+        conn.commit()
+    return assessment_id
+
+
+def add_adjudication(project_id: str, assessment: dict[str, Any], path: Path | None = None, *, apply_current: bool = True) -> str:
+    payload = dict(assessment)
+    payload["submission_type"] = "adjudication"
+    return add_assessment(project_id, payload, path, apply_current=apply_current)
+
+
+def list_assessments(
+    project_id: str,
+    path: Path | None = None,
+    *,
+    stop_id: str | None = None,
+    submission_type: str | None = None,
+) -> pd.DataFrame:
+    init_database(path)
+    filters = ["project_id = ?"]
+    params: list[Any] = [project_id]
+    if stop_id is not None:
+        filters.append("stop_id = ?")
+        params.append(str(stop_id))
+    if submission_type is not None:
+        filters.append("submission_type = ?")
+        params.append(str(submission_type))
+    with connect(path) as conn:
+        rows = conn.execute(
+            f"SELECT * FROM assessments WHERE {' AND '.join(filters)} ORDER BY created_at, id",
+            params,
+        ).fetchall()
+    records = []
+    for row in rows:
+        record = dict(row)
+        record["assessment_values"] = json.loads(record.pop("assessment_values_json") or "{}")
+        record["comments"] = json.loads(record.pop("comments_json") or "{}")
+        record["confidence"] = json.loads(record.pop("confidence_json") or "{}")
+        records.append(record)
+    columns = [
+        "id", "project_id", "stop_id", "reviewer_id", "reviewer_role", "evidence_method",
+        "assessment_values", "comments", "confidence", "submission_type", "supersedes_id", "created_at",
+    ]
+    return pd.DataFrame(records, columns=columns)
+
+
 def create_project(
     project: dict[str, Any],
     taxonomy: list[dict[str, Any]],
@@ -867,9 +1198,14 @@ def create_project(
     stops: pd.DataFrame,
     import_log: list[dict[str, Any]],
     path: Path | None = None,
+    assessment_modes: list[dict[str, Any]] | None = None,
+    scoring: list[dict[str, Any]] | None = None,
 ) -> str:
     project_id = str(uuid.uuid4())
-    save_project_bundle(project_id, project, taxonomy, methodology, visualization, stops, import_log, path)
+    save_project_bundle(
+        project_id, project, taxonomy, methodology, visualization, stops, import_log,
+        path, assessment_modes=assessment_modes, scoring=scoring,
+    )
     return project_id
 
 
@@ -886,7 +1222,7 @@ def load_project_bundle(project_id: str, path: Path | None = None) -> dict[str, 
 
         settings_row = conn.execute(
             """
-            SELECT methodology_json, visualization_json, deployment_json
+            SELECT methodology_json, visualization_json, deployment_json, scoring_json
             FROM project_settings
             WHERE project_id = ?
             """,
@@ -926,6 +1262,8 @@ def load_project_bundle(project_id: str, path: Path | None = None) -> dict[str, 
     project["deployment"] = json.loads(settings_row["deployment_json"] or "{}") if settings_row else {}
     methodology = json.loads(settings_row["methodology_json"]) if settings_row else {}
     visualization = json.loads(settings_row["visualization_json"]) if settings_row else {}
+    assessment_modes = list_assessment_modes(project_id, path)
+    scoring = json.loads(settings_row["scoring_json"] or "[]") if settings_row else []
     taxonomy = [dict(row) for row in taxonomy_rows]
     import_log = []
     for row in import_rows:
@@ -944,6 +1282,8 @@ def load_project_bundle(project_id: str, path: Path | None = None) -> dict[str, 
         "taxonomy": taxonomy,
         "methodology": methodology,
         "visualization": visualization,
+        "assessment_modes": assessment_modes,
+        "scoring": scoring,
         "stops": stops_dataframe(stop_rows),
         "import_log": import_log,
     }
@@ -959,13 +1299,15 @@ def save_project_bundle(
     import_log: list[dict[str, Any]],
     path: Path | None = None,
     review_event: dict[str, Any] | None = None,
+    assessment_modes: list[dict[str, Any]] | None = None,
+    scoring: list[dict[str, Any]] | None = None,
 ) -> str | None:
     db_path = Path(path) if path is not None else database_path()
     for attempt in range(2):
         try:
             return _save_project_bundle_once(
                 project_id, project, taxonomy, methodology, visualization, stops,
-                import_log, db_path, review_event,
+                import_log, db_path, review_event, assessment_modes, scoring,
             )
         except sqlite3.OperationalError as error:
             if path is None and attempt == 0 and is_readonly_database_error(error):
@@ -992,6 +1334,10 @@ def stop_has_newer_evidence(
             UNION ALL
             SELECT created_at
             FROM shade_labels
+            WHERE project_id = ? AND stop_id = ?
+            UNION ALL
+            SELECT created_at
+            FROM assessments
             WHERE project_id = ? AND stop_id = ?
             UNION ALL
             SELECT created_at
@@ -1068,6 +1414,8 @@ def stop_has_newer_evidence(
             stop_id,
             project_id,
             stop_id,
+            project_id,
+            stop_id,
             expected_revision,
         ),
     ).fetchone()
@@ -1084,13 +1432,15 @@ def _save_project_bundle_once(
     import_log: list[dict[str, Any]],
     path: Path,
     review_event: dict[str, Any] | None = None,
+    assessment_modes: list[dict[str, Any]] | None = None,
+    scoring: list[dict[str, Any]] | None = None,
 ) -> str | None:
     init_database(path)
     now = utc_timestamp()
     project_values = {field: clean_scalar(project.get(field, "")) for field in PROJECT_FIELDS}
     deployment = project.get("deployment") if isinstance(project.get("deployment"), dict) else {}
     if not project_values.get("name"):
-        project_values["name"] = "Untitled Shade Study"
+        project_values["name"] = "Untitled Stop Audit"
     if not project_values.get("visibility"):
         project_values["visibility"] = "Private"
 
@@ -1101,6 +1451,11 @@ def _save_project_bundle_once(
         existing = conn.execute(
             "SELECT updated_at FROM projects WHERE id = ?", (project_id,)
         ).fetchone()
+        if scoring is None:
+            scoring_row = conn.execute(
+                "SELECT scoring_json FROM project_settings WHERE project_id = ?", (project_id,)
+            ).fetchone()
+            scoring = json.loads(scoring_row[0] or "[]") if scoring_row else []
         project_parameters = (
             project_values["name"],
             project_values["agency"],
@@ -1149,13 +1504,14 @@ def _save_project_bundle_once(
         conn.execute(
             """
             INSERT INTO project_settings (
-                project_id, methodology_json, visualization_json, deployment_json, updated_at
+                project_id, methodology_json, visualization_json, deployment_json, scoring_json, updated_at
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id) DO UPDATE SET
                 methodology_json = excluded.methodology_json,
                 visualization_json = excluded.visualization_json,
                 deployment_json = excluded.deployment_json,
+                scoring_json = excluded.scoring_json,
                 updated_at = excluded.updated_at
             """,
             (
@@ -1163,9 +1519,22 @@ def _save_project_bundle_once(
                 json.dumps(methodology, ensure_ascii=True),
                 json.dumps(visualization, ensure_ascii=True),
                 json.dumps(clean_json_value(deployment), ensure_ascii=True),
+                json.dumps(clean_json_value(scoring), ensure_ascii=True),
                 now,
             ),
         )
+
+        selected_modes = assessment_modes
+        if selected_modes is None and isinstance(methodology.get("assessment_modes"), list):
+            selected_modes = methodology["assessment_modes"]
+        if selected_modes is None:
+            current_rows = conn.execute(
+                "SELECT 1 FROM assessment_modes WHERE project_id = ? LIMIT 1", (project_id,)
+            ).fetchone()
+            if not current_rows:
+                selected_modes = legacy_shade_modes(taxonomy)
+        if selected_modes is not None:
+            save_assessment_modes(project_id, selected_modes, connection=conn)
 
         conn.execute("DELETE FROM shade_taxonomy WHERE project_id = ?", (project_id,))
         conn.executemany(
@@ -1431,7 +1800,29 @@ CREATE TABLE IF NOT EXISTS project_settings (
     methodology_json TEXT NOT NULL DEFAULT '{}',
     visualization_json TEXT NOT NULL DEFAULT '{}',
     deployment_json TEXT NOT NULL DEFAULT '{}',
+    scoring_json TEXT NOT NULL DEFAULT '[]',
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assessment_modes (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    mode_key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    operational_definition TEXT NOT NULL DEFAULT '',
+    value_type TEXT NOT NULL,
+    allowed_values_json TEXT NOT NULL DEFAULT '[]',
+    ordering_json TEXT NOT NULL DEFAULT '[]',
+    multiple INTEGER NOT NULL DEFAULT 0,
+    allow_comment INTEGER NOT NULL DEFAULT 1,
+    collect_confidence INTEGER NOT NULL DEFAULT 1,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    required INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 1,
+    measurement_level TEXT NOT NULL DEFAULT 'nominal',
+    scoring_json TEXT NOT NULL DEFAULT '{}',
+    display_json TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (project_id, mode_key)
 );
 
 CREATE TABLE IF NOT EXISTS shade_taxonomy (
@@ -1497,6 +1888,45 @@ CREATE TABLE IF NOT EXISTS shade_labels (
     metadata_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    stop_id TEXT NOT NULL,
+    reviewer_id TEXT,
+    reviewer_role TEXT,
+    evidence_method TEXT NOT NULL DEFAULT 'manual',
+    assessment_values_json TEXT NOT NULL,
+    comments_json TEXT NOT NULL DEFAULT '{}',
+    confidence_json TEXT NOT NULL DEFAULT '{}',
+    submission_type TEXT NOT NULL DEFAULT 'independent'
+        CHECK (submission_type IN ('independent', 'adjudication')),
+    supersedes_id TEXT REFERENCES assessments(id),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(project_id, stop_id) REFERENCES stops(project_id, stop_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessments_project_stop
+ON assessments(project_id, stop_id, created_at);
+
+CREATE TRIGGER IF NOT EXISTS immutable_assessments_update
+BEFORE UPDATE ON assessments
+BEGIN SELECT RAISE(ABORT, 'assessment submissions are immutable'); END;
+
+CREATE TRIGGER IF NOT EXISTS valid_assessment_supersession
+BEFORE INSERT ON assessments
+WHEN NEW.supersedes_id IS NOT NULL
+BEGIN
+    SELECT RAISE(ABORT, 'only an adjudication may supersede an assessment')
+    WHERE NEW.submission_type <> 'adjudication';
+    SELECT RAISE(ABORT, 'superseded assessment must belong to the same project and stop')
+    WHERE NOT EXISTS (
+        SELECT 1 FROM assessments AS prior
+        WHERE prior.id = NEW.supersedes_id
+          AND prior.project_id = NEW.project_id
+          AND prior.stop_id = NEW.stop_id
+    );
+END;
 
 CREATE TABLE IF NOT EXISTS blind_protocols (
     project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,

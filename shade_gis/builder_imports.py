@@ -135,35 +135,37 @@ def normalize_review_status(value: Any) -> str:
 
 
 def env_int(name: str, default: int) -> int:
+    legacy_name = name.replace("STOP_GIS_", "SHADE_GIS_", 1)
     try:
-        value = int(os.environ.get(name, ""))
+        value = int(os.environ.get(name) or os.environ.get(legacy_name, ""))
     except ValueError:
         return default
     return value if value > 0 else default
 
 
 def env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+    legacy_name = name.replace("STOP_GIS_", "SHADE_GIS_", 1)
+    return (os.environ.get(name) or os.environ.get(legacy_name, "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def max_upload_bytes() -> int:
-    return env_int("SHADE_GIS_MAX_UPLOAD_BYTES", DEFAULT_MAX_UPLOAD_BYTES)
+    return env_int("STOP_GIS_MAX_UPLOAD_BYTES", DEFAULT_MAX_UPLOAD_BYTES)
 
 
 def max_api_bytes() -> int:
-    return env_int("SHADE_GIS_MAX_API_BYTES", DEFAULT_MAX_API_BYTES)
+    return env_int("STOP_GIS_MAX_API_BYTES", DEFAULT_MAX_API_BYTES)
 
 
 def max_zip_members() -> int:
-    return env_int("SHADE_GIS_MAX_ZIP_MEMBERS", DEFAULT_MAX_ZIP_MEMBERS)
+    return env_int("STOP_GIS_MAX_ZIP_MEMBERS", DEFAULT_MAX_ZIP_MEMBERS)
 
 
 def max_zip_member_bytes() -> int:
-    return env_int("SHADE_GIS_MAX_ZIP_MEMBER_BYTES", DEFAULT_MAX_ZIP_MEMBER_BYTES)
+    return env_int("STOP_GIS_MAX_ZIP_MEMBER_BYTES", DEFAULT_MAX_ZIP_MEMBER_BYTES)
 
 
 def max_zip_uncompressed_bytes() -> int:
-    return env_int("SHADE_GIS_MAX_ZIP_UNCOMPRESSED_BYTES", DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES)
+    return env_int("STOP_GIS_MAX_ZIP_UNCOMPRESSED_BYTES", DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES)
 
 
 def format_bytes(value: int) -> str:
@@ -182,7 +184,7 @@ def validate_bytes_size(contents: bytes, limit: int, label: str) -> None:
 def allowed_api_hosts() -> list[str]:
     return [
         host.strip().lower().rstrip(".")
-        for host in os.environ.get("SHADE_GIS_ALLOWED_API_HOSTS", "").split(",")
+        for host in (os.environ.get("STOP_GIS_ALLOWED_API_HOSTS") or os.environ.get("SHADE_GIS_ALLOWED_API_HOSTS", "")).split(",")
         if host.strip()
     ]
 
@@ -215,7 +217,7 @@ def _validated_web_target(
 
     host = parsed.hostname.lower().rstrip(".")
     if allowed_hosts and not any(api_host_matches(host, allowed_host) for allowed_host in allowed_hosts):
-        raise ValueError("API URL host is not in SHADE_GIS_ALLOWED_API_HOSTS")
+        raise ValueError("API URL host is not in STOP_GIS_ALLOWED_API_HOSTS")
 
     allow_private = env_flag(allow_private_env)
     if not allow_private and (host == "localhost" or host.endswith(".localhost")):
@@ -248,7 +250,7 @@ def _validated_api_target(url: str) -> tuple[str, list[str]]:
     return _validated_web_target(
         url,
         label="API",
-        allow_private_env="SHADE_GIS_ALLOW_PRIVATE_API_URLS",
+        allow_private_env="STOP_GIS_ALLOW_PRIVATE_API_URLS",
         allowed_hosts=allowed_api_hosts(),
     )
 
@@ -324,7 +326,7 @@ def _open_pinned_api_response(
                 request_target,
                 headers={
                     "Host": host_header,
-                    "User-Agent": "Shade-GIS/0.1 (+https://github.com/)",
+                    "User-Agent": "Stop-GIS/0.1 (+https://github.com/)",
                     "Accept-Encoding": "identity",
                 },
             )
@@ -1009,4 +1011,3 @@ def render_mapped_import_controls(
             metadata=metadata,
         )
         st.success(f"Imported {len(prepared):,} mapped stops.")
-

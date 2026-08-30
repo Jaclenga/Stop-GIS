@@ -12,10 +12,13 @@ from shade_gis.taxonomy_components import (
     terminology_table_frame,
 )
 from shade_gis.ui_tables import render_dataframe_table
+from stop_gis.assessment_components import render_assessment_mode_builder, render_scoring_builder
+from stop_gis.assessment_modes import DEFAULT_SCORING_PROFILES
+from stop_gis.assessment_modes import modes_for_template
 
 
 def render_taxonomy_page() -> None:
-    st.title("Taxonomy")
+    st.title("Assessment Design")
     st.markdown(
         "Define the shared terminology and coding framework used throughout this project."
     )
@@ -172,6 +175,15 @@ def render_taxonomy_page() -> None:
         unsafe_allow_html=True,
     )
     with st.container(key="taxonomy_workspace"):
+        with st.container(key="taxonomy_card_modes"):
+            current_modes = st.session_state.get(
+                "assessment_modes", modes_for_template("passenger_comfort")
+            )
+            st.session_state["assessment_modes"] = render_assessment_mode_builder(current_modes)
+            st.session_state["scoring"] = render_scoring_builder(
+                st.session_state.get("scoring", DEFAULT_SCORING_PROFILES)
+            )
+
         with st.container(key="taxonomy_card_terminology"):
             terminology_editing = render_taxonomy_section_header(
                 "Terminology",

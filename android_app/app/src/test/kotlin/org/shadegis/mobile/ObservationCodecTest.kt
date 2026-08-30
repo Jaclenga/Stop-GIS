@@ -30,6 +30,7 @@ class ObservationCodecTest {
         assertFalse(decoded.migratedLegacyData)
         assertTrue(encoded.contains("\"schema_version\""))
         assertTrue(encoded.contains("\"shade_coverage\""))
+        assertTrue(encoded.contains("\"assessment_values\""))
         assertTrue(encoded.contains("\"route_labels\""))
     }
 

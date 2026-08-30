@@ -11,7 +11,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Shade-GIS Mobile"
+        android:label="Stop-GIS Mobile"
         android:icon="@android:drawable/ic_menu_camera"
         android:roundIcon="@android:drawable/ic_menu_camera"
         android:supportsRtl="true"

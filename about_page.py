@@ -7,18 +7,17 @@ def render_about_page(
     context_citation: str = "",
     context_metadata_citation: str = "",
 ) -> None:
-    st.title("Shade Study")
+    st.title("Stop Audit")
     st.markdown(f"### {study_summary}")
     st.markdown(
         """
         ## About the Study
 
-        This project documents shade conditions at transit stops and provides a reusable platform for
-        community-driven data collection, review, visualization, and publication.
+        This project documents infrastructure, amenities, accessibility, and passenger-comfort conditions at
+        transit stops through reproducible data collection, review, visualization, and publication.
 
-        The study combines official stop locations with shade observations to create an open map of
-        waiting-area conditions. The goal is to support transportation planning, accessibility research,
-        resilience work, and public understanding of the rider experience.
+        The study combines official stop locations with configured assessment modes. Each project exposes only
+        the modes relevant to its protocol while preserving raw independent observations and reviewed values.
 
         Classifications were based on visible shade coverage of the waiting area in available imagery rather than
         the mere presence of nearby vegetation or structures. Code what visibly shades the waiting area, not what
@@ -33,10 +32,15 @@ def render_about_page(
         ## Data Sources
 
         - Transit stop locations, such as GTFS `stops.txt`
-        - Expert, field-audit, imported, or community-submitted shade observations
+        - Expert, field-audit, imported, or community-submitted stop assessments
         - Optional project-specific attributes or GIS overlays supplied by the study team
 
-        ## Platform Fields
+        ## Assessment values
+
+        Enabled mode values are stored together in `assessment_values` and exposed as individual columns for
+        configured maps, filters, summaries, and exports. Each mode may collect its own comment and confidence.
+
+        ## Legacy shade projections
 
         - `shade_coverage`: the observed or voted amount of shade reaching the waiting area.
         - `shade_sources`: the observed or voted source labels for shade reaching the waiting area.

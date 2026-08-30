@@ -1,4 +1,4 @@
-"""Verify the configured Shade-GIS voting database without printing credentials."""
+"""Verify the configured Stop-GIS voting database without printing credentials."""
 
 from __future__ import annotations
 

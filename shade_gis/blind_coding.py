@@ -81,7 +81,7 @@ DEFAULT_IMAGE_INSTRUCTIONS = (
 )
 DEFAULT_STOP_INSTRUCTIONS = (
     "Assess the assigned transit stop independently using the evidence source you record. Do not view "
-    "existing Shade-GIS labels or other reviewers' answers before submission. Record whether you already "
+    "existing Stop-GIS labels or other reviewers' answers before submission. Record whether you already "
     "recognized the location. Submit one assessment for the stop; submitted ratings are locked."
 )
 DEFAULT_INSTRUCTIONS = DEFAULT_IMAGE_INSTRUCTIONS

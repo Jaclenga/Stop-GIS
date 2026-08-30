@@ -357,7 +357,7 @@ def test_website_verification_rejects_unrelated_success_page(monkeypatch):
     )
 
     assert verified is False
-    assert "did not identify this Shade-GIS study" in message
+    assert "did not identify this Stop-GIS study" in message
 
 
 def test_website_verification_requires_all_exact_static_identity_values(monkeypatch):
@@ -783,7 +783,7 @@ def test_publish_and_unpublish_existing_repository_automatically(deployment_tmp,
         if command[:3] == ("git", "diff", "--cached"):
             return CommandResult(1)
         if command == ("git", "config", "user.name"):
-            return CommandResult(0, stdout="Shade-GIS Test")
+            return CommandResult(0, stdout="Stop-GIS Test")
         if command == ("git", "config", "user.email"):
             return CommandResult(0, stdout="shade-gis-test@example.com")
         if command[:2] == ("git", "add"):

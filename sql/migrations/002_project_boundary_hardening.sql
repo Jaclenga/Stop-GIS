@@ -1,4 +1,4 @@
--- Upgrade existing Shade-GIS PostgreSQL databases with the tenant-boundary
+-- Upgrade existing Stop-GIS PostgreSQL databases with the tenant-boundary
 -- constraints that are present in sql/schema.sql for fresh installations.
 
 CREATE UNIQUE INDEX IF NOT EXISTS tenant_images_project_id_key

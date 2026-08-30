@@ -2,7 +2,7 @@
 
 ## Project status
 
-Shade Study Builder is currently maintained as a founder-led research software
+Stop-GIS Builder is currently maintained as a founder-led research software
 project. Major design decisions are still centralized so the platform can
 stabilize around a reusable workflow and schema.
 

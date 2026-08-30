@@ -59,7 +59,7 @@ pre-release phase while the reusable platform stabilizes.
 ## [0.1.0] - 2026-07-01
 
 ### Added
-- Reusable Shade Study Builder workflow for importing GTFS, CSV, GeoJSON,
+- Reusable Stop-GIS Builder workflow for importing GTFS, CSV, GeoJSON,
   zipped Shapefile, API-hosted, and manual stop data.
 - Multi-project local SQLite storage with schema notes for shared Postgres
   deployments.

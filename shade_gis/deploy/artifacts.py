@@ -35,7 +35,7 @@ def slugify_repo_name(value: str) -> str:
 def github_new_repo_url(project: dict[str, Any], repo_name: str) -> str:
     params = {
         "name": slugify_repo_name(repo_name),
-        "description": f"{project.get('name', 'Shade study')} Streamlit app",
+        "description": f"{project.get('name', 'Stop audit')} Streamlit app",
         "visibility": "public" if project.get("visibility") == "Public" else "private",
     }
     return "https://github.com/new?" + urllib.parse.urlencode(params)
@@ -162,13 +162,13 @@ def deploy_readme(
         publish_intro = "create the target repository used for this bundle"
         published_layout = (
             "The new repository contains only this public preview app and its runtime files. "
-            "It does not contain the Shade-GIS builder."
+            "It does not contain the Stop-GIS builder."
         )
     else:
         publish_intro = "publish into the target repository used for this bundle"
         published_layout = (
             f"The helper installs the public preview under `{EXISTING_REPO_PREVIEW_DIR}/` and protects a "
-            "repository-root Shade-GIS builder. If the root app is an older generated public runtime, the "
+            "repository-root Stop-GIS builder. If the root app is an older generated public runtime, the "
             "helper upgrades that active runtime in place. It also refreshes the generated "
             "`shade_study_stops.csv`, `shade_study_raw_labels.csv`, and `shade_study_config.json` snapshots "
             "at the repository root."
@@ -183,7 +183,7 @@ def deploy_readme(
     return _render_template(
         "README.md",
         {
-            "@@APP_NAME@@": str(project.get("name", "Shade Study")),
+            "@@APP_NAME@@": str(project.get("name", "Stop Audit")),
             "@@PUBLISHED_LAYOUT@@": published_layout,
             "@@BUNDLE_NAME@@": resolved_bundle_name,
             "@@PUBLISH_INTRO@@": publish_intro,

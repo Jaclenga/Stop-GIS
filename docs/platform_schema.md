@@ -1,12 +1,12 @@
-# Shade Study Platform Schema
+# Stop-GIS Platform Schema
 
 This document describes the durable project schema implemented by the Streamlit builder and the Postgres-ready relational schema in `sql/schema.sql`.
 
 ## Platform Backend
 
 The builder uses a local SQLite database by default. On Windows, the database is created under
-`%LOCALAPPDATA%\Shade-GIS\shade_study_builder.sqlite3` to avoid OneDrive file-locking issues; on
-other systems it falls back to `platform_data/shade_study_builder.sqlite3`. Set `SHADE_GIS_DB_PATH`
+`%LOCALAPPDATA%\Stop-GIS\stop_gis_builder.sqlite3` to avoid OneDrive file-locking issues; on
+other systems it falls back to `platform_data/stop_gis_builder.sqlite3`. Set `STOP_GIS_DB_PATH`
 to point the app at a different SQLite database file. The database stores multiple projects and
 treats Streamlit session state as a live editing cache, not the durable source of record.
 Deployment destination settings entered on the Deploy page are stored per project in
@@ -21,13 +21,15 @@ The canonical relational shape is:
 
 | Entity | Purpose |
 | --- | --- |
-| `projects` | One row per shade study, including publication metadata and source metadata. |
-| `project_settings` | JSON methodology, visualization, and deployment settings for each project. |
+| `projects` | One row per stop audit, including publication metadata and source metadata. |
+| `project_settings` | JSON methodology, visualization, deployment, and optional scoring settings for each project. |
+| `assessment_modes` | Configurable mode definitions, allowed values, measurement level, required/enabled state, scoring metadata, and display settings. |
+| `assessments` | Immutable multi-mode reviewer or adjudicator submissions with comments, confidence, identity, evidence method, and timestamp. |
 | `shade_taxonomy` | Editable derived map category names, definitions, colors, and sort order. |
 | `stops` | Per-project stop records, priority scores, review fields, and extra imported columns. |
 | `shade_votes` | Deployed-app coverage votes and separate shade-source selections, isolated by study, stop, and browser-session voter ID. |
 | `images` | Uploaded or referenced imagery associated with projects and stops. |
-| `shade_labels` | Raw expert, crowd, imported, or model-assisted label submissions. |
+| `shade_labels` | Legacy-compatible raw shade submissions retained for existing studies and voting deployments. |
 | `blind_protocols` | Versioned protocol, image/stop assessment unit, phase gate, target rating count, and prespecified agreement threshold. |
 | `blind_images` | Random public aliases that separate coding assignments from source image and stop identifiers. |
 | `blind_assignments` | Per-coder randomized image assignments and completion state. |
@@ -53,7 +55,7 @@ Each study is configured as a project.
 | `description` | Short project description. |
 | `owners` | People or organizations responsible for the project. |
 | `visibility` | Public or private publication status. |
-| `dataset_version` | Version of the current stop and shade dataset. |
+| `dataset_version` | Version of the current stop-assessment dataset. |
 | `methodology_version` | Version of the current assessment method. |
 | `source_name` | Primary transit dataset or source label. |
 | `source_license` | License or terms for the source data. |
@@ -82,9 +84,9 @@ Import guardrails are enforced before parsing so open-source deployments have sa
 removing local flexibility. File and overlay uploads default to 50 MB; API responses default to
 15 MB; ZIP uploads default to 256 members, 80 MB per member, and 150 MB total uncompressed size.
 API URLs must use `http` or `https`, cannot include embedded credentials, and cannot target
-localhost/private-network addresses unless `SHADE_GIS_ALLOW_PRIVATE_API_URLS=1` is set. Operators
-can set `SHADE_GIS_ALLOWED_API_HOSTS` to a comma-separated host allowlist and can tune byte/member
-limits with the `SHADE_GIS_MAX_*` environment variables documented in `README.md`.
+localhost/private-network addresses unless `STOP_GIS_ALLOW_PRIVATE_API_URLS=1` is set. Operators
+can set `STOP_GIS_ALLOWED_API_HOSTS` to a comma-separated host allowlist and can tune byte/member
+limits with the `STOP_GIS_MAX_*` environment variables documented in `README.md`.
 
 Required fields:
 
@@ -115,6 +117,23 @@ Columns outside the required and optional platform fields are preserved as datas
 charts, and exports when the active dataset contains usable values, but they are not promoted into
 the core platform schema.
 
+## Assessment modes and observations
+
+Mode definitions are data, not SQL columns. `assessment_modes.mode_key` is stable while its label,
+definition, allowed values, ordinal ordering, comment/confidence behavior, required/enabled state,
+sort order, measurement level, score mapping, and display settings remain configurable per project.
+
+`assessments.assessment_values_json` stores one or more mode values in a single immutable submission.
+Comments and confidence use separate per-mode JSON objects. `submission_type` distinguishes
+independent ratings from adjudications; an adjudication may refer to an earlier row with
+`supersedes_id` only when that row belongs to the same project and stop, but never mutates that
+rating. Every assessment write advances the project revision so a stale builder snapshot cannot
+overwrite or cascade-delete newer evidence. Current reviewed values are projected into
+`stops.extra_json.assessment_values` and materialized for maps, filters, summaries, and exports.
+
+The startup migration is additive. A project with no generic definitions receives enabled
+`shade_coverage` and `shade_source` modes derived from its legacy taxonomy. Legacy shade tables and
+columns remain so existing data and generated deployments stay readable.
 The Data page runs the active `stops` dataset and durable `images` registry through one centralized
 `Data Quality` report. Duplicate stop IDs, missing coordinates, missing required fields, invalid
 point geometries, and orphaned images are publication-blocking findings. Invalid point geometry
@@ -277,7 +296,7 @@ Authenticated voters use a keyed OIDC subject; anonymous voters use keyed reques
 to a random browser-session identifier when those signals are unavailable. A partial unique network
 index blocks browser rotation on the same anonymous network and stop. Database locks serialize rate
 checks with inserts so concurrent submissions cannot race the configured limits.
-It uses `SHADE_GIS_VOTE_DATABASE_URL` for shared PostgreSQL storage when configured and uses
+It uses `STOP_GIS_VOTE_DATABASE_URL` for shared PostgreSQL storage when configured and uses
 `.shade_gis_votes.sqlite3` only when no PostgreSQL URL is configured. Hosted deployments should use
 PostgreSQL because Streamlit Community Cloud local files are ephemeral. PostgreSQL migrations are
 explicit, locked, idempotent, and schema-versioned; the normal voting runtime verifies the version but
@@ -315,13 +334,14 @@ The `Preview` page exports:
 - Stops CSV.
 - Stops GeoJSON.
 - Raw labels CSV, when raw labels have been submitted.
+- Raw generic assessments CSV, with mode-level export visibility applied.
 - Study configuration JSON containing project metadata, the editable `terminology` definitions, shade taxonomy,
   methodology copy, visualization settings, and import log.
 
 The Exports tab presents these files in one compact catalog. Each row explains the file's purpose,
-record count, generated size, relevant import or label date, and download action. Raw Labels CSV
-remains visible but disabled when no annotations exist, which keeps the export layout stable as the
-project progresses. Dataset source, format, row count, and import timestamp are shown separately in
+record count, generated size, relevant import or assessment date, and download action. Raw label and
+assessment exports remain visible but disabled when their corresponding history is empty, which
+keeps the export layout stable as the project progresses. Dataset source, format, row count, and import timestamp are shown separately in
 the `Dataset Provenance` section below the file catalog rather than as an unlabeled dataframe.
 
 The `Deploy` page presents publishing as a four-stage wizard: `Check project`, `Prepare website`,

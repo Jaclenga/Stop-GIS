@@ -1,6 +1,6 @@
 # Bring your own voting database
 
-Shade-GIS helps you configure voting infrastructure in your own provider account. Shade-GIS does
+Stop-GIS helps you configure voting infrastructure in your own provider account. Stop-GIS does
 not create, own, centrally store, back up, or administer your research database. The generated app
 connects directly from its server process to your database.
 
@@ -11,8 +11,8 @@ connects directly from its server process to your database.
   support messages, or a downloaded deployment bundle.
 - This package contains placeholders only. `.gitignore` excludes `.env`, real Streamlit secrets,
   SQLite files, and common credential filenames.
-- Keep `SHADE_GIS_VOTE_FINGERPRINT_SECRET` stable. Losing or rotating it changes anonymous voter
-  pseudonyms and can weaken duplicate-vote continuity. It cannot be recovered by Shade-GIS.
+- Keep `STOP_GIS_VOTE_FINGERPRINT_SECRET` stable. Losing or rotating it changes anonymous voter
+  pseudonyms and can weaken duplicate-vote continuity. It cannot be recovered by Stop-GIS.
 
 ## Recommended PostgreSQL roles
 
@@ -31,25 +31,25 @@ administrator. Role creation and passwords are deliberately not automated.
 1. Create a PostgreSQL 14+ project in [Neon](https://console.neon.tech/),
    [Supabase](https://supabase.com/dashboard/projects), or another provider. Require TLS with
    `sslmode=require`, `verify-ca`, or `verify-full`.
-2. Download and unzip the Shade-GIS self-hosting package. Install dependencies with
+2. Download and unzip the Stop-GIS self-hosting package. Install dependencies with
    `python -m pip install -r requirements.txt`.
-3. Set `SHADE_GIS_VOTE_DATABASE_URL` temporarily in your local process to the owner-role URL, then
+3. Set `STOP_GIS_VOTE_DATABASE_URL` temporarily in your local process to the owner-role URL, then
    run `python scripts/migrate_database.py`. The migration is transactional, idempotent, protected
    by a PostgreSQL advisory lock, and refuses to overwrite a newer schema version.
 4. Apply `migrations/least_privilege_roles.sql.example`. Replace the environment value with the
    runtime-role URL and run `python scripts/verify_database.py`. Verification checks PostgreSQL
    version, schema version, and insert/read/update/delete access, then removes its probe record.
-5. Generate a 32-byte fingerprint secret with the browser-only generator in the Shade-GIS Deploy
-   page. Copy it immediately; the generator does not send it to Shade-GIS.
+5. Generate a 32-byte fingerprint secret with the browser-only generator in the Stop-GIS Deploy
+   page. Copy it immediately; the generator does not send it to Stop-GIS.
 6. Push the generated app to GitHub. Do not commit `.env` or `.streamlit/secrets.toml`.
 7. In Streamlit Community Cloud, create the app and choose `app.py` for a new standalone repository
-   or `preview_app/app.py` when publishing into the Shade-GIS repository.
+   or `preview_app/app.py` when publishing into the Stop-GIS repository.
 8. Open **Advanced settings -> Secrets** and paste values based on
    `.streamlit/secrets.toml.example`:
 
    ```toml
-   SHADE_GIS_VOTE_DATABASE_URL = "postgresql://RUNTIME_USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"
-   SHADE_GIS_VOTE_FINGERPRINT_SECRET = "YOUR_BROWSER_GENERATED_SECRET"
+   STOP_GIS_VOTE_DATABASE_URL = "postgresql://RUNTIME_USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"
+   STOP_GIS_VOTE_FINGERPRINT_SECRET = "YOUR_BROWSER_GENERATED_SECRET"
    ```
 
 9. Deploy, open a stop with voting enabled, and confirm the app reports
@@ -72,12 +72,12 @@ virtual machines, and local servers:
 
 For local PostgreSQL or a private network endpoint, the migration and verification helpers block
 the target by default as SSRF protection. A trusted self-hosted operator can explicitly set
-`SHADE_GIS_ALLOW_PRIVATE_DATABASE_HOSTS=true` for that process. Never enable that override on a
-publicly accessible Shade-GIS builder.
+`STOP_GIS_ALLOW_PRIVATE_DATABASE_HOSTS=true` for that process. Never enable that override on a
+publicly accessible Stop-GIS builder.
 
 Client-address forwarding is disabled by default. If every request reaches the app through a trusted
 reverse proxy that removes client-supplied forwarding headers and writes its own, set
-`SHADE_GIS_TRUST_PROXY_HEADERS=true`. Do not enable it when clients can reach the app directly or the
+`STOP_GIS_TRUST_PROXY_HEADERS=true`. Do not enable it when clients can reach the app directly or the
 proxy passes through arbitrary `Forwarded`, `X-Forwarded-For`, or `CF-Connecting-IP` values.
 
 ## Local SQLite

@@ -2,7 +2,7 @@
 
 ## What this repository supports today
 
-Shade Study Builder is maintained as an actively evolving research software
+Stop-GIS Builder is maintained as an actively evolving research software
 prototype. The current support target is:
 
 - local Streamlit use on a developer machine

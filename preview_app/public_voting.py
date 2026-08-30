@@ -106,12 +106,13 @@ DEFAULT_VOTING_CONFIG = {
     "max_new_votes_per_stop_per_hour": 30,
 }
 
-VOTE_DATABASE_URL_ENV = "SHADE_GIS_VOTE_DATABASE_URL"
-VOTE_DB_PATH_ENV = "SHADE_GIS_VOTE_DB_PATH"
-VOTE_FINGERPRINT_SECRET_ENV = "SHADE_GIS_VOTE_FINGERPRINT_SECRET"
-ALLOW_PRIVATE_DATABASE_HOSTS_ENV = "SHADE_GIS_ALLOW_PRIVATE_DATABASE_HOSTS"
-TRUST_PROXY_HEADERS_ENV = "SHADE_GIS_TRUST_PROXY_HEADERS"
-DEFAULT_VOTE_DB_FILENAME = ".shade_gis_votes.sqlite3"
+VOTE_DATABASE_URL_ENV = "STOP_GIS_VOTE_DATABASE_URL"
+VOTE_DB_PATH_ENV = "STOP_GIS_VOTE_DB_PATH"
+VOTE_FINGERPRINT_SECRET_ENV = "STOP_GIS_VOTE_FINGERPRINT_SECRET"
+ALLOW_PRIVATE_DATABASE_HOSTS_ENV = "STOP_GIS_ALLOW_PRIVATE_DATABASE_HOSTS"
+TRUST_PROXY_HEADERS_ENV = "STOP_GIS_TRUST_PROXY_HEADERS"
+DEFAULT_VOTE_DB_FILENAME = ".stop_gis_votes.sqlite3"
+LEGACY_VOTE_DB_FILENAME = ".shade_gis_votes.sqlite3"
 POSTGRES_CONNECT_TIMEOUT_SECONDS = 5
 POSTGRES_STATEMENT_TIMEOUT_MS = 5_000
 POSTGRES_LOCK_TIMEOUT_MS = 5_000
@@ -351,13 +352,19 @@ def community_result(
 
 
 def _secret_or_environment(name: str) -> str:
-    environment_value = str(os.environ.get(name, "")).strip()
+    legacy_name = name.replace("STOP_GIS_", "SHADE_GIS_", 1)
+    environment_value = str(os.environ.get(name) or os.environ.get(legacy_name, "")).strip()
     if environment_value:
         return environment_value
     try:
-        return str(st.secrets.get(name, "")).strip()
+        return str(st.secrets.get(name) or st.secrets.get(legacy_name, "")).strip()
     except Exception:
         return ""
+
+
+def _environment_value(name: str) -> str:
+    legacy_name = name.replace("STOP_GIS_", "SHADE_GIS_", 1)
+    return str(os.environ.get(name) or os.environ.get(legacy_name, ""))
 
 
 def configured_vote_database_url() -> str:
@@ -368,7 +375,10 @@ def configured_vote_db_path(app_dir: Path | None = None) -> Path:
     configured = _secret_or_environment(VOTE_DB_PATH_ENV)
     if configured:
         return Path(configured).expanduser()
-    return (app_dir or Path(__file__).resolve().parent) / DEFAULT_VOTE_DB_FILENAME
+    directory = app_dir or Path(__file__).resolve().parent
+    legacy = directory / LEGACY_VOTE_DB_FILENAME
+    preferred = directory / DEFAULT_VOTE_DB_FILENAME
+    return legacy if legacy.exists() and not preferred.exists() else preferred
 
 
 def vote_store_label(database_url: str | None = None) -> str:
@@ -506,7 +516,7 @@ def validate_vote_database_setup_url(database_url: str) -> str:
     if not parsed.hostname or not parsed.username or not parsed.path.strip("/"):
         raise ValueError("The PostgreSQL URL must include a user, host, and database name.")
 
-    allow_private = _config_bool(os.environ.get(ALLOW_PRIVATE_DATABASE_HOSTS_ENV), False)
+    allow_private = _config_bool(_environment_value(ALLOW_PRIVATE_DATABASE_HOSTS_ENV), False)
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     security_parameters = {
         "sslmode",
@@ -659,7 +669,7 @@ def _require_postgres_version(connection: Any) -> int:
     except Exception as exc:
         raise VoteStorageError("The PostgreSQL server version could not be verified.") from exc
     if version < POSTGRES_MIN_VERSION:
-        raise VoteStorageError("Shade-GIS voting requires PostgreSQL 14 or newer.")
+        raise VoteStorageError("Stop-GIS voting requires PostgreSQL 14 or newer.")
     return version
 
 
@@ -830,7 +840,7 @@ def privacy_preserving_voter_id(
         if str(value).strip()
     }
     raw_ip = str(client_ip or "").strip()
-    if not raw_ip and _config_bool(os.environ.get(TRUST_PROXY_HEADERS_ENV), False):
+    if not raw_ip and _config_bool(_environment_value(TRUST_PROXY_HEADERS_ENV), False):
         raw_ip = (
             normalized_headers.get("cf-connecting-ip")
             or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
@@ -862,7 +872,7 @@ def privacy_preserving_network_id(
         if str(value).strip()
     }
     raw_ip = str(client_ip or "").strip()
-    if not raw_ip and _config_bool(os.environ.get(TRUST_PROXY_HEADERS_ENV), False):
+    if not raw_ip and _config_bool(_environment_value(TRUST_PROXY_HEADERS_ENV), False):
         raw_ip = (
             normalized_headers.get("cf-connecting-ip")
             or normalized_headers.get("x-forwarded-for", "").split(",", 1)[0].strip()

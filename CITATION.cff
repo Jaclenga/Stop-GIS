@@ -1,15 +1,18 @@
 cff-version: 1.2.0
-message: "If you use this software or a published shade-study dataset built with it, cite the repository and the released dataset version."
-title: "Shade Study Builder"
+message: "If you use this software or a published stop-audit dataset built with it, cite the repository and the released dataset version."
+title: "Stop-GIS"
 type: software
 authors:
   - name: "Jack Lenga"
-abstract: "A Streamlit platform for preparing, visualizing, and publishing reusable bus stop shade studies from GTFS and mapped CSV datasets."
+abstract: "An open-source platform for reproducible audits of public-transit stop infrastructure, amenities, accessibility, and passenger comfort."
 keywords:
   - transit
   - GTFS
   - shade
   - urban heat
+  - accessibility
+  - transit amenities
+  - passenger comfort
   - open data
 license: MIT
 version: "0.1.0"

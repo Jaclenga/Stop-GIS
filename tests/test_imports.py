@@ -244,7 +244,7 @@ def test_api_url_guard_supports_deployment_allowlist(monkeypatch):
     )
 
     assert validate_api_url("https://data.transit.example.org/stops.csv") == "https://data.transit.example.org/stops.csv"
-    with pytest.raises(ValueError, match="not in SHADE_GIS_ALLOWED_API_HOSTS"):
+    with pytest.raises(ValueError, match="not in STOP_GIS_ALLOWED_API_HOSTS"):
         validate_api_url("https://other.example.org/stops.csv")
 
 

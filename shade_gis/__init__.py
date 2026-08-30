@@ -1,1 +1,1 @@
-"""Shade-GIS package modules."""
+"""Stop-GIS package modules."""

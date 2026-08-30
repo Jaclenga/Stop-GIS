@@ -462,21 +462,21 @@ def render_admin_results(project_id: str, protocol: dict[str, Any]) -> None:
     downloads[0].download_button(
         "Download submitted reviews",
         published_app.dataframe_to_safe_csv(ratings),
-        "shade_study_blind_ratings.csv",
+        "stop_audit_independent_ratings.csv",
         "text/csv",
         width="stretch",
     )
     downloads[1].download_button(
         "Download adjudications",
         published_app.dataframe_to_safe_csv(adjudications),
-        "shade_study_blind_adjudications.csv",
+        "stop_audit_adjudications.csv",
         "text/csv",
         width="stretch",
     )
     downloads[2].download_button(
         "Download protocol",
         protocol_json(project_id).encode("utf-8"),
-        "shade_study_blind_protocol.json",
+        "stop_audit_reliability_protocol.json",
         "application/json",
         width="stretch",
     )
@@ -518,7 +518,7 @@ def render_admin_workflow(
         st.download_button(
             "Download prespecified protocol",
             protocol_json(project_id).encode("utf-8"),
-            "shade_study_blind_protocol.json",
+            "stop_audit_reliability_protocol.json",
             "application/json",
         )
 

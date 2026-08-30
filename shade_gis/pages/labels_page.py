@@ -21,10 +21,15 @@ from builder_app import (
     save_active_project_to_store,
 )
 from platform_store import (
+    add_adjudication,
+    add_assessment,
     add_shade_label,
+    list_assessments,
     list_review_history,
     list_shade_labels,
 )
+from stop_gis.assessment_components import render_assessment_form
+from stop_gis.assessment_modes import assessment_values_from_record, normalize_modes, reliability_for_mode
 from shade_gis.builder_labels import (
     RESOLVED_REVIEW_STATUSES,
     label_source_code,
@@ -56,7 +61,13 @@ REVIEW_STATUS_DEFINITIONS = {
     "Archived": "The stop or decision is retained for audit history but removed from active review.",
 }
 
-LABEL_WORKFLOW_OPTIONS = ["Review Queue", "Submit Label", "Audit History"]
+LABEL_WORKFLOW_OPTIONS = [
+    "Review Queue",
+    "Submit Assessment",
+    "Adjudicate Assessment",
+    "Submit Label",
+    "Audit History",
+]
 DEFAULT_LABEL_WORKFLOW = "Review Queue"
 CONFIDENCE_LEVEL_SCORES = {"Low": 0.35, "Medium": 0.7, "High": 1.0}
 
@@ -209,7 +220,9 @@ def render_label_workflow_navigation() -> str:
         current = DEFAULT_LABEL_WORKFLOW
         st.session_state["label_workflow_mode"] = current
     st.caption("Choose a labelling task.")
-    queue_col, submit_col, history_col, _ = st.columns([1, 1, 1, 4])
+    queue_col, assessment_col, adjudicate_col, submit_col, history_col, _ = st.columns(
+        [1, 1.15, 1.2, 1, 1, 2]
+    )
     queue_col.button(
         "Review Queue",
         type="secondary",
@@ -218,9 +231,25 @@ def render_label_workflow_navigation() -> str:
         on_click=set_label_workflow,
         args=("Review Queue",),
     )
+    assessment_col.button(
+        "+ Submit Assessment",
+        type="primary",
+        width="stretch",
+        key="assessment_action_submit",
+        on_click=set_label_workflow,
+        args=("Submit Assessment",),
+    )
+    adjudicate_col.button(
+        "Adjudicate",
+        type="secondary",
+        width="stretch",
+        key="assessment_action_adjudicate",
+        on_click=set_label_workflow,
+        args=("Adjudicate Assessment",),
+    )
     submit_col.button(
         "+ Submit Label",
-        type="primary",
+        type="secondary",
         width="stretch",
         key="label_action_submit",
         on_click=set_label_workflow,
@@ -541,7 +570,7 @@ def render_review_audit_history(project_id: str, selected_stop_id: str | None) -
     st.download_button(
         "Download review audit CSV",
         published_app.dataframe_to_safe_csv(history),
-        "shade_study_review_audit.csv",
+        "stop_audit_review_history.csv",
         "text/csv",
     )
 
@@ -1070,7 +1099,7 @@ def render_raw_label_history(project_id: str) -> None:
         st.download_button(
             "Download raw labels CSV",
             published_app.dataframe_to_safe_csv(history),
-            "shade_study_raw_labels.csv",
+            "stop_audit_raw_labels.csv",
             "text/csv",
         )
 
@@ -1085,6 +1114,101 @@ def render_review_label_section(
     if selected_stop_id and selected_stop is not None:
         render_shared_label_reference_map(queue_records, selected_stop_id, taxonomy)
         render_admin_review_decision(project_id, selected_stop_id, selected_stop, taxonomy)
+
+
+def render_assessment_collection(project_id: str, stops: pd.DataFrame) -> None:
+    st.subheader("Submit Stop Assessment")
+    st.caption(
+        "Record only the modes enabled by this project. Each submission is immutable; applying it updates the current map projection without replacing the raw assessment."
+    )
+    stop_options = stops.reset_index(drop=True)
+    labels = [stop_picker_label(row) for _, row in stop_options.iterrows()]
+    selected_index = st.selectbox(
+        "Stop to assess", range(len(stop_options)),
+        format_func=lambda index: labels[index], key="assessment_stop_index",
+    )
+    selected_stop = stop_options.iloc[int(selected_index)]
+    stop_id = str(selected_stop.get("stop_id", ""))
+    reviewer_cols = st.columns(3)
+    reviewer_id = reviewer_cols[0].text_input("Reviewer ID", key="assessment_reviewer_id")
+    reviewer_role = reviewer_cols[1].selectbox("Reviewer role", LABELER_ROLE_OPTIONS, key="assessment_reviewer_role")
+    evidence_method = reviewer_cols[2].selectbox("Evidence method", LABEL_SOURCE_OPTIONS, key="assessment_evidence_method")
+    payload = render_assessment_form(
+        st.session_state.get("assessment_modes", []),
+        key_prefix=f"assessment:{stop_id}",
+        defaults=assessment_values_from_record(selected_stop.to_dict()),
+    )
+    if payload is None:
+        return
+    payload.update(
+        {
+            "stop_id": stop_id,
+            "reviewer_id": reviewer_id,
+            "reviewer_role": reviewer_role,
+            "evidence_method": label_source_code(evidence_method),
+        }
+    )
+    assessment_id = add_assessment(project_id, payload, apply_current=True)
+    load_project_into_session(project_id)
+    st.success(f"Saved immutable assessment {assessment_id} and updated the current stop view.")
+    st.rerun()
+
+
+def render_assessment_adjudication(project_id: str, stops: pd.DataFrame) -> None:
+    st.subheader("Adjudicate Stop Assessment")
+    independent = list_assessments(project_id, submission_type="independent")
+    if independent.empty:
+        st.info("Submit at least one independent assessment before adjudicating.")
+        return
+    options = list(range(len(independent)))
+    selected_index = st.selectbox(
+        "Independent assessment to resolve",
+        options,
+        format_func=lambda index: (
+            f"Stop {independent.iloc[index]['stop_id']} | "
+            f"{independent.iloc[index].get('reviewer_id') or 'anonymous reviewer'} | "
+            f"{independent.iloc[index].get('created_at', '')}"
+        ),
+        key="assessment_adjudication_source",
+    )
+    source = independent.iloc[int(selected_index)]
+    stop_id = str(source["stop_id"])
+    if stop_id not in set(stops["stop_id"].astype(str)):
+        st.error("The selected assessment's stop is no longer available.")
+        return
+    reviewer_cols = st.columns(3)
+    reviewer_id = reviewer_cols[0].text_input(
+        "Adjudicator ID", key="assessment_adjudicator_id"
+    )
+    reviewer_role = reviewer_cols[1].selectbox(
+        "Adjudicator role", LABELER_ROLE_OPTIONS, key="assessment_adjudicator_role"
+    )
+    evidence_method = reviewer_cols[2].selectbox(
+        "Evidence method", LABEL_SOURCE_OPTIONS, key="assessment_adjudication_evidence"
+    )
+    payload = render_assessment_form(
+        st.session_state.get("assessment_modes", []),
+        key_prefix=f"adjudication:{source['id']}",
+        defaults=dict(source.get("assessment_values") or {}),
+    )
+    if payload is None:
+        return
+    if not reviewer_id.strip():
+        st.error("An adjudicator ID is required for an auditable decision.")
+        return
+    payload.update(
+        {
+            "stop_id": stop_id,
+            "reviewer_id": reviewer_id.strip(),
+            "reviewer_role": reviewer_role,
+            "evidence_method": label_source_code(evidence_method),
+            "supersedes_id": str(source["id"]),
+        }
+    )
+    assessment_id = add_adjudication(project_id, payload, apply_current=True)
+    load_project_into_session(project_id)
+    st.success(f"Saved adjudication {assessment_id} and updated the current stop view.")
+    st.rerun()
 
 
 def render_labels_page() -> None:
@@ -1106,14 +1230,37 @@ def render_labels_page() -> None:
     workflow = render_label_workflow_navigation()
     if workflow == "Review Queue":
         render_review_label_section(project_id, stops, labels, taxonomy)
+    elif workflow == "Submit Assessment":
+        render_assessment_collection(project_id, stops)
+    elif workflow == "Adjudicate Assessment":
+        render_assessment_adjudication(project_id, stops)
     elif workflow == "Submit Label":
         render_raw_label_collection(project_id, stops, labels, taxonomy)
     else:
         st.subheader("Audit History")
         st.caption("A read-only record of submitted labels and moderator decisions.")
         render_raw_label_history(project_id)
+        assessments = list_assessments(project_id)
+        if not assessments.empty:
+            st.markdown("#### Generic assessment history")
+            st.dataframe(assessments, width="stretch", hide_index=True)
+            st.download_button(
+                "Download assessments CSV",
+                published_app.dataframe_to_safe_csv(assessments),
+                "stop_audit_assessments.csv",
+                "text/csv",
+            )
+            independent_assessments = assessments[
+                assessments["submission_type"].eq("independent")
+            ].copy()
+            reliability = pd.DataFrame(
+                [
+                    reliability_for_mode(independent_assessments, mode)
+                    for mode in normalize_modes(st.session_state.get("assessment_modes", []))
+                    if mode["enabled"]
+                ]
+            )
+            if not reliability.empty:
+                st.markdown("#### Reliability by assessment mode")
+                st.dataframe(reliability, width="stretch", hide_index=True)
         render_review_audit_history(project_id, None)
-
-
-
-

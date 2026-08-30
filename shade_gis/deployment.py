@@ -210,7 +210,9 @@ def detect_deployment_target(
         branch = _command_value(["git", "branch", "--show-current"], command_cwd, runner)
     if not branch:
         branch = "main"
-    public_url = normalize_public_url(os.environ.get("SHADE_GIS_PUBLIC_URL"))
+    public_url = normalize_public_url(
+        os.environ.get("STOP_GIS_PUBLIC_URL") or os.environ.get("SHADE_GIS_PUBLIC_URL")
+    )
     return DeploymentTarget(
         repository=repository,
         repository_url=remote or github_repository_url(repository),
@@ -342,7 +344,7 @@ def deployment_readiness(
         return ReadinessResult(
             False,
             "Install the publishing helper",
-            "Git is required once on this computer so Shade-GIS can publish updates.",
+            "Git is required once on this computer so Stop-GIS can publish updates.",
             "View setup help",
             "advanced",
         )
@@ -357,7 +359,7 @@ def deployment_readiness(
     return ReadinessResult(
         True,
         "Ready to publish",
-        "Shade-GIS found the project data and publishing destination.",
+        "Stop-GIS found the project data and publishing destination.",
     )
 
 
@@ -405,7 +407,7 @@ def deployment_bundle_manifest(bundle_data: bytes) -> dict:
         raise RuntimeError("The deployment package is not a valid ZIP file.") from exc
     if content is None:
         raise RuntimeError(
-            "The deployment package has no validation manifest. Download a fresh package from Shade-GIS."
+            "The deployment package has no validation manifest. Download a fresh package from Stop-GIS."
         )
     try:
         manifest = json.loads(content.decode("utf-8"))
@@ -578,10 +580,10 @@ def _ensure_commit_identity(worktree: Path, logs: list[str], runner: CommandRunn
     name = runner(["git", "config", "user.name"], worktree, 8)
     email = runner(["git", "config", "user.email"], worktree, 8)
     if not name.stdout.strip():
-        _checked(["git", "config", "user.name", "Shade-GIS Publisher"], worktree, logs, runner)
+        _checked(["git", "config", "user.name", "Stop-GIS Publisher"], worktree, logs, runner)
     if not email.stdout.strip():
         _checked(
-            ["git", "config", "user.email", "shade-gis-publisher@users.noreply.github.com"],
+            ["git", "config", "user.email", "stop-gis-publisher@users.noreply.github.com"],
             worktree,
             logs,
             runner,
@@ -736,7 +738,7 @@ def _refuse_unowned_collisions(
     )
     if collisions:
         raise RuntimeError(
-            "Publishing would overwrite repository files not owned by this Shade-GIS deployment: "
+            "Publishing would overwrite repository files not owned by this Stop-GIS deployment: "
             + ", ".join(collisions)
         )
 
@@ -770,7 +772,7 @@ def _publish_existing(
     ):
         raise RuntimeError(
             "The repository's .streamlit/config.toml does not enable static file serving. "
-            "Set server.enableStaticServing = true there before publishing so Shade-GIS can verify the hosted study."
+            "Set server.enableStaticServing = true there before publishing so Stop-GIS can verify the hosted study."
         )
     planned_paths = [
         *[f"{EXISTING_PREVIEW_DIR}/{name}" for name in EXISTING_BUNDLE_FILES],
@@ -828,7 +830,7 @@ def _publish_existing(
         commit = _checked(["git", "rev-parse", "HEAD"], worktree, logs, runner).stdout.strip()
         return False, commit
     if diff.returncode != 1:
-        raise RuntimeError(diff.output or "Shade-GIS could not inspect the prepared website update.")
+        raise RuntimeError(diff.output or "Stop-GIS could not inspect the prepared website update.")
     _ensure_commit_identity(worktree, logs, runner)
     _checked(
         ["git", "commit", "-m", normalize_deploy_commit_message(target.commit_message)],
@@ -905,7 +907,7 @@ def verify_website(
             clean_url, addresses = _validated_web_target(
                 identity_url,
                 label="Website",
-                allow_private_env="SHADE_GIS_ALLOW_PRIVATE_WEBSITE_URLS",
+                allow_private_env="STOP_GIS_ALLOW_PRIVATE_WEBSITE_URLS",
             )
             for redirect_count in range(6):
                 connection, response = _open_pinned_api_response(clean_url, addresses)
@@ -917,7 +919,7 @@ def verify_website(
                         clean_url, addresses = _validated_web_target(
                             urllib.parse.urljoin(clean_url, location),
                             label="Website",
-                            allow_private_env="SHADE_GIS_ALLOW_PRIVATE_WEBSITE_URLS",
+                            allow_private_env="STOP_GIS_ALLOW_PRIVATE_WEBSITE_URLS",
                         )
                         continue
                     if 200 <= response.status < 400:
@@ -935,7 +937,7 @@ def verify_website(
                         if all(marker in available_values for marker in markers):
                             return True, f"Website identity was verified with HTTP {response.status}."
                         last_error = (
-                            f"Website responded with HTTP {response.status}, but did not identify this Shade-GIS study."
+                            f"Website responded with HTTP {response.status}, but did not identify this Stop-GIS study."
                         )
                         break
                     last_error = f"Website responded with HTTP {response.status}."
@@ -1104,7 +1106,7 @@ def unpublish_website(
                     False,
                     changed=False,
                     message=(
-                        "No unchanged Shade-GIS deployment manifest was found. "
+                        "No unchanged Stop-GIS deployment manifest was found. "
                         "Unpublish was stopped to protect repository files."
                     ),
                     logs=logs,
@@ -1164,7 +1166,7 @@ def unpublish_website(
             existing.append(manifest_relative)
             _checked(["git", "rm", "--ignore-unmatch", "--", *existing], worktree, logs, runner)
             _ensure_commit_identity(worktree, logs, runner)
-            _checked(["git", "commit", "-m", "Unpublish Shade-GIS website"], worktree, logs, runner)
+            _checked(["git", "commit", "-m", "Unpublish Stop-GIS website"], worktree, logs, runner)
             _checked(["git", "push", "origin", f"HEAD:{target.branch}"], worktree, logs, runner, 180)
             commit = _checked(["git", "rev-parse", "HEAD"], worktree, logs, runner).stdout.strip()
         return PublishResult(

@@ -112,6 +112,12 @@ def dataset_status_table(
     unresolved = disagreement_queue_table(stops, labels, review_history)
     unresolved_ids = set(unresolved["stop_id"].astype(str)) if not unresolved.empty else set()
     status["unresolved_disagreement"] = status["stop_id"].isin(unresolved_ids)
+    if "assessment_values" in status.columns:
+        status["_has_assessment_values"] = status["assessment_values"].map(
+            lambda value: bool(value) if isinstance(value, dict) else str(value or "").strip() not in {"", "{}", "nan"}
+        )
+    else:
+        status["_has_assessment_values"] = False
 
     def work_status(row: pd.Series) -> str:
         review_status = str(row.get("review_status", "") or "")
@@ -121,13 +127,21 @@ def dataset_status_table(
             return "Reviewed"
         if review_status in DATASET_ATTENTION_STATUSES or bool(row.get("disagreement_flag", False)):
             return "Needs Review"
-        if int(row.get("label_count", 0) or 0) == 0 and row.get("final_label") == "Not set":
+        if (
+            int(row.get("label_count", 0) or 0) == 0
+            and row.get("final_label") == "Not set"
+            and not bool(row.get("_has_assessment_values", False))
+        ):
             return "Unlabeled"
         return "Needs Review"
 
     status["dataset_status"] = status.apply(work_status, axis=1)
-    status["is_labeled"] = (status["label_count"] > 0) | status["final_label"].ne("Not set")
-    return status
+    status["is_labeled"] = (
+        (status["label_count"] > 0)
+        | status["final_label"].ne("Not set")
+        | status["_has_assessment_values"]
+    )
+    return status.drop(columns=["_has_assessment_values"])
 
 
 def dataset_status_metrics(status: pd.DataFrame) -> dict[str, int | float]:
@@ -246,7 +260,7 @@ def render_project_storage_controls() -> None:
 
     def project_label(project_id: str) -> str:
         project = next((item for item in projects if item["id"] == project_id), {})
-        name = project.get("name") or "Untitled Shade Study"
+        name = project.get("name") or "Untitled Stop Audit"
         region = project.get("region") or "No region"
         version = project.get("dataset_version") or "draft"
         return f"{name} - {region} - v{version}"
@@ -646,7 +660,3 @@ def render_data_page() -> None:
     labels = list_shade_labels(project_id) if project_id else pd.DataFrame()
     review_history = list_review_history(project_id) if project_id else pd.DataFrame()
     render_dataset_status(st.session_state["stops"], labels, review_history)
-
-
-
-

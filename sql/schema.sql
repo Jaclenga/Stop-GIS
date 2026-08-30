@@ -1,4 +1,4 @@
--- Relational platform schema for Shade-GIS / Shade Study Builder.
+-- Relational platform schema for Stop-GIS.
 -- The Streamlit builder uses a SQLite implementation of this shape by default;
 -- this file is the Postgres-ready schema for shared deployments.
 
@@ -24,7 +24,30 @@ CREATE TABLE IF NOT EXISTS project_settings (
   methodology_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   visualization_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   deployment_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  scoring_json JSONB NOT NULL DEFAULT '[]'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS assessment_modes (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  mode_key TEXT NOT NULL,
+  label TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  operational_definition TEXT NOT NULL DEFAULT '',
+  value_type TEXT NOT NULL CHECK (value_type IN ('categorical', 'boolean', 'number', 'text')),
+  allowed_values_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ordering_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  multiple BOOLEAN NOT NULL DEFAULT FALSE,
+  allow_comment BOOLEAN NOT NULL DEFAULT TRUE,
+  collect_confidence BOOLEAN NOT NULL DEFAULT TRUE,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  required BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order INTEGER NOT NULL DEFAULT 1,
+  measurement_level TEXT NOT NULL DEFAULT 'nominal'
+    CHECK (measurement_level IN ('nominal', 'ordinal', 'interval', 'ratio')),
+  scoring_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  display_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  PRIMARY KEY (project_id, mode_key)
 );
 
 CREATE TABLE IF NOT EXISTS shade_taxonomy (
@@ -75,7 +98,7 @@ CREATE TABLE IF NOT EXISTS shade_votes (
 );
 
 -- Holds the random HMAC key used to pseudonymize voter network/browser signals when an
--- external SHADE_GIS_VOTE_FINGERPRINT_SECRET is not configured. Raw signals are never stored.
+-- external STOP_GIS_VOTE_FINGERPRINT_SECRET is not configured. Raw signals are never stored.
 CREATE TABLE IF NOT EXISTS shade_vote_settings (
   setting_key TEXT PRIMARY KEY,
   setting_value TEXT NOT NULL
@@ -121,6 +144,62 @@ CREATE TABLE IF NOT EXISTS shade_labels (
   CONSTRAINT tenant_labels_image_fk FOREIGN KEY (project_id, image_id)
     REFERENCES images(project_id, id)
 );
+
+-- Generic immutable assessments. shade_labels remains as a compatibility
+-- table for existing shade studies and community-voting deployments.
+CREATE TABLE IF NOT EXISTS assessments (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  stop_id TEXT NOT NULL,
+  reviewer_id TEXT,
+  reviewer_role TEXT,
+  evidence_method TEXT NOT NULL DEFAULT 'manual',
+  assessment_values_json JSONB NOT NULL,
+  comments_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  confidence_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  submission_type TEXT NOT NULL DEFAULT 'independent'
+    CHECK (submission_type IN ('independent', 'adjudication')),
+  supersedes_id TEXT REFERENCES assessments(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT tenant_assessments_stop_fk FOREIGN KEY (project_id, stop_id)
+    REFERENCES stops(project_id, stop_id) ON DELETE CASCADE
+);
+
+CREATE OR REPLACE FUNCTION prevent_assessment_update()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'assessment submissions are immutable';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS immutable_assessments_update ON assessments;
+CREATE TRIGGER immutable_assessments_update
+BEFORE UPDATE ON assessments
+FOR EACH ROW EXECUTE FUNCTION prevent_assessment_update();
+
+CREATE OR REPLACE FUNCTION validate_assessment_supersession()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.supersedes_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1
+    FROM assessments AS prior
+    WHERE prior.id = NEW.supersedes_id
+      AND prior.project_id = NEW.project_id
+      AND prior.stop_id = NEW.stop_id
+  ) THEN
+    RAISE EXCEPTION 'superseded assessment must belong to the same project and stop';
+  END IF;
+  IF NEW.supersedes_id IS NOT NULL AND NEW.submission_type <> 'adjudication' THEN
+    RAISE EXCEPTION 'only an adjudication may supersede an assessment';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS valid_assessment_supersession ON assessments;
+CREATE TRIGGER valid_assessment_supersession
+BEFORE INSERT ON assessments
+FOR EACH ROW EXECUTE FUNCTION validate_assessment_supersession();
 
 CREATE OR REPLACE FUNCTION enforce_shade_label_image_stop()
 RETURNS trigger
@@ -381,6 +460,7 @@ CREATE TABLE IF NOT EXISTS import_logs (
 CREATE INDEX IF NOT EXISTS idx_stops_project ON stops(project_id);
 CREATE INDEX IF NOT EXISTS idx_images_project_stop ON images(project_id, stop_id);
 CREATE INDEX IF NOT EXISTS idx_labels_project_stop ON shade_labels(project_id, stop_id);
+CREATE INDEX IF NOT EXISTS idx_assessments_project_stop ON assessments(project_id, stop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_blind_images_project ON blind_images(project_id);
 CREATE INDEX IF NOT EXISTS idx_blind_stops_project ON blind_stops(project_id);
 CREATE INDEX IF NOT EXISTS idx_blind_assignments_coder ON blind_assignments(project_id, coder_id, sort_order);

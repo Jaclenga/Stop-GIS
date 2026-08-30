@@ -196,8 +196,8 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
 def test_builder_has_project_home_and_clickable_brand_navigation():
     source = Path("builder_app.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Shade-GIS Projects")' not in source
-    assert 'st.button("Shade-GIS", key="nav_home", on_click=request_main_menu)' in source
+    assert 'st.title("Stop-GIS Projects")' not in source
+    assert 'st.button("Stop-GIS", key="nav_home", on_click=request_main_menu)' in source
     assert '@st.dialog("Open project?", on_dismiss=clear_pending_project_open)' in source
     assert '@st.dialog("Project settings", on_dismiss=clear_pending_project_settings)' in source
     assert '@st.dialog("Delete project?", on_dismiss=clear_pending_project_delete)' in source
@@ -332,7 +332,7 @@ def test_manual_entry_form_does_not_use_arrow_backed_dataframe_widget():
 def test_taxonomy_has_a_dedicated_data_menu_page():
     source = Path("shade_gis/pages/taxonomy_page.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Taxonomy")' in source
+    assert 'st.title("Assessment Design")' in source
     assert "terminology_editing = render_taxonomy_section_header(" in source
     assert "render_terminology_editor(methodology)" in source
     assert "render_shade_source_taxonomy_editor(methodology)" in source

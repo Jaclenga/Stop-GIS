@@ -240,7 +240,7 @@ def render_persistent_storage_guidance() -> None:
         st.markdown("#### Persistent voting storage")
         st.caption(
             "Use PostgreSQL in your own provider account for durable hosted voting. "
-            "Shade-GIS never owns or centrally stores it."
+            "Stop-GIS never owns or centrally stores it."
         )
         if st.button("Open deployment setup", key="open_voting_deployment_setup"):
             st.session_state["page"] = "Deploy"

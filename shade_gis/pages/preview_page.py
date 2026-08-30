@@ -2,6 +2,7 @@ import streamlit as st
 
 import published_app
 from builder_app import active_raw_labels, study_config_payload
+from platform_store import list_assessments
 from shade_gis.builder_imports import calculate_priority_scores
 from shade_gis.shade_dimensions import (
     normalize_coverage_display_taxonomy,
@@ -12,14 +13,21 @@ from shade_gis.shade_dimensions import (
 def render_preview_page() -> None:
     project = st.session_state["project"]
     methodology = st.session_state["methodology"]
-    visualization = st.session_state["visualization"]
     taxonomy = st.session_state["taxonomy"]
-    stops = st.session_state["stops"]
+    config = study_config_payload()
+    assessment_modes = config.get("assessment_modes", [])
+    visualization = published_app.configure_assessment_display(
+        st.session_state["visualization"], assessment_modes
+    )
+    stops = published_app.materialize_assessment_columns(st.session_state["stops"])
     stops["priority_score"] = calculate_priority_scores(
         stops, visualization["priority_weights"]
     )
+    stops = published_app.add_composite_scores(
+        stops, assessment_modes, config.get("scoring", [])
+    )
     raw_labels = active_raw_labels()
-    config = study_config_payload()
+    assessments = list_assessments(str(st.session_state.get("active_project_id") or ""))
     voting = published_app.normalize_voting_config(
         visualization.get("voting"), taxonomy
     )
@@ -105,6 +113,7 @@ def render_preview_page() -> None:
                 published_app.render_taxonomy_legend(taxonomy)
     elif tabs[1].open:
         with tabs[1]:
+            published_app.render_assessment_summaries(visible_stops, assessment_modes)
             published_app.render_issue_analytics_dashboard(
                 visible_stops,
                 visualization,
@@ -124,6 +133,7 @@ def render_preview_page() -> None:
                     config,
                     st.session_state["import_log"],
                     key_prefix="preview",
+                    assessments=assessments,
                 )
             else:
                 st.info("Public file downloads are disabled for this study.")

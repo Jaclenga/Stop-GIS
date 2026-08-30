@@ -1,4 +1,4 @@
-"""Run Shade-GIS voting migrations without printing database credentials."""
+"""Run Stop-GIS voting migrations without printing database credentials."""
 
 from __future__ import annotations
 

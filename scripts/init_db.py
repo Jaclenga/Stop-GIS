@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Initialize Postgres database and populate a seed Shade-GIS project.
+"""Initialize Postgres database and populate a seed Stop-GIS project.
 
 Usage:
   python scripts/init_db.py
@@ -24,7 +24,9 @@ STOPS_FILE = HERE / "stops.txt"
 MIGRATIONS_DIR = HERE / "sql" / "migrations"
 
 SCHEMA = "public"
-PROJECT_ID = os.environ.get("SHADE_GIS_PROJECT_ID", "seed-tampa-shade-study")
+PROJECT_ID = os.environ.get("STOP_GIS_PROJECT_ID") or os.environ.get(
+    "SHADE_GIS_PROJECT_ID", "seed-tampa-stop-audit"
+)
 
 
 def connect():
@@ -95,10 +97,10 @@ def main():
                 """,
                 (
                     PROJECT_ID,
-                    "Tampa Bus Stop Shade Study",
+                    "Tampa Bus Stop Infrastructure Audit",
                     "Hillsborough Area Regional Transit (HART)",
                     "Tampa, Florida",
-                    "Seed project for the reusable Shade-GIS platform.",
+                    "Seed project for the reusable Stop-GIS platform.",
                     "Open transit and climate research contributors",
                     "Public",
                     "0.1.0",

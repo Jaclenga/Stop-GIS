@@ -36,18 +36,18 @@ def confirm_seed_project_open(page) -> None:
     dialog = page.get_by_role("dialog")
     dialog.wait_for(timeout=30_000)
     dialog.get_by_text(
-        "Open Tampa Bus Stop Shade Study and continue to its project workspace?",
+        "Open Tampa Bus Stop Infrastructure Demo and continue to its project workspace?",
         exact=True,
     ).wait_for(timeout=30_000)
     dialog.get_by_role("button", name="Open Project", exact=True).click(timeout=30_000)
 
 
 def confirm_main_menu_return(page) -> None:
-    page.get_by_role("button", name="Shade-GIS", exact=True).click(timeout=30_000)
+    page.get_by_role("button", name="Stop-GIS", exact=True).click(timeout=30_000)
     dialog = page.get_by_role("dialog")
     dialog.wait_for(timeout=30_000)
     dialog.get_by_text(
-        "Leave Tampa Bus Stop Shade Study and return to your project list?",
+        "Leave Tampa Bus Stop Infrastructure Demo and return to your project list?",
         exact=True,
     ).wait_for(timeout=30_000)
     dialog.get_by_role("button", name="Main Menu", exact=True).click(timeout=30_000)
@@ -177,9 +177,9 @@ def navigate_workspace_page(page, page_name: str, heading: str) -> None:
         "Dataset Review": ("Labelling", "Dataset Review", "Dataset Review"),
         "Intercoder Review": ("Labelling", "Dataset Review", "Dataset Review"),
         "Community Voting": ("Labelling", "Dataset Review", "Dataset Review"),
-        "Visuals": ("Build", "Preview", "Tampa Bus Stop Shade Study"),
-        "Docs": ("Build", "Preview", "Tampa Bus Stop Shade Study"),
-        "Preview": ("Build", "Preview", "Tampa Bus Stop Shade Study"),
+        "Visuals": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
+        "Docs": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
+        "Preview": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
         "Data Quality": ("Dataset", "Data", "Project Data"),
         "Deploy": ("Export", "Deploy", "Publish website"),
     }
@@ -290,7 +290,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         try:
             page.goto(streamlit_server.url, wait_until="domcontentloaded")
-            page.get_by_role("button", name="Shade-GIS", exact=True).wait_for(timeout=30_000)
+            page.get_by_role("button", name="Stop-GIS", exact=True).wait_for(timeout=30_000)
             page.get_by_role("heading", name="Your Projects", exact=True).wait_for(timeout=30_000)
             playwright_api.expect(page.get_by_role("button", name="Dataset", exact=True)).to_have_count(0)
             playwright_api.expect(page.get_by_role("button", name="Build", exact=True)).to_have_count(0)
@@ -298,7 +298,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             project_card.hover()
             playwright_api.expect(project_card).to_have_css("border-color", "rgb(74, 222, 128)")
 
-            page.get_by_role("button", name="Shade-GIS", exact=True).click(timeout=30_000)
+            page.get_by_role("button", name="Stop-GIS", exact=True).click(timeout=30_000)
             playwright_api.expect(page.get_by_role("dialog")).to_have_count(0)
             page.get_by_role("heading", name="Your Projects", exact=True).wait_for(timeout=30_000)
 
@@ -306,14 +306,16 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             page.get_by_role("dialog").wait_for(timeout=30_000)
             page.keyboard.press("Escape")
             playwright_api.expect(page.get_by_role("dialog")).to_have_count(0, timeout=30_000)
-            page.get_by_role("button", name="Shade-GIS", exact=True).click(timeout=30_000)
+            page.get_by_role("button", name="Stop-GIS", exact=True).click(timeout=30_000)
             playwright_api.expect(page.get_by_role("dialog")).to_have_count(0)
+            page.get_by_role("heading", name="Your Projects", exact=True).wait_for(timeout=30_000)
+            project_card.wait_for(state="visible", timeout=30_000)
 
             project_card.click(position={"x": 40, "y": 40}, timeout=30_000)
             dialog = page.get_by_role("dialog")
             dialog.wait_for(timeout=30_000)
             dialog.get_by_text(
-                "Open Tampa Bus Stop Shade Study and continue to its project workspace?",
+                "Open Tampa Bus Stop Infrastructure Demo and continue to its project workspace?",
                 exact=True,
             ).wait_for(timeout=30_000)
             dialog.get_by_role("button", name="Cancel", exact=True).click(timeout=30_000)
@@ -334,7 +336,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
                     page.get_by_role("button", name=tab_name, exact=True)
                 ).to_be_visible(timeout=30_000)
             playwright_api.expect(
-                page.get_by_role("button", name="Tampa Bus Stop Shade...", exact=True)
+                page.get_by_role("button", name="Tampa Bus Stop Infras...", exact=True)
             ).to_be_visible(timeout=30_000)
 
             page.get_by_role("button", name="Labelling", exact=True).click(timeout=30_000)
@@ -343,7 +345,7 @@ def test_builder_header_home_and_grouped_menus(playwright_api, streamlit_server:
             page.get_by_role("button", name="Dataset", exact=True).click(timeout=30_000)
             page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
 
-            page.get_by_role("button", name="Shade-GIS", exact=True).click(timeout=30_000)
+            page.get_by_role("button", name="Stop-GIS", exact=True).click(timeout=30_000)
             menu_dialog = page.get_by_role("dialog")
             menu_dialog.wait_for(timeout=30_000)
             menu_dialog.get_by_role("button", name="Cancel", exact=True).click(timeout=30_000)
@@ -371,12 +373,12 @@ def test_project_settings_can_edit_and_delete_a_project(
             page.goto(streamlit_server.url, wait_until="domcontentloaded")
             page.get_by_role("heading", name="Your Projects", exact=True).wait_for(timeout=30_000)
 
-            page.get_by_role("button", name="＋ New Project", exact=True).click(timeout=30_000)
+            page.get_by_role("button", name="+ New Project", exact=True).click(timeout=30_000)
             page.get_by_label("Project name", exact=True).fill("Disposable project")
             page.get_by_role("button", name="Create project", exact=True).click(timeout=30_000)
             page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
 
-            page.get_by_role("button", name="Shade-GIS", exact=True).click(timeout=30_000)
+            page.get_by_role("button", name="Stop-GIS", exact=True).click(timeout=30_000)
             page.get_by_role("dialog").get_by_role(
                 "button", name="Main Menu", exact=True
             ).click(timeout=30_000)
@@ -445,9 +447,9 @@ def test_project_settings_can_edit_and_delete_a_project(
             )
             delete_dialog = page.get_by_role("dialog")
             last_confirmation = delete_dialog.get_by_label(
-                'Type "Tampa Bus Stop Shade Study" to confirm', exact=True
+                'Type "Tampa Bus Stop Infrastructure Demo" to confirm', exact=True
             )
-            last_confirmation.fill("Tampa Bus Stop Shade Study")
+            last_confirmation.fill("Tampa Bus Stop Infrastructure Demo")
             last_confirmation.press("Tab")
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
             page.get_by_role("dialog").get_by_role(
@@ -475,7 +477,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
         "Visuals": "Metrics And Visualizations",
         "Community Voting": "Community Voting",
         "Docs": "Project Documentation",
-        "Preview": "Tampa Bus Stop Shade Study",
+        "Preview": "Tampa Bus Stop Infrastructure Demo",
         "Deploy": "Publish website",
     }
     with playwright_api.sync_playwright() as playwright:
@@ -509,7 +511,7 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
         )
         try:
             page.goto(streamlit_server.url, wait_until="domcontentloaded")
-            brand_button = page.get_by_role("button", name="Shade-GIS", exact=True)
+            brand_button = page.get_by_role("button", name="Stop-GIS", exact=True)
             brand_button.wait_for(timeout=30_000)
             page.get_by_role("heading", name="Your Projects", exact=True).wait_for(timeout=30_000)
             confirm_seed_project_open(page)
@@ -531,17 +533,21 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
             # This keeps Streamlit's validation-filter widget initialization from
             # racing the immediately following popover interaction.
             reconnect_streamlit_page(page, streamlit_server)
-            page.get_by_role("button", name="Shade-GIS", exact=True).wait_for(timeout=30_000)
+            page.get_by_role("button", name="Stop-GIS", exact=True).wait_for(timeout=30_000)
             confirm_seed_project_open(page)
             page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
             page.get_by_role("button", name="Taxonomy", exact=True).click(timeout=30_000)
-            page.get_by_role("heading", name="Taxonomy", exact=True).wait_for(timeout=30_000)
+            page.get_by_role("heading", name="Assessment Design", exact=True).wait_for(timeout=30_000)
             page.get_by_role("heading", name="Terminology", exact=True).wait_for(timeout=30_000)
             page.get_by_role("heading", name="Shade source taxonomy", exact=True).wait_for(timeout=30_000)
             page.get_by_role("heading", name="Shade coverage taxonomy", exact=True).wait_for(timeout=30_000)
-            taxonomy_editors = page.get_by_test_id("stDataFrame")
+            taxonomy_editors = page.locator(
+                '.st-key-terminology_table [data-testid="stDataFrame"], '
+                '.st-key-shade_source_taxonomy_table [data-testid="stDataFrame"], '
+                '.st-key-shade_coverage_taxonomy_table [data-testid="stDataFrame"]'
+            )
             playwright_api.expect(taxonomy_editors).to_have_count(0, timeout=30_000)
             for table_key in [
                 "terminology_table",
@@ -560,7 +566,9 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
 
             page.get_by_role("button", name="Edit", exact=True).first.click(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-            playwright_api.expect(page.get_by_test_id("stDataFrame")).to_have_count(1, timeout=30_000)
+            playwright_api.expect(
+                page.locator('.st-key-terminology_table [data-testid="stDataFrame"]')
+            ).to_have_count(1, timeout=30_000)
             playwright_api.expect(
                 page.get_by_role("button", name="Done", exact=True)
             ).to_be_visible(timeout=30_000)
@@ -572,7 +580,9 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
             playwright_api.expect(reset_definitions).to_be_visible(timeout=30_000)
             reset_definitions.click(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-            playwright_api.expect(page.get_by_test_id("stDataFrame")).to_have_count(1, timeout=30_000)
+            playwright_api.expect(
+                page.locator('.st-key-shade_source_taxonomy_table [data-testid="stDataFrame"]')
+            ).to_have_count(1, timeout=30_000)
             playwright_api.expect(page.get_by_role("button", name="Dataset", exact=True)).to_be_enabled(timeout=30_000)
             playwright_api.expect(page.get_by_role("button", name="Build", exact=True)).to_be_enabled(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
@@ -599,12 +609,22 @@ def test_builder_navigation_pages_render(playwright_api, streamlit_server: Strea
                     # uses a temporary durable project store, so a replacement frontend
                     # session still loads the same test project.
                     reconnect_streamlit_page(page, streamlit_server)
-                    page.get_by_role("button", name="Shade-GIS", exact=True).wait_for(timeout=30_000)
+                    page.get_by_role("button", name="Stop-GIS", exact=True).wait_for(timeout=30_000)
                     confirm_seed_project_open(page)
                     page.get_by_role("heading", name="Project Data", exact=True).wait_for(timeout=30_000)
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 if nav_label == "Dataset Review":
+                    playwright_api.expect(
+                        page.get_by_role("button", name="Adjudicate", exact=True)
+                    ).to_be_visible(timeout=30_000)
+                    page.get_by_role("button", name="Adjudicate", exact=True).click(
+                        timeout=30_000
+                    )
+                    page.get_by_text(
+                        "Submit at least one independent assessment before adjudicating.",
+                        exact=True,
+                    ).wait_for(timeout=30_000)
                     page.get_by_role(
                         "button", name="+ Submit Label", exact=True
                     ).click(timeout=30_000)

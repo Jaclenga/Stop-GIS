@@ -284,7 +284,7 @@ COLOR_PALETTE = [
 ]
 
 SHADE_PALETTES = {
-    "Default shade study": [
+    "Default stop audit": [
         "#dc143c",
         "#d69e2e",
         "#228b22",

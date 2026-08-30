@@ -10,6 +10,13 @@ def render_methodology_page() -> None:
         methodology["title"] = st.text_input("About page title", methodology["title"])
         methodology["summary"] = st.text_area("Summary", methodology["summary"], height=85)
         methodology["purpose"] = st.text_area("Rationale", methodology["purpose"], height=130)
+        methodology.setdefault(
+            "assessment_method",
+            "Reviewers apply only the enabled assessment modes using the project's operational definitions.",
+        )
+        methodology["assessment_method"] = st.text_area(
+            "General assessment method", methodology["assessment_method"], height=110
+        )
         methodology["shade_method"] = st.text_area("Shade assessment method", methodology["shade_method"], height=130)
         methodology["data_sources"] = st.text_area(
             "Data sources",
@@ -17,7 +24,7 @@ def render_methodology_page() -> None:
             height=135,
             placeholder=(
                 "- GTFS stops and routes\n"
-                "- Manually reviewed example shade datapoints\n"
+                "- Clearly labeled example stop-assessment observations\n"
                 "- Imagery source used for waiting-area shade review\n"
                 "- Optional project-specific attributes and GIS overlays"
             ),

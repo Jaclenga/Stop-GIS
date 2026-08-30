@@ -47,7 +47,7 @@ function Invoke-NativeOutput {
 function Assert-DeploymentBundle {
     $manifestPath = Join-Path (Get-Location) "deployment_manifest.json"
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-        throw "deployment_manifest.json is missing. Download a fresh deployment package from Shade-GIS."
+        throw "deployment_manifest.json is missing. Download a fresh deployment package from Stop-GIS."
     }
     try {
         $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -332,7 +332,7 @@ function Copy-SafeBundleFiles {
     }
     $manageRootConfig = -not (Test-Path -LiteralPath $rootConfigPath -PathType Leaf) -or $rootConfigOwned
     if (-not $manageRootConfig -and -not (Test-StreamlitStaticServing -ConfigPath $rootConfigPath)) {
-        throw "The repository's .streamlit/config.toml does not enable static file serving. Set server.enableStaticServing = true there before publishing so Shade-GIS can verify the hosted study."
+        throw "The repository's .streamlit/config.toml does not enable static file serving. Set server.enableStaticServing = true there before publishing so Stop-GIS can verify the hosted study."
     }
     function Assert-OwnedDestination {
         param(
@@ -357,7 +357,7 @@ function Copy-SafeBundleFiles {
                 return
             }
         }
-        throw "Publishing would overwrite repository file '$DestinationPath' that is not owned by this Shade-GIS deployment."
+        throw "Publishing would overwrite repository file '$DestinationPath' that is not owned by this Stop-GIS deployment."
     }
     $items = @(
         "app.py",

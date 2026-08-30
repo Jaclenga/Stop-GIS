@@ -1,4 +1,5 @@
 import base64
+import ast
 import html
 import io
 import json
@@ -18,12 +19,25 @@ from PIL import Image, ImageDraw
 pd.options.future.infer_string = False
 
 from public_voting import normalize_voting_config, render_voting_panel
+from stop_gis.assessment_modes import (
+    add_composite_scores,
+    categorical_summary,
+    materialize_assessment_columns,
+    normalize_modes,
+)
 
 
 APP_DIR = Path(__file__).parent
-CONFIG_PATH = APP_DIR / "shade_study_config.json"
-DATA_PATH = APP_DIR / "shade_study_stops.csv"
-RAW_LABELS_PATH = APP_DIR / "shade_study_raw_labels.csv"
+CONFIG_PATH = APP_DIR / "stop_audit_config.json"
+DATA_PATH = APP_DIR / "stop_audit_stops.csv"
+RAW_LABELS_PATH = APP_DIR / "stop_audit_raw_labels.csv"
+ASSESSMENTS_PATH = APP_DIR / "stop_audit_assessments.csv"
+if not CONFIG_PATH.exists():
+    CONFIG_PATH = APP_DIR / "shade_study_config.json"
+if not DATA_PATH.exists():
+    DATA_PATH = APP_DIR / "shade_study_stops.csv"
+if not RAW_LABELS_PATH.exists():
+    RAW_LABELS_PATH = APP_DIR / "shade_study_raw_labels.csv"
 RECORD_COUNT_FIELD = "Record count"
 ANALYTICS_SCHEMA_VERSION = 2
 MAP_PANEL_HEIGHT = 620
@@ -109,6 +123,11 @@ FILTER_EXCLUDED_FIELDS = {
     "nearby_destinations",
     "destinations",
     "destination",
+}
+ASSESSMENT_FILTER_FIELDS: set[str] = set()
+MODE_COMPATIBILITY_FIELDS = {
+    "shade_coverage": {"shading", "shade_coverage"},
+    "shade_source": {"shade_sources", "shade_source"},
 }
 METRIC_REQUIREMENTS = {
     "Shade sources": ["shade_sources"],
@@ -337,6 +356,8 @@ def normalize_published_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized["visualization"] = normalize_published_visualization(
         normalized.get("visualization")
     )
+    if normalized.get("assessment_modes"):
+        normalized["assessment_modes"] = normalize_modes(normalized["assessment_modes"])
     return normalized
 
 
@@ -350,11 +371,80 @@ def load_study() -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
         if RAW_LABELS_PATH.exists()
         else pd.DataFrame()
     )
+    stops = materialize_assessment_columns(stops)
     stops = normalize_published_stop_dimensions(stops)
     stops["priority_score"] = calculate_priority_scores(
         stops, config.get("visualization", {}).get("priority_weights", {})
     )
+    stops = add_composite_scores(
+        stops,
+        config.get("assessment_modes", []),
+        config.get("scoring", []),
+    )
     return config, stops, raw_labels
+
+
+def load_assessments() -> pd.DataFrame:
+    if not ASSESSMENTS_PATH.exists():
+        return pd.DataFrame()
+    return pd.read_csv(ASSESSMENTS_PATH, dtype={"stop_id": str, "project_id": str})
+
+
+def configure_assessment_display(
+    visualization: dict[str, Any], modes: list[dict[str, Any]]
+) -> dict[str, Any]:
+    configured = json.loads(json.dumps(visualization or {}, default=str))
+    global ASSESSMENT_FILTER_FIELDS
+    FILTER_EXCLUDED_FIELDS.difference_update(ASSESSMENT_FILTER_FIELDS)
+    ASSESSMENT_FILTER_FIELDS = set()
+    normalized_modes = normalize_modes(modes) if modes else []
+    mode_keys = {
+        field
+        for mode in normalized_modes
+        for field in MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
+    }
+    display_columns = [
+        column for column in configured.get("display_columns", []) if column not in mode_keys
+    ]
+    for mode in normalized_modes:
+        filter_fields = MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
+        ASSESSMENT_FILTER_FIELDS.update(filter_fields)
+        FIELD_LABELS[mode["key"]] = mode["label"]
+        FILTER_FIELD_LABELS[mode["key"]] = mode["label"]
+        if not mode["enabled"]:
+            FILTER_EXCLUDED_FIELDS.update(filter_fields)
+            continue
+        if not mode["display"]["filter"]:
+            FILTER_EXCLUDED_FIELDS.update(filter_fields)
+        else:
+            FILTER_EXCLUDED_FIELDS.difference_update(filter_fields)
+        if mode["display"]["map"] and mode["key"] not in display_columns:
+            display_columns.append(mode["key"])
+    configured["display_columns"] = display_columns
+    return configured
+
+
+def assessment_summary_tables(
+    df: pd.DataFrame, modes: list[dict[str, Any]]
+) -> dict[str, pd.DataFrame]:
+    return {
+        mode["key"]: categorical_summary(df, mode)
+        for mode in (normalize_modes(modes) if modes else [])
+        if mode["enabled"] and mode["display"]["summary"] and mode["value_type"] in {"categorical", "boolean"}
+    }
+
+
+def render_assessment_summaries(df: pd.DataFrame, modes: list[dict[str, Any]]) -> None:
+    tables = assessment_summary_tables(df, modes)
+    if not tables:
+        return
+    labels = {mode["key"]: mode["label"] for mode in normalize_modes(modes)}
+    st.markdown("#### Assessment Mode Distributions")
+    columns = st.columns(2)
+    for index, (key, table) in enumerate(tables.items()):
+        with columns[index % 2]:
+            st.markdown(f"##### {labels.get(key, key.replace('_', ' ').title())}")
+            st.dataframe(table, width="stretch", hide_index=True)
 
 
 def normalize_published_stop_dimensions(stops: pd.DataFrame) -> pd.DataFrame:
@@ -939,9 +1029,21 @@ def filter_label(column: str) -> str:
 def categorical_filter_options(df: pd.DataFrame, column: str) -> list[str]:
     if column not in df.columns:
         return []
-    values = df[column].dropna().astype(str).str.strip()
-    values = values[(values != "") & (values.str.lower() != "nan")]
-    return sorted(values.unique().tolist())
+    values: set[str] = set()
+    for raw in df[column].tolist():
+        candidates = raw if isinstance(raw, (list, tuple, set)) else [raw]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            try:
+                if bool(pd.isna(candidate)):
+                    continue
+            except (TypeError, ValueError):
+                pass
+            text = str(candidate).strip()
+            if text and text.lower() != "nan":
+                values.add(text)
+    return sorted(values)
 
 
 def numeric_filter_bounds(df: pd.DataFrame, column: str) -> tuple[float, float] | None:
@@ -962,7 +1064,7 @@ def categorical_map_filter_columns(df: pd.DataFrame) -> list[str]:
     columns = [
         column
         for column in BASE_CATEGORICAL_MAP_FILTERS
-        if categorical_filter_options(df, column)
+        if column not in FILTER_EXCLUDED_FIELDS and categorical_filter_options(df, column)
     ]
     for column in df.columns:
         if column in columns or column in FILTER_EXCLUDED_FIELDS:
@@ -979,7 +1081,7 @@ def numeric_map_filter_columns(df: pd.DataFrame) -> list[str]:
     columns = [
         column
         for column in BASE_NUMERIC_MAP_FILTERS
-        if numeric_filter_bounds(df, column) is not None
+        if column not in FILTER_EXCLUDED_FIELDS and numeric_filter_bounds(df, column) is not None
     ]
     for column in df.columns:
         if column in columns or column in FILTER_EXCLUDED_FIELDS:
@@ -1116,8 +1218,14 @@ def filter_map_stops(
         filtered = filtered[route_mask]
     for column, selected in filters.get("categorical", {}).items():
         if selected and column in filtered.columns:
-            values = filtered[column].fillna("").astype(str).str.strip()
-            filtered = filtered[values.isin(set(selected))]
+            wanted = set(map(str, selected))
+            filtered = filtered[
+                filtered[column].map(
+                    lambda value: bool(wanted.intersection(map(str, value)))
+                    if isinstance(value, (list, tuple, set))
+                    else str(value).strip() in wanted
+                )
+            ]
     for column, config in filters.get("numeric", {}).items():
         if column not in filtered.columns:
             continue
@@ -1959,7 +2067,7 @@ def render_taxonomy_legend(taxonomy: list[dict[str, Any]]) -> None:
 def render_methodology(config: dict[str, Any]) -> None:
     project = config.get("project", {})
     methodology = config.get("methodology", {})
-    st.title(methodology.get("title") or project.get("name") or "Bus Stop Shade Study")
+    st.title(methodology.get("title") or project.get("name") or "Bus Stop Infrastructure Audit")
     st.markdown(f"### {methodology.get('summary', '')}")
     st.caption(
         f"{project.get('agency', 'Transit agency')} | {project.get('region', 'Region')} | "
@@ -1967,6 +2075,7 @@ def render_methodology(config: dict[str, Any]) -> None:
     )
     sections = [
         ("Rationale", methodology.get("purpose", "")),
+        ("Assessment Method", methodology.get("assessment_method", "")),
         ("Shade Assessment Method", methodology.get("shade_method", "")),
         ("Data Sources", methodology.get("data_sources", "")),
         ("Contributors", methodology.get("contributors", "")),
@@ -1979,6 +2088,22 @@ def render_methodology(config: dict[str, Any]) -> None:
         if str(body or "").strip():
             st.markdown(f"## {title}")
             st.markdown(body)
+    modes = config.get("assessment_modes", [])
+    if modes:
+        st.markdown("## Enabled Assessment Modes")
+        mode_rows = [
+            {
+                "Key": mode["key"],
+                "Label": mode["label"],
+                "Operational Definition": mode["operational_definition"],
+                "Allowed Values": "; ".join(mode["allowed_values"]),
+                "Measurement Level": mode["measurement_level"],
+                "Required": mode["required"],
+            }
+            for mode in normalize_modes(modes)
+            if mode["enabled"]
+        ]
+        st.dataframe(pd.DataFrame(mode_rows), width="stretch", hide_index=True)
     taxonomy = config.get("taxonomy", [])
     terminology = config.get("terminology")
     if terminology is None:
@@ -2495,11 +2620,76 @@ def latest_import_timestamp(import_log: list[dict[str, Any]]) -> str:
     return max(timestamps) if timestamps else ""
 
 
+def _mapping_cell(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
+def assessment_export_frames(
+    stops: pd.DataFrame,
+    assessments: pd.DataFrame | None,
+    modes: list[dict[str, Any]],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Apply mode export visibility to current and immutable observations."""
+    normalized_modes = normalize_modes(modes) if modes else []
+    if not normalized_modes:
+        return stops.copy(), assessments.copy() if assessments is not None else pd.DataFrame()
+    all_keys = {mode["key"] for mode in normalized_modes}
+    visible_keys = {
+        mode["key"]
+        for mode in normalized_modes
+        if mode["enabled"] and mode["display"]["export"]
+    }
+    hidden_columns = {
+        field
+        for mode in normalized_modes
+        if mode["key"] not in visible_keys
+        for field in MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
+    }
+
+    exported_stops = materialize_assessment_columns(stops)
+    exported_stops = exported_stops.drop(
+        columns=[key for key in hidden_columns if key in exported_stops.columns],
+        errors="ignore",
+    )
+    if "assessment_values" in exported_stops.columns:
+        exported_stops["assessment_values"] = exported_stops["assessment_values"].map(
+            lambda value: {
+                key: item
+                for key, item in _mapping_cell(value).items()
+                if key not in all_keys or key in visible_keys
+            }
+        )
+
+    exported_assessments = assessments.copy() if assessments is not None else pd.DataFrame()
+    for column in ["assessment_values", "comments", "confidence"]:
+        if column in exported_assessments.columns:
+            exported_assessments[column] = exported_assessments[column].map(
+                lambda value: {
+                    key: item
+                    for key, item in _mapping_cell(value).items()
+                    if key not in all_keys or key in visible_keys
+                }
+            )
+    return exported_stops, exported_assessments
+
+
 def export_file_catalog(
     stops: pd.DataFrame,
     raw_labels: pd.DataFrame,
     config: dict[str, Any],
     import_log: list[dict[str, Any]] | None = None,
+    assessments: pd.DataFrame | None = None,
 ) -> list[dict[str, Any]]:
     provenance = (
         import_log if import_log is not None else list(config.get("import_log") or [])
@@ -2511,21 +2701,29 @@ def export_file_catalog(
         if not label_dates.empty:
             latest_label_at = label_dates.max()
 
-    stops_csv = dataframe_to_safe_csv(stops)
-    stops_geojson = dataframe_to_geojson(stops).encode("utf-8")
+    exported_stops, exported_assessments = assessment_export_frames(
+        stops, assessments, config.get("assessment_modes", [])
+    )
+    stops_csv = dataframe_to_safe_csv(exported_stops)
+    stops_geojson = dataframe_to_geojson(exported_stops).encode("utf-8")
     labels_csv = (
         dataframe_to_safe_csv(raw_labels) if not raw_labels.empty else b""
     )
+    assessments_csv = (
+        dataframe_to_safe_csv(exported_assessments)
+        if not exported_assessments.empty
+        else b""
+    )
     config_json = json.dumps(config, indent=2, default=str).encode("utf-8")
-    return [
+    catalog = [
         {
             "name": "Stops CSV",
-            "description": "All stop records and current shade, review, route, and project fields.",
+            "description": "Stop records and current project fields permitted by the mode export settings.",
             "records": len(stops),
             "data": stops_csv,
             "size": readable_file_size(len(stops_csv)),
             "updated": imported_at,
-            "file_name": "shade_study_stops.csv",
+            "file_name": "stop_audit_stops.csv",
             "mime": "text/csv",
             "available": True,
         },
@@ -2536,7 +2734,7 @@ def export_file_catalog(
             "data": stops_geojson,
             "size": readable_file_size(len(stops_geojson)),
             "updated": imported_at,
-            "file_name": "shade_study_stops.geojson",
+            "file_name": "stop_audit_stops.geojson",
             "mime": "application/geo+json",
             "available": True,
         },
@@ -2547,7 +2745,7 @@ def export_file_catalog(
             "data": labels_csv,
             "size": readable_file_size(len(labels_csv)),
             "updated": compact_timestamp(latest_label_at, "No labels"),
-            "file_name": "shade_study_raw_labels.csv",
+            "file_name": "stop_audit_raw_labels.csv",
             "mime": "text/csv",
             "available": not raw_labels.empty,
         },
@@ -2558,11 +2756,32 @@ def export_file_catalog(
             "data": config_json,
             "size": readable_file_size(len(config_json)),
             "updated": imported_at,
-            "file_name": "shade_study_config.json",
+            "file_name": "stop_audit_config.json",
             "mime": "application/json",
             "available": True,
         },
     ]
+    if assessments is not None:
+        catalog.insert(
+            3,
+            {
+                "name": "Raw Assessments CSV",
+                "description": "Immutable independent assessments and adjudications permitted by the mode export settings.",
+                "records": len(exported_assessments),
+                "data": assessments_csv,
+                "size": readable_file_size(len(assessments_csv)),
+                "updated": compact_timestamp(
+                    str(exported_assessments["created_at"].max())
+                    if not exported_assessments.empty and "created_at" in exported_assessments
+                    else "",
+                    "No assessments",
+                ),
+                "file_name": "stop_audit_assessments.csv",
+                "mime": "text/csv",
+                "available": not exported_assessments.empty,
+            },
+        )
+    return catalog
 
 
 def render_export_files(
@@ -2571,12 +2790,13 @@ def render_export_files(
     config: dict[str, Any],
     import_log: list[dict[str, Any]] | None = None,
     key_prefix: str = "published",
+    assessments: pd.DataFrame | None = None,
 ) -> None:
     st.markdown("#### Export Files")
     st.caption(
         "Download analysis-ready data, GIS features, annotation history, or reproducibility settings."
     )
-    catalog = export_file_catalog(stops, raw_labels, config, import_log)
+    catalog = export_file_catalog(stops, raw_labels, config, import_log, assessments)
     with st.container(border=True):
         header = st.columns(
             [1.15, 2.5, 0.65, 0.7, 1.05, 0.75], vertical_alignment="center"
@@ -2635,17 +2855,21 @@ def render_dataset_provenance(import_log: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     config, stops, raw_labels = load_study()
+    assessments = load_assessments()
     project = config.get("project", {})
     methodology = config.get("methodology", {})
-    visualization = config.get("visualization", {})
+    assessment_modes = config.get("assessment_modes", [])
+    visualization = configure_assessment_display(
+        config.get("visualization", {}), assessment_modes
+    )
     taxonomy = config.get("taxonomy", [])
     voting = normalize_voting_config(visualization.get("voting"), taxonomy)
     study_id = str(
-        config.get("study_id") or project.get("name") or "shade-study"
+        config.get("study_id") or project.get("name") or "stop-audit"
     ).strip()
 
-    st.set_page_config(page_title=project.get("name", "Shade Study"), layout="wide")
-    st.title(project.get("name", "Shade Study"))
+    st.set_page_config(page_title=project.get("name", "Stop Audit"), layout="wide")
+    st.title(project.get("name", "Stop Audit"))
     st.markdown(f"### {methodology.get('summary', '')}")
     st.caption(
         f"{project.get('agency', '')} | {project.get('region', '')} | dataset v{project.get('dataset_version', 'draft')}"
@@ -2705,6 +2929,7 @@ def main() -> None:
                 render_taxonomy_legend(taxonomy)
     elif tabs[1].open:
         with tabs[1]:
+            render_assessment_summaries(visible_stops, assessment_modes)
             render_issue_analytics_dashboard(visible_stops, visualization, raw_labels)
             render_custom_charts(visible_stops, visualization)
     elif tabs[2].open:
@@ -2713,7 +2938,13 @@ def main() -> None:
     elif tabs[3].open:
         with tabs[3]:
             if visualization.get("show_downloads", True):
-                render_export_files(stops, raw_labels, config, key_prefix="published")
+                render_export_files(
+                    stops,
+                    raw_labels,
+                    config,
+                    key_prefix="published",
+                    assessments=assessments,
+                )
             else:
                 st.info("Public file downloads are disabled for this study.")
             render_dataset_provenance(list(config.get("import_log") or []))

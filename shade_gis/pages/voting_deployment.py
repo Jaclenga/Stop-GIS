@@ -24,7 +24,7 @@ DATABASE_ACTION_RESULT_KEY = "_transient_vote_database_action_result"
 PROVIDER_KEY = "deploy_voting_database_provider"
 CSRF_TOKEN_KEY = "_vote_database_setup_csrf"
 SETUP_SESSION_KEY = "_vote_database_setup_session"
-ALLOW_UNAUTHENTICATED_SETUP_ENV = "SHADE_GIS_ALLOW_UNAUTHENTICATED_DATABASE_SETUP"
+ALLOW_UNAUTHENTICATED_SETUP_ENV = "STOP_GIS_ALLOW_UNAUTHENTICATED_DATABASE_SETUP"
 SETUP_RATE_LIMIT = 5
 SETUP_RATE_WINDOW_SECONDS = 300
 PROVIDERS = (
@@ -39,7 +39,10 @@ _SETUP_ATTEMPTS_LOCK = threading.Lock()
 
 
 def _is_local_builder() -> bool:
-    if str(os.environ.get(ALLOW_UNAUTHENTICATED_SETUP_ENV, "")).strip().lower() in {
+    configured_override = os.environ.get(ALLOW_UNAUTHENTICATED_SETUP_ENV) or os.environ.get(
+        "SHADE_GIS_ALLOW_UNAUTHENTICATED_DATABASE_SETUP", ""
+    )
+    if str(configured_override).strip().lower() in {
         "1",
         "true",
         "yes",
@@ -125,13 +128,13 @@ def _consume_database_url(action: str, csrf_token: str = "") -> None:
             raise ValueError("Paste a PostgreSQL connection string first.")
         if action in {"test", "verify"}:
             check_vote_database_connection(database_url)
-            message = "Connection successful. Shade-GIS did not save the connection string."
+            message = "Connection successful. Stop-GIS did not save the connection string."
             st.session_state["vote_database_connection_verified"] = True
         elif action == "initialize":
             initialize_vote_database(database_url)
             message = (
                 "Voting tables and indexes are initialized. "
-                "Shade-GIS discarded the connection string."
+                "Stop-GIS discarded the connection string."
             )
             st.session_state["vote_database_schema_initialized"] = True
         elif action == "confirm":
@@ -281,7 +284,7 @@ def render_voting_deployment_wizard(
     with st.expander("Persistent voting storage", expanded=voting_enabled):
         st.markdown("### 1. Choose storage")
         st.caption(
-            "Shade-GIS helps configure infrastructure in your own provider account. It never owns "
+            "Stop-GIS helps configure infrastructure in your own provider account. It never owns "
             "or centrally stores your research database."
         )
         provider = st.radio("Deploy your voting app", PROVIDERS, key=PROVIDER_KEY)
@@ -294,7 +297,7 @@ def render_voting_deployment_wizard(
                 key="vote_database_created",
             )
             st.warning(
-                "The URL is sent over HTTPS only to the running Shade-GIS server for the selected "
+                "The URL is sent over HTTPS only to the running Stop-GIS server for the selected "
                 "action. It is never written to the project or bundle and is cleared immediately."
             )
             if not _setup_actions_allowed():

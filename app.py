@@ -1,4 +1,4 @@
-"""Compatibility entrypoint for the Shade Study Builder.
+"""Compatibility entrypoint for the Stop-GIS Builder.
 
 Keep this file intentionally small: deployment targets still point at
 ``app.py``, while the actual application lives in ``builder_app.py``.
