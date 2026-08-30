@@ -2,7 +2,7 @@
 
 [Documentation home](README.md) · [Architecture invariants](architecture_invariants.md) · [Migration guide](migrating-from-shade-gis.md)
 
-This document describes the durable project schema implemented by the Streamlit builder and the Postgres-ready relational schema in `sql/schema.sql`.
+This document describes the durable project schema implemented by the Streamlit builder and the Postgres-ready relational schema in `infrastructure/database/schema.sql`.
 
 ## Platform backend
 
@@ -353,7 +353,7 @@ from a clean temporary clone, and verifies a known public URL. Existing connecte
 redeploy automatically after the repository update. First-time Streamlit hosting still requires the
 provider's one-time browser authorization.
 
-The public Streamlit launcher is maintained in `apps/published.py`, which the builder preview imports
+The public Streamlit launcher is maintained in `stop_gis/entrypoints/published.py`, which the builder preview imports
 and the deployment service packages as its standalone `app.py`. The package includes:
 
 - Standalone `app.py` for the public Streamlit experience.

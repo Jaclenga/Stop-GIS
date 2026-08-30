@@ -75,7 +75,7 @@ Python 3.11 or newer is recommended.
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements/requirements.txt
-streamlit run apps/builder.py
+streamlit run stop_gis/entrypoints/builder.py
 ```
 
 Run the automated tests with:
@@ -128,8 +128,10 @@ internal identifiers are upgraded additively rather than renamed in place.
 ### Repository layout
 
 ```text
-apps/                       Local and generated application entrypoints
+clients/android/            Android field-collection client
+examples/published-site/    Tracked standalone-publication example
 stop_gis/
+  entrypoints/              Builder and published-app launchers
   builder/app.py            Builder composition
   builder/                  Import, labeling, and visualization services
   domain/                   Taxonomy, identifiers, quality, and coding rules
@@ -143,7 +145,7 @@ data/demo/                  Versioned demonstration inputs
 scripts/                    Maintenance and data-preparation commands
 tests/                      Unit, integration, architecture, and UI tests
 docs/                       User and maintainer documentation
-infra/                      Local infrastructure definitions
+infrastructure/             Compose and database schema/migrations
 ```
 
 Application code uses the `stop_gis` namespace throughout. Persisted legacy
@@ -160,7 +162,7 @@ Key references include:
 - [Platform schema](docs/platform_schema.md)
 - [Architecture invariants](docs/architecture_invariants.md)
 - [Shade-GIS migration](docs/migrating-from-shade-gis.md)
-- [Android field client](android_app/README.md)
+- [Android field client](clients/android/README.md)
 - [AI use statement](docs/project/AI_USE.md)
 
 ## Demo data

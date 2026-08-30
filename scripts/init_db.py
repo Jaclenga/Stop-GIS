@@ -21,7 +21,7 @@ DB_PASS = os.environ.get("PGPASSWORD", "postgres")
 
 HERE = Path(__file__).parent.parent
 STOPS_FILE = HERE / "data" / "demo" / "stops.txt"
-MIGRATIONS_DIR = HERE / "sql" / "migrations"
+MIGRATIONS_DIR = HERE / "infrastructure" / "database" / "migrations"
 
 SCHEMA = "public"
 PROJECT_ID = os.environ.get("STOP_GIS_PROJECT_ID") or os.environ.get(

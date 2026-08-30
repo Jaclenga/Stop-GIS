@@ -1,5 +1,5 @@
 -- Upgrade existing Stop-GIS PostgreSQL databases with the tenant-boundary
--- constraints that are present in sql/schema.sql for fresh installations.
+-- constraints that are present in infrastructure/database/schema.sql for fresh installations.
 
 CREATE UNIQUE INDEX IF NOT EXISTS tenant_images_project_id_key
   ON images (project_id, id);

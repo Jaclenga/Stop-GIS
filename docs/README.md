@@ -11,7 +11,7 @@ working local installation.
 | Understand the end-to-end workflow | [Product overview](../README.md#workflow) |
 | Learn navigation, autosave, confirmations, filters, and accessibility behavior | [User experience and accessibility](user-experience.md) |
 | Resolve import problems before publishing | [Data quality workflow](data_quality.md) |
-| Capture observations on Android | [Android field client](../android_app/README.md) |
+| Capture observations on Android | [Android field client](../clients/android/README.md) |
 | Get help or report a problem | [Support](project/SUPPORT.md) |
 
 ## Operate and migrate

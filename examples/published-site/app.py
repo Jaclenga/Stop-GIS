@@ -13,8 +13,11 @@ except (ImportError, ModuleNotFoundError):  # Support running from a preview dir
     from stop_gis import public_app as _implementation
 
 _entrypoint_dir = Path(__file__).resolve().parent
-if _entrypoint_dir.name == "apps" and (_entrypoint_dir.parent / "stop_gis").is_dir():
-    _entrypoint_dir = _entrypoint_dir.parent
+if (
+    _entrypoint_dir.name == "entrypoints"
+    and (_entrypoint_dir.parents[1] / "stop_gis").is_dir()
+):
+    _entrypoint_dir = _entrypoint_dir.parents[1]
 _implementation.configure_app_dir(_entrypoint_dir)
 
 if __name__ == "__main__":

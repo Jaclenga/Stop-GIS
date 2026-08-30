@@ -1,6 +1,6 @@
 # Stop-GIS Android app
 
-[Documentation home](../docs/README.md) · [Platform documentation](../README.md)
+[Documentation home](../../docs/README.md) · [Platform documentation](../../README.md)
 
 Offline-first field capture for Stop-GIS observations. A surveyor selects a bus stop, takes a photo,
 records the mobile client's enabled assessment fields, adds optional notes, and saves the observation on the device.
@@ -9,7 +9,7 @@ The current field UI exposes the coordinated shade modes; its versioned payload 
 
 ## Run the app
 
-Open `android_app` in Android Studio, let Gradle sync, and run the `app` configuration on an Android 7.0
+Open `clients/android` in Android Studio, let Gradle sync, and run the `app` configuration on an Android 7.0
 (API 24) or newer device/emulator with a camera app. The project uses JDK 17.
 
 The repository does not currently include the Gradle wrapper, so command-line builds require local Gradle 8.1

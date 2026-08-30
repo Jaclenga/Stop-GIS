@@ -9,10 +9,10 @@ import pytest
 def test_core_modules_compile_without_bytecode_writes():
     for filename in [
         "stop_gis/builder/app.py",
-        "apps/__init__.py",
-        "apps/builder.py",
-        "apps/published.py",
-        "apps/public_voting.py",
+        "stop_gis/entrypoints/__init__.py",
+        "stop_gis/entrypoints/builder.py",
+        "stop_gis/entrypoints/published.py",
+        "stop_gis/entrypoints/public_voting.py",
         "stop_gis/public_app.py",
         "stop_gis/public_voting.py",
         "stop_gis/persistence/store.py",
@@ -41,19 +41,19 @@ def test_core_modules_compile_without_bytecode_writes():
 def test_deploy_source_comes_from_public_app_module():
     import stop_gis.builder.app as builder_app
 
-    assert builder_app.published_app_source() == Path("apps/published.py").read_text(
+    assert builder_app.published_app_source() == Path("stop_gis/entrypoints/published.py").read_text(
         encoding="utf-8"
     )
 
 
 def test_tracked_preview_app_matches_published_source():
-    assert Path("preview_app/app.py").read_text(encoding="utf-8") == Path(
-        "apps/published.py"
+    assert Path("examples/published-site/app.py").read_text(encoding="utf-8") == Path(
+        "stop_gis/entrypoints/published.py"
     ).read_text(encoding="utf-8")
 
-    assert Path("preview_app/public_voting.py").read_text(
+    assert Path("examples/published-site/public_voting.py").read_text(
         encoding="utf-8"
-    ) == Path("apps/public_voting.py").read_text(encoding="utf-8")
+    ) == Path("stop_gis/entrypoints/public_voting.py").read_text(encoding="utf-8")
 
 
 def test_builder_and_published_runtime_disable_arrow_string_inference():
@@ -93,7 +93,7 @@ def test_builder_coordinates_deployment_without_embedding_generated_scripts():
 
 
 def test_builder_launcher_uses_canonical_application():
-    from apps import builder
+    from stop_gis.entrypoints import builder
 
     assert builder.main.__module__ == "stop_gis.builder.app"
 

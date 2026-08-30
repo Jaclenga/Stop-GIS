@@ -12,7 +12,7 @@ The upgrade is additive and runs when the SQLite store is initialized.
 6. Assessment writes advance the project revision, and database triggers reject cross-project or cross-stop adjudication links.
 
 PostgreSQL operators should back up the database and apply
-`sql/migrations/003_stop_gis_assessment_modes.sql` with the same migration role used for earlier schema changes.
+`infrastructure/database/migrations/003_stop_gis_assessment_modes.sql` with the same migration role used for earlier schema changes.
 Deployments that applied an earlier draft of migration 003 should safely run the current idempotent
 migration again to install the adjudication-lineage trigger.
 

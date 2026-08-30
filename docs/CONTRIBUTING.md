@@ -31,7 +31,7 @@ consistent with the platform direction.
 
 ```bash
 pip install -r requirements/requirements-test.txt
-streamlit run apps/builder.py
+streamlit run stop_gis/entrypoints/builder.py
 ruff check .
 pytest -q
 ```

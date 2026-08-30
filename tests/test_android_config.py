@@ -10,7 +10,7 @@ ANDROID_NAMESPACE = "{http://schemas.android.com/apk/res/android}"
 
 def test_android_manifest_exposes_camera_capture_without_requiring_hardware():
     manifest = ElementTree.parse(
-        PROJECT_ROOT / "android_app" / "app" / "src" / "main" / "AndroidManifest.xml"
+        PROJECT_ROOT / "clients" / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
     ).getroot()
 
     features = manifest.findall("uses-feature")
@@ -28,7 +28,7 @@ def test_android_manifest_exposes_camera_capture_without_requiring_hardware():
 
 def test_android_base_themes_do_not_use_api_27_only_attributes():
     theme_paths = [
-        PROJECT_ROOT / "android_app" / "app" / "src" / "main" / "res" / directory / "themes.xml"
+        PROJECT_ROOT / "clients" / "android" / "app" / "src" / "main" / "res" / directory / "themes.xml"
         for directory in ("values", "values-night")
     ]
 
@@ -40,7 +40,8 @@ def test_android_base_themes_do_not_use_api_27_only_attributes():
 def test_observation_repository_serializes_updates_and_cleans_prior_process_photos():
     source = (
         PROJECT_ROOT
-        / "android_app"
+        / "clients"
+        / "android"
         / "app"
         / "src"
         / "main"
@@ -60,7 +61,8 @@ def test_observation_repository_serializes_updates_and_cleans_prior_process_phot
 
     app_source = (
         PROJECT_ROOT
-        / "android_app"
+        / "clients"
+        / "android"
         / "app"
         / "src"
         / "main"

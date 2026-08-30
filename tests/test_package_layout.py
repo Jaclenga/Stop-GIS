@@ -15,9 +15,12 @@ def test_repository_root_contains_only_repository_metadata():
     assert not Path("docker-compose.yml").exists()
 
     for canonical_path in (
-        "apps/builder.py",
-        "apps/published.py",
-        "infra/compose.yaml",
+        "stop_gis/entrypoints/builder.py",
+        "stop_gis/entrypoints/published.py",
+        "clients/android/README.md",
+        "examples/published-site/app.py",
+        "infrastructure/compose.yaml",
+        "infrastructure/database/schema.sql",
         "docs/CONTRIBUTING.md",
         "docs/project/AI_USE.md",
         "docs/project/CHANGELOG.md",
@@ -25,6 +28,9 @@ def test_repository_root_contains_only_repository_metadata():
         "docs/project/SUPPORT.md",
     ):
         assert Path(canonical_path).is_file()
+
+    for retired_directory in ("apps", "android_app", "preview_app", "infra", "sql"):
+        assert not Path(retired_directory).exists()
 
 
 def test_demo_inputs_have_one_canonical_home():

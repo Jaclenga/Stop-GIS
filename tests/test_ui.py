@@ -229,7 +229,7 @@ def streamlit_server(playwright_api):
         "-m",
         "streamlit",
         "run",
-        "apps/builder.py",
+        "stop_gis/entrypoints/builder.py",
         "--server.port",
         str(port),
         "--server.address",
