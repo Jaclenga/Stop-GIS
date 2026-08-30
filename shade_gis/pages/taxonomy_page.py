@@ -49,13 +49,14 @@ def _render_taxonomy_styles() -> None:
             border-bottom: 1px solid #e8edf2;
             padding: 0.14rem 0;
         }
-        div[class*="st-key-taxonomy_concept_"]:not([class*="st-key-taxonomy_concept_body_"]):has(.taxonomy-disabled-marker) {
+        div[class*="st-key-taxonomy_concept_"]:not([class*="st-key-taxonomy_concept_body_"]):has(.taxonomy-disabled-marker)
+        div[class*="st-key-taxonomy_dimension_summary_"] button {
             opacity: 0.62;
         }
         .taxonomy-disabled-marker {
             display: none;
         }
-        div[class*="st-key-taxonomy_dimension_row_"] button,
+        div[class*="st-key-taxonomy_dimension_summary_"] button,
         div[class*="st-key-taxonomy_reference_"] > div:first-child button {
             background: transparent;
             border: 0;
@@ -66,32 +67,32 @@ def _render_taxonomy_styles() -> None:
             padding: 0.42rem 0.55rem;
             text-align: left;
         }
-        div[class*="st-key-taxonomy_dimension_row_"] button:hover,
+        div[class*="st-key-taxonomy_dimension_summary_"] button:hover,
         div[class*="st-key-taxonomy_reference_"] > div:first-child button:hover {
             background: #f4f7fa;
             color: #0f172a;
         }
-        div[class*="st-key-taxonomy_dimension_row_"] button:focus-visible,
+        div[class*="st-key-taxonomy_dimension_summary_"] button:focus-visible,
         div[class*="st-key-taxonomy_group_"] button:focus-visible,
         div[class*="st-key-taxonomy_reference_"] > div:first-child button:focus-visible {
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
             outline: 2px solid #2563eb;
             outline-offset: 1px;
         }
-        div[class*="st-key-taxonomy_dimension_row_"] button p,
+        div[class*="st-key-taxonomy_dimension_summary_"] button p,
         div[class*="st-key-taxonomy_reference_"] > div:first-child button p {
             color: #526071;
             font-size: 0.875rem;
             line-height: 1.32;
             margin: 0;
         }
-        div[class*="st-key-taxonomy_dimension_row_"] button p strong,
+        div[class*="st-key-taxonomy_dimension_summary_"] button p strong,
         div[class*="st-key-taxonomy_reference_"] > div:first-child button p strong {
             color: #172033;
             font-size: 1rem;
             font-weight: 700;
         }
-        div[class*="st-key-taxonomy_dimension_row_"] button code {
+        div[class*="st-key-taxonomy_dimension_summary_"] button code {
             background: #e9f0f8;
             border: 1px solid #cbd8e6;
             border-radius: 999px;
@@ -103,6 +104,16 @@ def _render_taxonomy_styles() -> None:
             line-height: 1.25;
             margin: 0.22rem 0.18rem 0 0;
             padding: 0.18rem 0.48rem;
+        }
+        div[class*="st-key-taxonomy_dimension_state_"] button {
+            min-height: 2.2rem;
+            padding-left: 0.45rem;
+            padding-right: 0.45rem;
+        }
+        div[class*="st-key-taxonomy_dimension_state_"] button[kind="primary"] {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
         }
         div[class*="st-key-taxonomy_concept_body_"] {
             border-left: 2px solid #d8e2ec;
@@ -178,7 +189,7 @@ def _render_taxonomy_styles() -> None:
                 gap: 0.15rem;
                 grid-template-columns: 1fr;
             }
-            div[class*="st-key-taxonomy_dimension_row_"] button {
+            div[class*="st-key-taxonomy_dimension_summary_"] button {
                 min-height: 4.4rem;
             }
         }

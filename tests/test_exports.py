@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -26,7 +28,14 @@ from shade_gis.deploy import (
 )
 
 
-def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, methodology, visualization, minimal_stops):
+def test_export_csv_geojson_raw_labels_and_config(
+    db_path,
+    project,
+    taxonomy,
+    methodology,
+    visualization,
+    minimal_stops,
+):
     terminology = [
         {"term": "Boarding Zone", "operational_definition": "Project-specific boarding location."}
     ]
@@ -102,6 +111,9 @@ def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, me
     with zipfile.ZipFile(io.BytesIO(bundle_bytes)) as bundle:
         bundle_names = set(bundle.namelist())
         assert "public_voting.py" in bundle_names
+        assert "stop_gis/public_app.py" in bundle_names
+        assert "stop_gis/public_voting.py" in bundle_names
+        assert "stop_gis/assessment_modes.py" in bundle_names
         assert "stop_audit_codebook.json" in bundle_names
         assert "deployment_manifest.json" in bundle_names
         assert "migrations/001_public_voting.sql" in bundle_names
@@ -187,6 +199,26 @@ def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, me
             "Limited Shade",
             "Significant Shade",
         ]
+
+    generated_runtime = db_path.parent / "generated-runtime"
+    with zipfile.ZipFile(io.BytesIO(bundle_bytes)) as bundle:
+        bundle.extractall(generated_runtime)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import app; import stop_gis.public_app as shared; "
+                "assert app is shared; assert callable(app.main)"
+            ),
+        ],
+        cwd=generated_runtime,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_deployment_bundle_requires_imported_project_data(

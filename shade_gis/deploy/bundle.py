@@ -7,7 +7,6 @@ import io
 import json
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -23,6 +22,7 @@ from shade_gis.deploy.artifacts import (
     postgres_vote_schema,
     public_voting_source,
     published_app_source,
+    shared_runtime_sources,
     secrets_example,
     slugify_repo_name,
     streamlit_entrypoint_path,
@@ -115,8 +115,7 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         "shade_study_stops.csv": stops.to_csv(index=False).encode("utf-8"),
         "shade_study_config.json": spec.config_json.encode("utf-8"),
         "stop_audit_codebook.json": codebook_json.encode("utf-8"),
-        "stop_gis/__init__.py": (Path(__file__).resolve().parents[2] / "stop_gis" / "__init__.py").read_bytes(),
-        "stop_gis/assessment_modes.py": (Path(__file__).resolve().parents[2] / "stop_gis" / "assessment_modes.py").read_bytes(),
+        **shared_runtime_sources(),
         "requirements.txt": RUNTIME_REQUIREMENTS.encode("utf-8"),
         ".streamlit/config.toml": STREAMLIT_CONFIG.encode("utf-8"),
         ".streamlit/secrets.toml.example": secrets_example().encode("utf-8"),

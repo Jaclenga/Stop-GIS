@@ -44,6 +44,12 @@ def github_new_repo_url(project: dict[str, Any], repo_name: str) -> str:
 PUBLISHED_APP_SOURCE_PATH = APP_DIR / "published_app.py"
 PUBLIC_VOTING_SOURCE_PATH = APP_DIR / "public_voting.py"
 EXISTING_REPO_PREVIEW_DIR = "preview_app"
+SHARED_RUNTIME_SOURCE_PATHS = {
+    "stop_gis/__init__.py": APP_DIR / "stop_gis" / "__init__.py",
+    "stop_gis/assessment_modes.py": APP_DIR / "stop_gis" / "assessment_modes.py",
+    "stop_gis/public_app.py": APP_DIR / "stop_gis" / "public_app.py",
+    "stop_gis/public_voting.py": APP_DIR / "stop_gis" / "public_voting.py",
+}
 
 
 def published_app_source() -> str:
@@ -52,6 +58,14 @@ def published_app_source() -> str:
 
 def public_voting_source() -> str:
     return PUBLIC_VOTING_SOURCE_PATH.read_text(encoding="utf-8")
+
+
+def shared_runtime_sources() -> dict[str, bytes]:
+    """Return the canonical shared modules required by a published app."""
+    return {
+        relative_path: source_path.read_bytes()
+        for relative_path, source_path in SHARED_RUNTIME_SOURCE_PATHS.items()
+    }
 
 
 def postgres_vote_schema() -> str:

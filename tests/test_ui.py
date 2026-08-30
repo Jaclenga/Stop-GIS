@@ -631,6 +631,9 @@ def test_builder_navigation_pages_render(
             playwright_api.expect(shade_coverage).to_contain_text("Limited Shade")
             playwright_api.expect(shade_coverage).to_contain_text("Significant Shade")
             playwright_api.expect(shade_coverage).to_contain_text("Unknown")
+            playwright_api.expect(
+                shade_coverage.get_by_role("button", name="Disable", exact=True)
+            ).to_be_visible(timeout=30_000)
             shade_coverage.get_by_role(
                 "button", name="Shade coverage", exact=False
             ).click(timeout=30_000)

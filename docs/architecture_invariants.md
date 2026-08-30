@@ -14,7 +14,7 @@ persistence layer, deployment workflow, Android client, and user experience.
 | Mode-schema drift | Amenities were represented as ad hoc permanent columns | `stop_gis.assessment_modes` validation plus `assessment_modes` persistence | A mode key has one validated definition per project; arbitrary new modes require no schema column |
 | Lost independent ratings | Current reviewed values overwrote raw submissions | Append-only `assessments` plus separate current stop projection | Independent ratings and adjudications remain reproducible after the current map value changes |
 | Nested classification values | Imported tabular values were assumed to be scalar | Scalar validation in `builder_imports` classification normalizers | Lists, arrays, and mappings become review-safe fallback values instead of reaching scalar-only pandas operations |
-| Builder/published analytics drift | Standalone published code duplicates analytical behavior | Cross-implementation invariant tests | Majority, reliability, and disagreement results remain equivalent for the same normalized data |
+| Builder/published analytics drift | Builder and standalone entry points implemented the same presentation behavior separately | `stop_gis.public_app` and `stop_gis.public_voting` shared runtime modules | Filters, maps, summaries, taxonomy labels, terminology, voting, and exports have one implementation across surfaces |
 | Stale deployment success | Repository identity and UI state were not tied to all published content | Release fingerprint plus target-and-bundle result key | Any hosted-runtime change invalidates verification; any target or bundle change invalidates cached success |
 | Review decisions hiding newer evidence | Status was treated as timeless state | Resolution timestamp compared with latest evidence timestamp | Resolution hides a disagreement only until newer evidence arrives |
 | Invalid or unsafe exports | Serialization happened directly at download call sites | Published serialization helpers, reused by builder pages | Nested properties are JSON-safe, geometries are finite/in-range, and spreadsheet formulas are neutralized |
@@ -82,7 +82,8 @@ The complete interaction requirements and review checklist live in
 ## Test strategy
 
 `tests/test_architecture_invariants.py` uses deterministic generated cases rather
-than one-example regressions. Focused state tests remain beside their owning
-modules. New bug reports should first be mapped to an invariant above; a new
-one-off test is warranted only when no existing invariant can express the
-failure.
+than one-example regressions. `tests/test_shared_public_runtime.py` prevents the
+builder and generated preview entry points from accumulating copied presentation
+logic again. Focused state tests remain beside their owning modules. New bug
+reports should first be mapped to an invariant above; a new one-off test is
+warranted only when no existing invariant can express the failure.

@@ -2,7 +2,7 @@ import html
 
 import streamlit as st
 
-import published_app
+from stop_gis import public_app as published_app
 from builder_app import active_raw_labels, study_config_payload
 from platform_store import list_assessments
 from shade_gis.builder_imports import calculate_priority_scores

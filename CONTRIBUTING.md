@@ -32,6 +32,7 @@ consistent with the platform direction.
 ```bash
 pip install -r requirements/requirements-test.txt
 streamlit run streamlit_app.py
+ruff check .
 pytest -q
 ```
 
@@ -62,6 +63,7 @@ pytest -q -m ui
 
 - The change is scoped and explained.
 - Tests were added or updated when appropriate.
+- `ruff check .` passes locally.
 - `pytest -q` passes locally for non-UI changes.
 - `pytest -q -m ui` was run for navigation or interaction changes, or the PR
   explains why it was skipped.

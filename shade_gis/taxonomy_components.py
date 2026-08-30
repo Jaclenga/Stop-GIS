@@ -621,12 +621,30 @@ def _render_concept(
                 unsafe_allow_html=True,
             )
         with st.container(key=f"taxonomy_dimension_row_{_slug(key)}"):
-            st.button(
-                _dimension_row_label(mode, expanded=expanded),
-                key=_widget_key(f"concept_trigger:{key}"),
-                on_click=_toggle_state, args=(expanded_key,), width="stretch",
-                help=f"{'Collapse' if expanded else 'Expand'} {mode['label']}",
+            summary_col, state_col = st.columns(
+                [0.84, 0.16], vertical_alignment="center"
             )
+            with summary_col.container(key=f"taxonomy_dimension_summary_{_slug(key)}"):
+                st.button(
+                    _dimension_row_label(mode, expanded=expanded),
+                    key=_widget_key(f"concept_trigger:{key}"),
+                    on_click=_toggle_state, args=(expanded_key,), width="stretch",
+                    help=f"{'Collapse' if expanded else 'Expand'} {mode['label']}",
+                )
+            with state_col.container(key=f"taxonomy_dimension_state_{_slug(key)}"):
+                if st.button(
+                    "Disable" if mode["enabled"] else "Enable",
+                    type="secondary" if mode["enabled"] else "primary",
+                    key=_widget_key(f"dimension_state:{key}"),
+                    width="stretch",
+                    help=(
+                        f"Disable {mode['label']} for labeling"
+                        if mode["enabled"]
+                        else f"Enable {mode['label']} for labeling"
+                    ),
+                ):
+                    mode["enabled"] = not mode["enabled"]
+                    _commit_modes(modes)
         if not expanded:
             return
 
@@ -671,15 +689,6 @@ def _render_concept(
                 on_click=_toggle_state, args=(edit_key,),
             )
             if st.session_state.get(edit_key):
-                mode["enabled"] = st.toggle(
-                    "Enabled for labeling",
-                    value=mode["enabled"],
-                    key=_widget_key(f"enabled:{key}"),
-                    help=(
-                        "Disabled dimensions remain in the codebook but are not "
-                        "shown during labeling."
-                    ),
-                )
                 mode["label"] = st.text_input(
                     "Dimension name", value=mode["label"],
                     key=_widget_key(f"concept_label:{key}"),

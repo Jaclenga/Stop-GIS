@@ -2,7 +2,7 @@ from typing import Any
 
 import streamlit as st
 
-from public_voting import (
+from stop_gis.public_voting import (
     PUBLIC_COVERAGE_OPTIONS,
     normalize_voting_config,
     render_voting_panel,

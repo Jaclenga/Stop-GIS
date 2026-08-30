@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
-from public_voting import (
+from stop_gis.public_voting import (
     VoteStorageError,
     check_vote_database_connection,
     confirm_vote_database_read_write,

@@ -1,5 +1,7 @@
 # Stop-GIS
 
+[![Tests](https://github.com/Jaclenga/Stop-GIS/actions/workflows/tests.yml/badge.svg)](https://github.com/Jaclenga/Stop-GIS/actions/workflows/tests.yml)
+
 Stop-GIS is an open-source platform for reproducible audits of public-transit
 stop infrastructure, amenities, accessibility, and passenger comfort.
 

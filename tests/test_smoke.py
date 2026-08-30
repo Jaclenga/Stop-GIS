@@ -14,6 +14,8 @@ def test_core_modules_compile_without_bytecode_writes():
         "streamlit_app.py",
         "published_app.py",
         "public_voting.py",
+        "stop_gis/public_app.py",
+        "stop_gis/public_voting.py",
         "shade_gis/ui_tables.py",
         "shade_gis/taxonomy_components.py",
         "shade_gis/data_quality_components.py",
@@ -42,11 +44,15 @@ def test_tracked_preview_app_matches_published_source():
         "published_app.py"
     ).read_text(encoding="utf-8")
 
+    assert Path("preview_app/public_voting.py").read_text(
+        encoding="utf-8"
+    ) == Path("public_voting.py").read_text(encoding="utf-8")
+
 
 def test_builder_and_published_runtime_disable_arrow_string_inference():
     import builder_app  # noqa: F401 - importing applies the runtime guard
 
-    for filename in ["builder_app.py", "published_app.py"]:
+    for filename in ["builder_app.py", "stop_gis/public_app.py"]:
         source = Path(filename).read_text(encoding="utf-8")
         assert "pd.options.future.infer_string = False" in source
 
@@ -95,8 +101,7 @@ def test_visual_pages_do_not_reference_removed_dense_map_overrides():
     for filename in [
         "shade_gis/pages/visuals_page.py",
         "shade_gis/pages/preview_page.py",
-        "published_app.py",
-        "preview_app/app.py",
+        "stop_gis/public_app.py",
     ]:
         source = Path(filename).read_text(encoding="utf-8")
         assert "DENSE_MAP_THRESHOLD" not in source
@@ -157,7 +162,7 @@ def test_project_label_progress_preserves_small_nonzero_values():
 
 
 def test_summary_metrics_only_render_in_analytics():
-    published_source = Path("published_app.py").read_text(encoding="utf-8")
+    published_source = Path("stop_gis/public_app.py").read_text(encoding="utf-8")
     preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert published_source.count("render_metric_cards(df)") == 1
@@ -165,7 +170,7 @@ def test_summary_metrics_only_render_in_analytics():
 
 
 def test_public_taxonomy_table_does_not_expose_sort_order():
-    source = Path("published_app.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/public_app.py").read_text(encoding="utf-8")
 
     assert (
         'coverage_schema_display_table(taxonomy, config.get("shade_coverage_taxonomy"))'
@@ -316,24 +321,22 @@ def test_preview_configuration_pages_do_not_duplicate_full_public_renderers():
 
 
 def test_public_voting_requires_an_explicit_complete_response():
-    for path in [Path("public_voting.py"), Path("preview_app/public_voting.py")]:
-        source = path.read_text(encoding="utf-8")
-        default_assignment = source.split("default_index =", 1)[1].split(
-            "st.markdown(", 1
-        )[0]
-        assert "0 if preview else None" in default_assignment
-        assert "coverage_selected = selected_status in options" in source
-        assert "or not coverage_selected or sources_required" in source
-        assert "Select at least one shade source to submit this response." in source
+    source = Path("stop_gis/public_voting.py").read_text(encoding="utf-8")
+    default_assignment = source.split("default_index =", 1)[1].split(
+        "st.markdown(", 1
+    )[0]
+    assert "0 if preview else None" in default_assignment
+    assert "coverage_selected = selected_status in options" in source
+    assert "or not coverage_selected or sources_required" in source
+    assert "Select at least one shade source to submit this response." in source
 
 
 def test_public_filters_use_one_disclosure_instead_of_nested_expanders():
-    for path in [Path("published_app.py"), Path("preview_app/app.py")]:
-        source = path.read_text(encoding="utf-8")
-        assert 'st.expander("Map and analytics filters", expanded=False)' in source
-        assert 'st.expander("Map filters"' not in source
-        assert '"Clear filters"' in source
-        assert '"Clear filters and show stops"' in source
+    source = Path("stop_gis/public_app.py").read_text(encoding="utf-8")
+    assert 'st.expander("Map and analytics filters", expanded=False)' in source
+    assert 'st.expander("Map filters"' not in source
+    assert '"Clear filters"' in source
+    assert '"Clear filters and show stops"' in source
 
 
 def test_workspace_ux_safeguards_are_present():
@@ -349,7 +352,7 @@ def test_workspace_ux_safeguards_are_present():
     assert 'type="primary" if current == view else "secondary"' in labels_page
     assert 'key="label_workflow_navigation"' in labels_page
     assert "render_taxonomy_editor" in taxonomy
-    assert '"Enabled for labeling"' in taxonomy
+    assert '"Disable" if mode["enabled"] else "Enable"' in taxonomy
     assert '":blue-badge[Custom]"' in taxonomy
     assert '"Schema details"' in taxonomy
     assert 'role="status" aria-live="polite"' in builder
@@ -418,7 +421,7 @@ def test_taxonomy_has_a_dedicated_data_menu_page():
     assert '"Search terminology"' in components
     assert '"+ Add dimension"' in components
     assert '["Dimensions", "Terminology"]' in components
-    assert '"Enabled for labeling"' in components
+    assert '"Disable" if mode["enabled"] else "Enable"' in components
     assert "_render_group_header" in components
     assert "taxonomy-value-row" in components
     assert '"Schema details"' in components

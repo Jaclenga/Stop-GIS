@@ -6,7 +6,7 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
-import published_app
+from stop_gis import public_app as published_app
 from builder_app import (
     DEFAULT_TAXONOMY,
     LABELER_ROLE_OPTIONS,

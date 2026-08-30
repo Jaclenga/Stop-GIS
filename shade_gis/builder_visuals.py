@@ -10,8 +10,8 @@ import pydeck as pdk
 import streamlit as st
 from PIL import Image, ImageDraw
 
-import published_app
-from public_voting import DEFAULT_VOTING_CONFIG
+from stop_gis import public_app as published_app
+from stop_gis.public_voting import DEFAULT_VOTING_CONFIG
 
 from shade_gis.builder_imports import (
     REQUIRED_STOP_FIELDS,

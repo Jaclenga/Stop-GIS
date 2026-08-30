@@ -75,7 +75,9 @@ function Assert-DeploymentBundle {
         "migrations/001_public_voting.sql",
         "migrations/least_privilege_roles.sql.example",
         "scripts/verify_database.py", "scripts/migrate_database.py",
-        "DEPLOYMENT.md", "static/shade_gis_identity.json"
+        "DEPLOYMENT.md", "static/shade_gis_identity.json",
+        "stop_gis/__init__.py", "stop_gis/assessment_modes.py",
+        "stop_gis/public_app.py", "stop_gis/public_voting.py"
     )
     foreach ($requiredFile in $requiredFiles) {
         if (-not $manifest.files.PSObject.Properties[$requiredFile]) {
@@ -367,6 +369,10 @@ function Copy-SafeBundleFiles {
         "shade_study_config.json",
         "deployment_manifest.json",
         "requirements.txt",
+        "stop_gis/__init__.py",
+        "stop_gis/assessment_modes.py",
+        "stop_gis/public_app.py",
+        "stop_gis/public_voting.py",
         "static/shade_gis_identity.json"
     )
     Show-ProtectedFileWarnings
@@ -419,7 +425,12 @@ function Copy-SafeBundleFiles {
         Write-Host "Removed stale generated root data file: shade_study_raw_labels.csv"
     }
     if ($refreshLegacyRootRuntime) {
-        foreach ($item in @("app.py", "public_voting.py", "requirements.txt", "static/shade_gis_identity.json")) {
+        foreach ($item in @(
+            "app.py", "public_voting.py", "requirements.txt",
+            "stop_gis/__init__.py", "stop_gis/assessment_modes.py",
+            "stop_gis/public_app.py", "stop_gis/public_voting.py",
+            "static/shade_gis_identity.json"
+        )) {
             if (Test-Path $item -PathType Leaf) {
                 $destinationPath = Join-Path $Destination $item
                 $destinationParent = Split-Path -Parent $destinationPath
@@ -451,7 +462,12 @@ function Copy-SafeBundleFiles {
         }
     }
     if ($refreshLegacyRootRuntime) {
-        foreach ($item in @("app.py", "public_voting.py", "requirements.txt", "static/shade_gis_identity.json")) {
+        foreach ($item in @(
+            "app.py", "public_voting.py", "requirements.txt",
+            "stop_gis/__init__.py", "stop_gis/assessment_modes.py",
+            "stop_gis/public_app.py", "stop_gis/public_voting.py",
+            "static/shade_gis_identity.json"
+        )) {
             if (Test-Path -LiteralPath (Join-Path $Destination $item) -PathType Leaf) {
                 $deployedPaths.Add($item)
             }
@@ -599,6 +615,10 @@ $newRepoFiles = @(
     ".streamlit/secrets.toml.example",
     ".env.example",
     "requirements.txt",
+    "stop_gis/__init__.py",
+    "stop_gis/assessment_modes.py",
+    "stop_gis/public_app.py",
+    "stop_gis/public_voting.py",
     "README.md",
     "deploy_to_github.ps1",
     ".gitignore",

@@ -15,4 +15,4 @@ _LEGACY_PACKAGE = Path(__file__).resolve().parent.parent / "shade_gis"
 if _LEGACY_PACKAGE.is_dir():
     __path__.append(str(_LEGACY_PACKAGE))
 
-__all__ = ["assessment_modes"]
+__all__ = ["assessment_modes", "public_app", "public_voting"]

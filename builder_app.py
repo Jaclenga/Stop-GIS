@@ -16,8 +16,8 @@ import streamlit as st
 # native crashes at that boundary in CI.
 pd.options.future.infer_string = False
 
-import published_app
-from public_voting import normalize_voting_config
+from stop_gis import public_app as published_app
+from stop_gis.public_voting import normalize_voting_config
 from platform_store import (
     ProjectConflictError,
     add_shade_label,
