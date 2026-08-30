@@ -7,8 +7,28 @@ def test_retired_source_package_is_absent():
     assert not Path("shade_gis").exists()
 
 
+def test_repository_root_contains_only_repository_metadata():
+    assert list(Path(".").glob("*.py")) == []
+    assert {path.name for path in Path(".").glob("*.md")} == {"README.md"}
+    assert not Path("requirements.txt").exists()
+    assert not Path("pytest.ini").exists()
+    assert not Path("docker-compose.yml").exists()
+
+    for canonical_path in (
+        "apps/builder.py",
+        "apps/published.py",
+        "infra/compose.yaml",
+        "docs/CONTRIBUTING.md",
+        "docs/project/AI_USE.md",
+        "docs/project/CHANGELOG.md",
+        "docs/project/GOVERNANCE.md",
+        "docs/project/SUPPORT.md",
+    ):
+        assert Path(canonical_path).is_file()
+
+
 def test_demo_inputs_have_one_canonical_home():
-    import builder_app
+    import stop_gis.builder.app as builder_app
 
     demo_dir = Path("data/demo").resolve()
     assert builder_app.DATA_PATH == demo_dir / "stops.txt"
@@ -20,7 +40,7 @@ def test_demo_inputs_have_one_canonical_home():
 
 
 def test_application_code_uses_structured_package_imports():
-    source_paths = [Path("builder_app.py")]
+    source_paths = [Path("stop_gis/builder/app.py")]
     source_paths.extend(Path("stop_gis/pages").glob("*.py"))
     source_paths.extend(Path("stop_gis/builder").glob("*.py"))
     source_paths.extend(Path("stop_gis/domain").glob("*.py"))

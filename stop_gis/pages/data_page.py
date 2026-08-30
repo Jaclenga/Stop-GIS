@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import streamlit as st
 
-from builder_app import (
+from stop_gis.builder.app import (
     create_blank_project,
     load_project_into_session,
     save_active_project_to_store,

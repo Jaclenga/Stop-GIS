@@ -12,7 +12,7 @@ working local installation.
 | Learn navigation, autosave, confirmations, filters, and accessibility behavior | [User experience and accessibility](user-experience.md) |
 | Resolve import problems before publishing | [Data quality workflow](data_quality.md) |
 | Capture observations on Android | [Android field client](../android_app/README.md) |
-| Get help or report a problem | [Support](../SUPPORT.md) |
+| Get help or report a problem | [Support](project/SUPPORT.md) |
 
 ## Operate and migrate
 
@@ -21,7 +21,7 @@ working local installation.
 | Understand stored entities and relationships | [Platform schema](platform_schema.md) |
 | Upgrade an existing Shade-GIS installation | [Migration guide](migrating-from-shade-gis.md) |
 | Configure hosted voting | `DEPLOYMENT.md` inside a generated deployment package |
-| Review releases and behavior changes | [Changelog](../CHANGELOG.md) |
+| Review releases and behavior changes | [Changelog](project/CHANGELOG.md) |
 
 Deployment documentation is generated with each study so its commands,
 repository details, and voting requirements match that exact release. Template
@@ -31,10 +31,10 @@ sources live in `stop_gis/deploy/templates/` and are maintainer-facing.
 
 | Goal | Guide |
 | --- | --- |
-| Set up tests and prepare a change | [Contributing](../CONTRIBUTING.md) |
+| Set up tests and prepare a change | [Contributing](CONTRIBUTING.md) |
 | Preserve cross-module behavior | [Architecture invariants](architecture_invariants.md) |
 | Apply UX acceptance criteria | [User experience and accessibility](user-experience.md#contributor-checklist) |
-| Understand project decisions | [Governance](../GOVERNANCE.md) |
+| Understand project decisions | [Governance](project/GOVERNANCE.md) |
 
 ## Documentation conventions
 

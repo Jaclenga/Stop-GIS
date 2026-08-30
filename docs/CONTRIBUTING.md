@@ -15,13 +15,13 @@ consistent with the platform direction.
 
 ## Before you start
 
-- Read [README.md](README.md) for the current app scope and local run steps.
-- Use the [documentation hub](docs/README.md) to find the guide that owns the
+- Read [README.md](../README.md) for the current app scope and local run steps.
+- Use the [documentation hub](README.md) to find the guide that owns the
   behavior you are changing.
-- Read [docs/user-experience.md](docs/user-experience.md) before changing
+- Read [user-experience.md](user-experience.md) before changing
   navigation, forms, feedback, destructive actions, responsive layout, or
   public-facing copy.
-- Check [docs/platform_schema.md](docs/platform_schema.md) before changing the
+- Check [platform_schema.md](platform_schema.md) before changing the
   platform data model.
 - Prefer changes that generalize the platform instead of adding one-off
   city-specific behavior.
@@ -31,7 +31,7 @@ consistent with the platform direction.
 
 ```bash
 pip install -r requirements/requirements-test.txt
-streamlit run streamlit_app.py
+streamlit run apps/builder.py
 ruff check .
 pytest -q
 ```
@@ -69,7 +69,7 @@ pytest -q -m ui
   explains why it was skipped.
 - `README.md` and related docs were updated when behavior changed.
 - User-visible changes satisfy the
-  [UX contributor checklist](docs/user-experience.md#contributor-checklist).
+  [UX contributor checklist](user-experience.md#contributor-checklist).
 
 ## Design direction
 
@@ -85,5 +85,5 @@ design, prefer the reusable platform. That includes:
 
 ## Questions
 
-Use the support guidance in [SUPPORT.md](SUPPORT.md) for bug reports, usage
+Use the support guidance in [SUPPORT.md](project/SUPPORT.md) for bug reports, usage
 questions, and maintenance expectations.

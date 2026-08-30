@@ -16,7 +16,7 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
+            requirements/requirements.txt
             requirements/requirements-test.txt
 
       - name: Install quality tools
@@ -38,7 +38,7 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
+            requirements/requirements.txt
             requirements/requirements-test.txt
 
       - name: Install dependencies
@@ -60,7 +60,7 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
+            requirements/requirements.txt
             requirements/requirements-test.txt
             requirements/requirements-ui.txt
 

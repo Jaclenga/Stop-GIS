@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from builder_app import calculate_priority_scores
+from stop_gis.builder.app import calculate_priority_scores
 
 
 def test_priority_scoring_is_deterministic_for_fixed_weights():

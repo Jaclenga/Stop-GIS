@@ -13,7 +13,7 @@ from stop_gis.persistence.store import (
     list_review_history,
     list_shade_labels,
 )
-from builder_app import (
+from stop_gis.builder.app import (
     DEFAULT_TERMINOLOGY,
     SHADE_COVERAGE_OPTIONS,
     SHADE_COVERAGE_TAXONOMY,

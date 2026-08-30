@@ -137,7 +137,6 @@ For a user-visible change:
 - [ ] Builder preview and generated public-app copies behave consistently.
 - [ ] Relevant unit tests and `pytest -q -m ui` pass.
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup and pull-request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and pull-request
 requirements, and [architecture invariants](architecture_invariants.md) for
 cross-module correctness boundaries.
-

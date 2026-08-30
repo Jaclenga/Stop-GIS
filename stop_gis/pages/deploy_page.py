@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from builder_app import (
+from stop_gis.builder.app import (
     build_github_deploy_bundle,
     deployment_session_freshness_issue,
     load_project_into_session,

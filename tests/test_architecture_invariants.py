@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import published_app
+from stop_gis import public_app as published_app
 import stop_gis.deploy.bundle as bundle_module
 from stop_gis.builder.imports import prepare_stop_dataset
 from stop_gis.builder.labels import (

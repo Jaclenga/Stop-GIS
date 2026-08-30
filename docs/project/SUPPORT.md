@@ -18,7 +18,7 @@ prototype. The current support target is:
 - Attach small sample data when possible instead of screenshots alone.
 - For UX reports, include the viewport size, input method, expected recovery
   path, and whether keyboard or assistive technology was involved. See the
-  [UX guide](docs/user-experience.md).
+  [UX guide](../user-experience.md).
 
 ## Response expectations
 

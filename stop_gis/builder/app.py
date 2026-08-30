@@ -182,7 +182,7 @@ from stop_gis.assessment_modes import (
 )
 
 
-APP_DIR = Path(__file__).parent
+APP_DIR = Path(__file__).resolve().parents[2]
 DEMO_DATA_DIR = APP_DIR / "data" / "demo"
 DATA_PATH = DEMO_DATA_DIR / "stops.txt"
 SHADE_DATA_PATH = DEMO_DATA_DIR / "shading_data.csv"

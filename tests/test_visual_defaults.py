@@ -8,7 +8,7 @@ import json
 import pandas as pd
 from PIL import Image
 
-import published_app
+from stop_gis import public_app as published_app
 from stop_gis.pages import visuals_page
 from stop_gis.builder.visuals import (
     DEFAULT_VISUALIZATION,

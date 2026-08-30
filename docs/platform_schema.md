@@ -353,7 +353,7 @@ from a clean temporary clone, and verifies a known public URL. Existing connecte
 redeploy automatically after the repository update. First-time Streamlit hosting still requires the
 provider's one-time browser authorization.
 
-The public Streamlit source is maintained in `published_app.py`, which the builder preview imports
+The public Streamlit launcher is maintained in `apps/published.py`, which the builder preview imports
 and the deployment service packages as its standalone `app.py`. The package includes:
 
 - Standalone `app.py` for the public Streamlit experience.

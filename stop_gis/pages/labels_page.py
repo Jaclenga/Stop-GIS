@@ -7,7 +7,7 @@ import pydeck as pdk
 import streamlit as st
 
 from stop_gis import public_app as published_app
-from builder_app import (
+from stop_gis.builder.app import (
     DEFAULT_TAXONOMY,
     LABELER_ROLE_OPTIONS,
     LABEL_SOURCE_OPTIONS,

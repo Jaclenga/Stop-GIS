@@ -11,9 +11,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-import builder_app
-import published_app
-from builder_app import (
+import stop_gis.builder.app as builder_app
+from stop_gis import public_app as published_app
+from stop_gis.builder.app import (
     build_github_deploy_bundle,
     dataframe_to_geojson,
     deployment_session_freshness_issue,
@@ -123,7 +123,7 @@ def test_export_csv_geojson_raw_labels_and_config(
         assert ".streamlit/secrets.toml.example" in bundle_names
         assert ".env.example" in bundle_names
         assert "DEPLOYMENT.md" in bundle_names
-        assert "builder_app.py" not in bundle_names
+        assert "stop_gis/builder/app.py" not in bundle_names
         assert "platform_store.py" not in bundle_names
         assert not any(name.startswith("shade_gis/") for name in bundle_names)
         assert "psycopg[binary]>=3.2,<4" in bundle.read("requirements.txt").decode("utf-8")

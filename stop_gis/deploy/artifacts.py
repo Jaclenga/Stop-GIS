@@ -41,8 +41,8 @@ def github_new_repo_url(project: dict[str, Any], repo_name: str) -> str:
     return "https://github.com/new?" + urllib.parse.urlencode(params)
 
 
-PUBLISHED_APP_SOURCE_PATH = APP_DIR / "published_app.py"
-PUBLIC_VOTING_SOURCE_PATH = APP_DIR / "public_voting.py"
+PUBLISHED_APP_SOURCE_PATH = APP_DIR / "apps" / "published.py"
+PUBLIC_VOTING_SOURCE_PATH = APP_DIR / "apps" / "public_voting.py"
 EXISTING_REPO_PREVIEW_DIR = "preview_app"
 SHARED_RUNTIME_SOURCE_PATHS = {
     "stop_gis/__init__.py": APP_DIR / "stop_gis" / "__init__.py",

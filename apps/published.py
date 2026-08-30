@@ -12,7 +12,10 @@ except (ImportError, ModuleNotFoundError):  # Support running from a preview dir
     sys.modules.pop("stop_gis", None)
     from stop_gis import public_app as _implementation
 
-_implementation.configure_app_dir(Path(__file__).resolve().parent)
+_entrypoint_dir = Path(__file__).resolve().parent
+if _entrypoint_dir.name == "apps" and (_entrypoint_dir.parent / "stop_gis").is_dir():
+    _entrypoint_dir = _entrypoint_dir.parent
+_implementation.configure_app_dir(_entrypoint_dir)
 
 if __name__ == "__main__":
     _implementation.main()

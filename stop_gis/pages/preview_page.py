@@ -3,7 +3,7 @@ import html
 import streamlit as st
 
 from stop_gis import public_app as published_app
-from builder_app import active_raw_labels, study_config_payload
+from stop_gis.builder.app import active_raw_labels, study_config_payload
 from stop_gis.persistence.store import list_assessments
 from stop_gis.builder.imports import calculate_priority_scores
 from stop_gis.domain.shade_dimensions import (

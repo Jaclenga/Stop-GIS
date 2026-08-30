@@ -8,12 +8,11 @@ import pytest
 
 def test_core_modules_compile_without_bytecode_writes():
     for filename in [
-        "builder_app.py",
-        "platform_store.py",
-        "app.py",
-        "streamlit_app.py",
-        "published_app.py",
-        "public_voting.py",
+        "stop_gis/builder/app.py",
+        "apps/__init__.py",
+        "apps/builder.py",
+        "apps/published.py",
+        "apps/public_voting.py",
         "stop_gis/public_app.py",
         "stop_gis/public_voting.py",
         "stop_gis/persistence/store.py",
@@ -40,27 +39,27 @@ def test_core_modules_compile_without_bytecode_writes():
 
 
 def test_deploy_source_comes_from_public_app_module():
-    import builder_app
+    import stop_gis.builder.app as builder_app
 
-    assert builder_app.published_app_source() == Path("published_app.py").read_text(
+    assert builder_app.published_app_source() == Path("apps/published.py").read_text(
         encoding="utf-8"
     )
 
 
 def test_tracked_preview_app_matches_published_source():
     assert Path("preview_app/app.py").read_text(encoding="utf-8") == Path(
-        "published_app.py"
+        "apps/published.py"
     ).read_text(encoding="utf-8")
 
     assert Path("preview_app/public_voting.py").read_text(
         encoding="utf-8"
-    ) == Path("public_voting.py").read_text(encoding="utf-8")
+    ) == Path("apps/public_voting.py").read_text(encoding="utf-8")
 
 
 def test_builder_and_published_runtime_disable_arrow_string_inference():
-    import builder_app  # noqa: F401 - importing applies the runtime guard
+    import stop_gis.builder.app as builder_app  # noqa: F401 - importing applies the runtime guard
 
-    for filename in ["builder_app.py", "stop_gis/public_app.py"]:
+    for filename in ["stop_gis/builder/app.py", "stop_gis/public_app.py"]:
         source = Path(filename).read_text(encoding="utf-8")
         assert "pd.options.future.infer_string = False" in source
 
@@ -81,7 +80,7 @@ def test_runtime_and_generated_bundle_pin_pandas_below_three():
 
 
 def test_builder_coordinates_deployment_without_embedding_generated_scripts():
-    builder_source = Path("builder_app.py").read_text(encoding="utf-8")
+    builder_source = Path("stop_gis/builder/app.py").read_text(encoding="utf-8")
     artifact_source = Path("stop_gis/deploy/artifacts.py").read_text(encoding="utf-8")
     powershell_template = Path(
         "stop_gis/deploy/templates/deploy_to_github.ps1"
@@ -93,16 +92,10 @@ def test_builder_coordinates_deployment_without_embedding_generated_scripts():
     assert "function Commit-And-Push" in powershell_template
 
 
-def test_app_py_is_builder_entrypoint():
-    import app
+def test_builder_launcher_uses_canonical_application():
+    from apps import builder
 
-    assert app.main.__module__ == "builder_app"
-
-
-def test_default_streamlit_entrypoint_is_builder():
-    import streamlit_app
-
-    assert streamlit_app.main.__module__ == "builder_app"
+    assert builder.main.__module__ == "stop_gis.builder.app"
 
 
 def test_visual_pages_do_not_reference_removed_dense_map_overrides():
@@ -117,7 +110,7 @@ def test_visual_pages_do_not_reference_removed_dense_map_overrides():
 
 
 def test_ui_smoke_can_disable_expensive_automatic_persistence(monkeypatch):
-    import builder_app
+    import stop_gis.builder.app as builder_app
 
     monkeypatch.setenv("SHADE_GIS_TEST_DISABLE_AUTO_SAVE", "1")
     monkeypatch.setattr(
@@ -137,7 +130,7 @@ def test_ui_smoke_can_disable_expensive_automatic_persistence(monkeypatch):
 
 
 def test_ui_seed_limit_is_test_only(monkeypatch, taxonomy, project):
-    import builder_app
+    import stop_gis.builder.app as builder_app
 
     full_seed = builder_app.load_seed_dataset(taxonomy, project)
     monkeypatch.setenv("SHADE_GIS_TEST_MAX_SEED_ROWS", "25")
@@ -158,7 +151,7 @@ def test_ui_seed_limit_is_test_only(monkeypatch, taxonomy, project):
 
 
 def test_project_label_progress_preserves_small_nonzero_values():
-    import builder_app
+    import stop_gis.builder.app as builder_app
 
     percent, label = builder_app.project_label_progress(7, 2_315)
 
@@ -195,7 +188,7 @@ def test_preview_uses_the_shared_stop_and_voting_panel():
 
 
 def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navigation():
-    builder_source = Path("builder_app.py").read_text(encoding="utf-8")
+    builder_source = Path("stop_gis/builder/app.py").read_text(encoding="utf-8")
     preview_source = Path("stop_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert '("Dataset", "Data")' in builder_source
@@ -218,7 +211,7 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
 
 
 def test_builder_has_project_home_and_clickable_brand_navigation():
-    source = Path("builder_app.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/builder/app.py").read_text(encoding="utf-8")
 
     assert 'st.title("Stop-GIS Projects")' not in source
     assert 'st.button("Stop-GIS", key="nav_home", on_click=request_main_menu)' in source
@@ -348,7 +341,7 @@ def test_public_filters_use_one_disclosure_instead_of_nested_expanders():
 
 
 def test_workspace_ux_safeguards_are_present():
-    builder = Path("builder_app.py").read_text(encoding="utf-8")
+    builder = Path("stop_gis/builder/app.py").read_text(encoding="utf-8")
     data_page = Path("stop_gis/pages/data_page.py").read_text(encoding="utf-8")
     labels_page = Path("stop_gis/pages/labels_page.py").read_text(encoding="utf-8")
     taxonomy = Path("stop_gis/ui/taxonomy.py").read_text(encoding="utf-8")
@@ -376,7 +369,7 @@ def test_page_modules_use_explicit_dependencies_and_shared_components():
         for path in Path("stop_gis/pages").glob("*.py")
     ]
 
-    assert all("from builder_app import *" not in source for source in page_sources)
+    assert all("from stop_gis.builder.app import *" not in source for source in page_sources)
     assert "stop_gis.ui.data_quality" in Path(
         "stop_gis/pages/data_quality_page.py"
     ).read_text(encoding="utf-8")

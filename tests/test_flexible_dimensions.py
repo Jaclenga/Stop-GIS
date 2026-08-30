@@ -7,7 +7,7 @@ import zipfile
 import pandas as pd
 import pytest
 
-import published_app
+from stop_gis import public_app as published_app
 from stop_gis.persistence.store import (
     add_assessment,
     create_project,

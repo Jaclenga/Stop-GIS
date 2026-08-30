@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-import published_app
+import apps.published as published_app
 from stop_gis.pages import labels_page, preview_page
 from stop_gis import public_app
 from stop_gis.assessment_modes import modes_for_template
@@ -27,9 +27,9 @@ def test_builder_and_compatibility_entrypoints_use_one_public_implementation():
 
 
 def test_preview_files_are_thin_wrappers_without_copied_business_logic():
-    root_entrypoint = Path("published_app.py").read_text(encoding="utf-8")
+    root_entrypoint = Path("apps/published.py").read_text(encoding="utf-8")
     preview_entrypoint = Path("preview_app/app.py").read_text(encoding="utf-8")
-    root_voting = Path("public_voting.py").read_text(encoding="utf-8")
+    root_voting = Path("apps/public_voting.py").read_text(encoding="utf-8")
     preview_voting = Path("preview_app/public_voting.py").read_text(encoding="utf-8")
 
     assert preview_entrypoint == root_entrypoint

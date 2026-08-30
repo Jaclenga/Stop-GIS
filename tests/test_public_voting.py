@@ -7,9 +7,9 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-import published_app
-import public_voting
-from public_voting import (
+from stop_gis import public_app as published_app
+from stop_gis import public_voting
+from stop_gis.public_voting import (
     DEFAULT_VOTING_CONFIG,
     DEFAULT_VOTING_DESCRIPTION,
     PUBLIC_COVERAGE_DEFINITIONS,

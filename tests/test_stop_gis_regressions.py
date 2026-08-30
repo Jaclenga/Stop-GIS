@@ -12,7 +12,7 @@ from stop_gis.persistence.store import (
     load_project_bundle,
     save_project_bundle,
 )
-from published_app import (
+from stop_gis.public_app import (
     categorical_map_filter_columns,
     categorical_filter_options,
     configure_assessment_display,

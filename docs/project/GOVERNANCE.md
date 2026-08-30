@@ -21,8 +21,8 @@ Maintainers are expected to:
 - keep tests and documentation aligned with shipped behavior
 - favor transparent discussion in issues and pull requests
 - avoid one-off product decisions that block reuse across agencies or regions
-- document breaking workflow or schema changes in `README.md` and
-  `CHANGELOG.md`
+- document breaking workflow or schema changes in the root `README.md` and
+  project `CHANGELOG.md`
 
 ## How decisions are evaluated
 

@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from builder_app import REVIEW_STATUS_COLORS, VISUAL_MAP_HEIGHT, rgb_to_hex, set_page
+from stop_gis.builder.app import REVIEW_STATUS_COLORS, VISUAL_MAP_HEIGHT, rgb_to_hex, set_page
 from stop_gis.builder.imports import (
     calculate_priority_scores,
     format_bytes,

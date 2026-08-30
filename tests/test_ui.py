@@ -229,7 +229,7 @@ def streamlit_server(playwright_api):
         "-m",
         "streamlit",
         "run",
-        "app.py",
+        "apps/builder.py",
         "--server.port",
         str(port),
         "--server.address",

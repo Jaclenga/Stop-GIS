@@ -16,8 +16,8 @@ without building a new data application for every audit.
 - [Understand the product workflow](#workflow)
 - [Browse all documentation](docs/README.md)
 - [Review the user-experience guidelines](docs/user-experience.md)
-- [Contribute to the project](CONTRIBUTING.md)
-- [Get support](SUPPORT.md)
+- [Contribute to the project](docs/CONTRIBUTING.md)
+- [Get support](docs/project/SUPPORT.md)
 
 ## What Stop-GIS assesses
 
@@ -74,8 +74,8 @@ Python 3.11 or newer is recommended.
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-streamlit run streamlit_app.py
+pip install -r requirements/requirements.txt
+streamlit run apps/builder.py
 ```
 
 Run the automated tests with:
@@ -86,7 +86,7 @@ pytest -q -m ui
 ```
 
 The UI suite requires the packages in `requirements/requirements-ui.txt` and a
-Playwright Chromium installation. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+Playwright Chromium installation. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for the
 complete development setup.
 
 ## Configuration
@@ -128,9 +128,9 @@ internal identifiers are upgraded additively rather than renamed in place.
 ### Repository layout
 
 ```text
-app.py / streamlit_app.py   Thin local entry points
-builder_app.py              Builder composition and compatibility facade
+apps/                       Local and generated application entrypoints
 stop_gis/
+  builder/app.py            Builder composition
   builder/                  Import, labeling, and visualization services
   domain/                   Taxonomy, identifiers, quality, and coding rules
   ui/                       Reusable Streamlit components
@@ -143,6 +143,7 @@ data/demo/                  Versioned demonstration inputs
 scripts/                    Maintenance and data-preparation commands
 tests/                      Unit, integration, architecture, and UI tests
 docs/                       User and maintainer documentation
+infra/                      Local infrastructure definitions
 ```
 
 Application code uses the `stop_gis` namespace throughout. Persisted legacy
@@ -160,7 +161,7 @@ Key references include:
 - [Architecture invariants](docs/architecture_invariants.md)
 - [Shade-GIS migration](docs/migrating-from-shade-gis.md)
 - [Android field client](android_app/README.md)
-- [AI use statement](AI_USE.md)
+- [AI use statement](docs/project/AI_USE.md)
 
 ## Demo data
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-import published_app
+from stop_gis import public_app as published_app
 
 
 def test_clear_map_filters_restores_defaults_without_touching_other_state(monkeypatch):
@@ -134,7 +134,7 @@ def test_published_app_separates_legacy_coverage_and_source_labels():
     assert normalized["shading"].tolist() == ["Significant Shade", "Significant Shade"]
     assert normalized["shade_coverage"].tolist() == ["Significant Shade", "Significant Shade"]
     assert normalized["shade_sources"].tolist() == ["Natural", "Purpose-built"]
-from published_app import summary_metric_cards
+from stop_gis.public_app import summary_metric_cards
 
 
 def metric_by_label(metrics: list[dict[str, str]], label: str) -> dict[str, str]:

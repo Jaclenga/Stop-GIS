@@ -7,9 +7,15 @@ select = ["E4", "E7", "E9", "F"]
 [tool.ruff.lint.per-file-ignores]
 # The builder remains a compatibility facade while page modules migrate to
 # explicit imports; many names are intentionally re-exported to tests/plugins.
-"builder_app.py" = ["E402", "F401"]
+"stop_gis/builder/app.py" = ["E402", "F401"]
 # Pandas' object-string runtime guard must run before project modules import.
 "stop_gis/public_app.py" = ["E402"]
 # These tests intentionally adjust import paths or check a late import.
 "tests/conftest.py" = ["E402"]
 "tests/test_published_metrics.py" = ["E402"]
+
+[tool.pytest.ini_options]
+addopts = '-q -p no:cacheprovider -m "not ui"'
+markers = [
+    "ui: browser-based Streamlit tests that require Playwright and a local server",
+]

@@ -432,7 +432,7 @@ def test_legacy_root_runtime_detection_protects_builder_entrypoint(deployment_tm
     builder_root = deployment_tmp / "builder"
     builder_root.mkdir()
     (builder_root / "app.py").write_text(
-        "from builder_app import main\n\nmain()\n",
+        "from stop_gis.builder.app import main\n\nmain()\n",
         encoding="utf-8",
     )
     unsigned_root = deployment_tmp / "unsigned"

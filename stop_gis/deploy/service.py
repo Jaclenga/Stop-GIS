@@ -600,6 +600,8 @@ def repository_root_uses_legacy_published_app(worktree: Path) -> bool:
     except OSError:
         return False
     builder_markers = (
+        "from stop_gis.builder.app import",
+        "import stop_gis.builder.app as builder_app",
         "from builder_app import",
         "import builder_app",
         "builder_app.main",
