@@ -1,4 +1,5 @@
 import base64
+import colorsys
 import io
 import json
 import re
@@ -72,12 +73,14 @@ DEFAULT_VISUALIZATION = {
     "marker_stroke_color": "#141414",
     "marker_stroke_width": 1,
     "map_style": "High contrast",
+    "shade_palette": "Default / Civic",
     "priority_colors": {
         "low": "#34d399",
         "mid": "#facc15",
         "high": "#ef4444",
     },
     "field_color_maps": {},
+    "field_palettes": {},
     "metric_cards": DEFAULT_METRIC_CARDS,
     "overlays": [],
     "gis_overlays": [],
@@ -120,6 +123,15 @@ def migrate_legacy_analytics_config(
 ) -> dict[str, Any]:
     """Move pre-split analytics defaults to the source/coverage schema once."""
     migrated = json.loads(json.dumps(visualization or {}, default=str))
+    migrated["shade_palette"] = normalize_palette_name(
+        migrated.get("shade_palette"), "Default / Civic"
+    )
+    field_palettes = migrated.get("field_palettes")
+    if isinstance(field_palettes, dict):
+        migrated["field_palettes"] = {
+            str(field): normalize_palette_name(name, "Colorblind friendly")
+            for field, name in field_palettes.items()
+        }
     try:
         schema_version = int(migrated.get("analytics_schema_version", 0) or 0)
     except (TypeError, ValueError):
@@ -284,14 +296,13 @@ COLOR_PALETTE = [
 ]
 
 SHADE_PALETTES = {
-    # Ordered for the default taxonomy: No Shade, Limited, Significant, Needs Review, then extras.
-    "Default stop audit": [
-        "#e03131",
-        "#f08c00",
-        "#2f9e44",
-        "#868e96",
-        "#1971c2",
-        "#7950f2",
+    "Default / Civic": [
+        "#ef4444",
+        "#f59e0b",
+        "#22c55e",
+        "#3b82f6",
+        "#a855f7",
+        "#64748b",
     ],
     "Colorblind friendly": [
         "#d55e00",
@@ -300,6 +311,7 @@ SHADE_PALETTES = {
         "#949494",
         "#0072b2",
         "#cc79a7",
+        "#999999",
     ],
     "High contrast": [
         "#c92a2a",
@@ -309,23 +321,73 @@ SHADE_PALETTES = {
         "#1864ab",
         "#6741d9",
     ],
-    "Infrastructure mix": [
-        "#fa5252",
-        "#fab005",
-        "#12b886",
-        "#868e96",
-        "#228be6",
-        "#7950f2",
-    ],
-    "Civic map": [
-        "#c92a2a",
-        "#f59f00",
-        "#37b24d",
-        "#adb5bd",
-        "#364fc7",
-        "#9c36b5",
-    ],
 }
+
+PALETTE_DESCRIPTIONS = {
+    "Default / Civic": "Balanced colors for general mapping",
+    "Colorblind friendly": "Accessible categorical colors (recommended)",
+    "High contrast": "Stronger visual separation",
+}
+
+PALETTE_ALIASES = {
+    "default / civic": "Default / Civic",
+    "default stop audit": "Default / Civic",
+    "infrastructure mix": "Default / Civic",
+    "civic map": "Default / Civic",
+    "custom": "Default / Civic",
+    "colorblind friendly": "Colorblind friendly",
+    "high contrast": "High contrast",
+}
+
+BUILTIN_SEMANTIC_CATEGORIES = (
+    "No Shade",
+    "Limited Shade",
+    "Significant Shade",
+    "Needs Review",
+)
+BUILTIN_CATEGORY_SYMBOLS = {
+    "No Shade": "X",
+    "Limited Shade": "-",
+    "Significant Shade": "+",
+    "Needs Review": "?",
+}
+BUILTIN_SYMBOL_COLORS = {
+    "No Shade": [255, 255, 255],
+    "Limited Shade": [17, 24, 39],
+    "Significant Shade": [17, 24, 39],
+    "Needs Review": [255, 255, 255],
+}
+
+
+def normalize_palette_name(value: Any, default: str = "Default / Civic") -> str:
+    normalized = PALETTE_ALIASES.get(str(value or "").strip().lower())
+    return normalized or default
+
+
+def palette_color(palette_name: str, index: int) -> str:
+    """Return a stable distinct color, extending short palettes deterministically."""
+    palette = SHADE_PALETTES[normalize_palette_name(palette_name)]
+    if index < len(palette):
+        return palette[index]
+    overflow_index = index - len(palette)
+    hue = ((overflow_index + len(palette)) * 137.508) % 360 / 360
+    lightness = (0.42, 0.58, 0.72)[overflow_index % 3]
+    red, green, blue = colorsys.hls_to_rgb(hue, lightness, 0.68)
+    return "#{:02x}{:02x}{:02x}".format(
+        round(red * 255), round(green * 255), round(blue * 255)
+    )
+
+
+def apply_palette_to_taxonomy(
+    taxonomy: list[dict[str, Any]], palette_name: str
+) -> None:
+    for index, item in enumerate(taxonomy):
+        item["color"] = palette_color(palette_name, index)
+
+
+def is_builtin_semantic_taxonomy(taxonomy: list[dict[str, Any]]) -> bool:
+    names = tuple(str(item.get("name", "")).strip() for item in taxonomy)
+    return names == BUILTIN_SEMANTIC_CATEGORIES
 
 
 def get_taxonomy_color_map(taxonomy: list[dict[str, Any]]) -> dict[str, list[int]]:
@@ -412,7 +474,15 @@ def get_selected_display_columns(
 
 
 def build_tooltip_text(df: pd.DataFrame, visualization: dict[str, Any]) -> str:
-    columns = get_selected_display_columns(df, visualization)[:8]
+    columns = get_selected_display_columns(df, visualization)
+    color_options = get_color_options(df)
+    color_by = visualization.get("color_by", "Shade coverage")
+    category_field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
+        color_by
+    )
+    if category_field in df.columns and category_field not in columns:
+        columns = [category_field, *columns]
+    columns = columns[:8]
     return "\n".join(f"{display_label(column)}: {{{column}}}" for column in columns)
 
 
@@ -734,8 +804,13 @@ def ensure_field_color_map(
 ) -> dict[str, str]:
     field_maps = visualization.setdefault("field_color_maps", {})
     color_map = field_maps.setdefault(field, {})
+    field_palettes = visualization.setdefault("field_palettes", {})
+    palette_name = normalize_palette_name(
+        field_palettes.get(field), "Colorblind friendly"
+    )
+    field_palettes[field] = palette_name
     for index, value in enumerate(field_values_for_colors(df, field)):
-        color_map.setdefault(value, COLOR_PALETTE[index % len(COLOR_PALETTE)])
+        color_map.setdefault(value, palette_color(palette_name, index))
     return color_map
 
 
@@ -791,7 +866,48 @@ def color_dataset(
     colored["fill_color"] = colored["fill_color"].apply(
         lambda value: value if isinstance(value, list) else [128, 128, 128]
     )
+    if field == "shading" and is_builtin_semantic_taxonomy(taxonomy):
+        colored["marker_symbol"] = (
+            colored["shading"].map(BUILTIN_CATEGORY_SYMBOLS).fillna("")
+        )
+        colored["marker_symbol_color"] = colored["shading"].map(BUILTIN_SYMBOL_COLORS)
+    else:
+        colored["marker_symbol"] = ""
+        colored["marker_symbol_color"] = [[255, 255, 255]] * len(colored)
     return colored
+
+
+def build_semantic_symbol_layer(
+    map_df: pd.DataFrame, visualization: dict[str, Any]
+) -> pdk.Layer | None:
+    if (
+        map_df.empty
+        or not map_df.get("marker_symbol", pd.Series(dtype=str)).ne("").any()
+    ):
+        return None
+    marker_size = max(4, min(48, int(visualization.get("marker_size", 7))))
+    symbol_df = map_df[map_df["marker_symbol"] != ""].copy()
+    symbol_df["marker_symbol_size"] = max(8, min(30, round(marker_size * 1.15)))
+    vertical_offset = (
+        -round(marker_size * 0.45) if visualization.get("marker_shape") == "Pin" else 0
+    )
+    symbol_df["marker_symbol_offset"] = [[0, vertical_offset]] * len(symbol_df)
+    return pdk.Layer(
+        "TextLayer",
+        data=symbol_df,
+        id="semantic_status_symbols",
+        get_position="[stop_lon, stop_lat]",
+        get_text="marker_symbol",
+        get_color="marker_symbol_color",
+        get_size="marker_symbol_size",
+        get_pixel_offset="marker_symbol_offset",
+        size_units=pdk.types.String("pixels"),
+        size_min_pixels=8,
+        size_max_pixels=30,
+        get_text_anchor=pdk.types.String("middle"),
+        get_alignment_baseline=pdk.types.String("center"),
+        pickable=False,
+    )
 
 
 @lru_cache(maxsize=256)
@@ -1029,9 +1145,13 @@ def build_deck_chart(
             pickable=True,
             auto_highlight=True,
         )
+    symbol_layer = build_semantic_symbol_layer(map_df, visualization)
+    layers = [*build_gis_overlay_layers(visualization), layer]
+    if symbol_layer is not None:
+        layers.append(symbol_layer)
     deck = pdk.Deck(
         initial_view_state=calculate_view_state(map_df),
-        layers=[*build_gis_overlay_layers(visualization), layer],
+        layers=layers,
         map_style=MAP_STYLES.get(
             visualization.get("map_style", "High contrast"),
             pdk.map_styles.CARTO_ROAD,

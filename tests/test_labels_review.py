@@ -621,17 +621,23 @@ def test_stop_reference_deck_uses_visuals_styling_for_selected_marker(minimal_st
     deck = labels_page.build_stop_reference_deck(minimal_stops, "1001", taxonomy, visualization)
 
     assert deck is not None
-    assert [layer.id for layer in deck.layers] == ["stops_layer_circle", "selected_reference_stop_layer"]
+    assert [layer.id for layer in deck.layers] == [
+        "stops_layer_circle",
+        "semantic_status_symbols",
+        "selected_reference_stop_layer",
+        "selected_reference_status_symbol",
+    ]
     assert len(deck.layers[0].data) == 2
-    assert len(deck.layers[-1].data) == 1
-    assert deck.layers[-1].data[0]["stop_id"] == "1001"
+    assert len(deck.layers[-2].data) == 1
+    assert deck.layers[-2].data[0]["stop_id"] == "1001"
     assert deck.layers[0].data[0]["marker_size"] == 24
-    assert deck.layers[-1].data[0]["marker_size"] > deck.layers[0].data[0]["marker_size"]
-    assert deck.layers[-1].data[0]["fill_color"] == deck.layers[0].data[0]["fill_color"]
-    assert deck.layers[-1].data[0]["fill_color"] != [255, 75, 75]
-    assert deck.layers[0].opacity < deck.layers[-1].opacity
+    assert deck.layers[-2].data[0]["marker_size"] > deck.layers[0].data[0]["marker_size"]
+    assert deck.layers[-2].data[0]["fill_color"] == deck.layers[0].data[0]["fill_color"]
+    assert deck.layers[-2].data[0]["fill_color"] != [255, 75, 75]
+    assert deck.layers[0].opacity < deck.layers[-2].opacity
     assert deck.layers[0].opacity == 0.287
-    assert deck.layers[-1].opacity == 1.0
+    assert deck.layers[-2].opacity == 1.0
+    assert deck.layers[-1].data[0]["marker_symbol"] == "X"
 
 
 def test_review_reference_deck_uses_filtered_queue_points(minimal_stops, taxonomy, visualization):
