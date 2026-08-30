@@ -8,6 +8,10 @@ pre-release phase while the reusable platform stabilizes.
 ## [Unreleased]
 
 ### Added
+- Fully researcher-defined coding dimensions with generated stable keys,
+  arbitrary values and value definitions, dynamic labeling controls, JSON-backed
+  observations, analysis-ready column exports, machine-readable codebooks, and
+  schema-change guards once observations exist.
 - A task-oriented documentation hub and user-experience guide covering
   navigation, autosave feedback, confirmations, filter recovery, responsive
   behavior, public study semantics, and community-voting validity safeguards.

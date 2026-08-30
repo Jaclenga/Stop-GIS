@@ -102,6 +102,7 @@ def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, me
     with zipfile.ZipFile(io.BytesIO(bundle_bytes)) as bundle:
         bundle_names = set(bundle.namelist())
         assert "public_voting.py" in bundle_names
+        assert "stop_audit_codebook.json" in bundle_names
         assert "deployment_manifest.json" in bundle_names
         assert "migrations/001_public_voting.sql" in bundle_names
         assert "migrations/least_privilege_roles.sql.example" in bundle_names
@@ -173,6 +174,9 @@ def test_export_csv_geojson_raw_labels_and_config(db_path, project, taxonomy, me
             "deploy_to_github.ps1"
         ).decode("utf-8")
         deployed_config = json.loads(bundle.read("shade_study_config.json"))
+        deployed_codebook = json.loads(bundle.read("stop_audit_codebook.json"))
+        assert deployed_codebook["schema_version"] == 1
+        assert deployed_codebook["dimensions"] == deployed_config["codebook"]["dimensions"]
         assert deployed_config["terminology"] == terminology
         assert deployed_config["shade_source_taxonomy"] == source_taxonomy
         assert deployed_config["shade_coverage_taxonomy"] == coverage_taxonomy
@@ -305,14 +309,16 @@ def test_export_file_catalog_describes_files_and_metadata(minimal_stops):
         "Stops CSV",
         "Stops GeoJSON",
         "Raw Labels CSV",
+        "Coding Dimensions Codebook",
         "Study Configuration",
     ]
-    assert [item["records"] for item in catalog] == [2, 2, 1, 1]
+    assert [item["records"] for item in catalog] == [2, 2, 1, 0, 1]
     assert all(item["description"] for item in catalog)
     assert all(item["size"].endswith(("B", "KB", "MB", "GB")) for item in catalog)
     assert catalog[0]["updated"] == "2026-07-08 10:15"
     assert catalog[2]["updated"] == "2026-07-09 14:30"
     assert json.loads(catalog[1]["data"])["type"] == "FeatureCollection"
+    assert json.loads(catalog[3]["data"])["dimensions"] == []
 
 
 def test_raw_label_export_remains_visible_but_disabled_without_labels(minimal_stops):

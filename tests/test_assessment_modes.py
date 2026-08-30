@@ -67,16 +67,62 @@ def test_custom_mode_definition_is_generic():
             "label": "Snow clearance",
             "value_type": "categorical",
             "allowed_values": ["clear", "partial", "blocked"],
+            "value_labels": {"partial": "Partly blocked"},
+            "value_definitions": {"partial": "Some of the waiting area is blocked."},
             "ordering": ["blocked", "partial", "clear"],
             "enabled": True,
         }
     )
     assert mode["key"] == "snow_clearance"
     assert mode["measurement_level"] == "ordinal"
+    assert mode["value_labels"] == {"partial": "Partly blocked"}
+    assert mode["value_definitions"] == {
+        "partial": "Some of the waiting area is blocked."
+    }
+
+
+def test_existing_assessment_mode_rows_load_after_value_metadata_migration(db_path):
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE assessment_modes (
+                project_id TEXT NOT NULL, mode_key TEXT NOT NULL, label TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '', operational_definition TEXT NOT NULL DEFAULT '',
+                value_type TEXT NOT NULL, allowed_values_json TEXT NOT NULL DEFAULT '[]',
+                ordering_json TEXT NOT NULL DEFAULT '[]', multiple INTEGER NOT NULL DEFAULT 0,
+                allow_comment INTEGER NOT NULL DEFAULT 1, collect_confidence INTEGER NOT NULL DEFAULT 1,
+                enabled INTEGER NOT NULL DEFAULT 0, required INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 1, measurement_level TEXT NOT NULL DEFAULT 'nominal',
+                scoring_json TEXT NOT NULL DEFAULT '{}', display_json TEXT NOT NULL DEFAULT '{}',
+                PRIMARY KEY (project_id, mode_key)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO assessment_modes VALUES (
+                'saved-project', 'shade_coverage', 'Shade coverage', 'Visible shade.',
+                'Classify visible shade.', 'categorical', '["none", "unclear"]',
+                '["none", "unclear"]', 0, 1, 1, 1, 0, 1, 'ordinal', '{}', '{}'
+            )
+            """
+        )
+
+    init_database(db_path)
+    loaded = list_assessment_modes("saved-project", db_path)
+
+    assert loaded[0]["allowed_values"] == ["none", "unclear"]
+    assert loaded[0]["value_labels"] == {}
+    assert loaded[0]["value_definitions"] == {}
 
 
 def _project_with_modes(db_path, project, taxonomy, methodology, visualization, minimal_stops):
     modes = modes_for_template("basic_stop_amenities")
+    bench = next(mode for mode in modes if mode["key"] == "bench")
+    bench["value_labels"] = {"present": "Usable bench"}
+    bench["value_definitions"] = {
+        "present": "A designated bench is present and appears usable."
+    }
     project_id = create_project(
         project, taxonomy, methodology, visualization, minimal_stops, [], db_path,
         assessment_modes=modes,
@@ -92,6 +138,11 @@ def test_modes_and_immutable_assessments_round_trip(
     )
     stored_modes = list_assessment_modes(project_id, db_path)
     assert [mode["key"] for mode in stored_modes] == [mode["key"] for mode in modes]
+    stored_bench = next(mode for mode in stored_modes if mode["key"] == "bench")
+    assert stored_bench["value_labels"] == {"present": "Usable bench"}
+    assert stored_bench["value_definitions"]["present"].startswith(
+        "A designated bench"
+    )
 
     first_id = add_assessment(
         project_id,

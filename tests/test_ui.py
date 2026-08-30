@@ -612,66 +612,38 @@ def test_builder_navigation_pages_render(
             page.get_by_role("button", name="Taxonomy", exact=True).click(
                 timeout=30_000
             )
-            page.get_by_role("heading", name="Assessment Design", exact=True).wait_for(
+            page.get_by_role("heading", name="Taxonomy", exact=True).wait_for(
                 timeout=30_000
             )
-            page.get_by_role("heading", name="Terminology", exact=True).wait_for(
+            page.get_by_placeholder("Search dimensions…").wait_for(timeout=30_000)
+            page.get_by_role("button", name="+ Add dimension", exact=True).wait_for(
                 timeout=30_000
             )
-            page.get_by_role(
-                "heading", name="Shade source taxonomy", exact=True
-            ).wait_for(timeout=30_000)
-            page.get_by_role(
-                "heading", name="Shade coverage taxonomy", exact=True
-            ).wait_for(timeout=30_000)
-            taxonomy_editors = page.locator(
-                '.st-key-terminology_table [data-testid="stDataFrame"], '
-                '.st-key-shade_source_taxonomy_table [data-testid="stDataFrame"], '
-                '.st-key-shade_coverage_taxonomy_table [data-testid="stDataFrame"]'
-            )
-            playwright_api.expect(taxonomy_editors).to_have_count(0, timeout=30_000)
-            for table_key in [
-                "terminology_table",
-                "shade_source_taxonomy_table",
-                "shade_coverage_taxonomy_table",
-            ]:
-                playwright_api.expect(
-                    page.locator(f".st-key-{table_key} table.data-page-table")
-                ).to_be_visible(timeout=30_000)
-            for card_key in [
-                "taxonomy_card_terminology",
-                "taxonomy_card_source",
-                "taxonomy_card_coverage",
-            ]:
-                playwright_api.expect(
-                    page.locator(f".st-key-{card_key}")
-                ).to_be_visible(timeout=30_000)
-
-            page.get_by_role("button", name="Edit", exact=True).first.click(
-                timeout=30_000
-            )
-            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-            playwright_api.expect(
-                page.locator('.st-key-terminology_table [data-testid="stDataFrame"]')
-            ).to_have_count(1, timeout=30_000)
-            playwright_api.expect(
-                page.get_by_role("button", name="Done", exact=True)
-            ).to_be_visible(timeout=30_000)
-            page.get_by_role("button", name="Done", exact=True).click(timeout=30_000)
-            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-            page.get_by_role("button", name="Edit", exact=True).nth(1).click(
-                timeout=30_000
-            )
-            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-            reset_definitions = page.get_by_role(
-                "button", name="Reset definitions", exact=True
-            )
-            playwright_api.expect(reset_definitions).to_be_visible(timeout=30_000)
             playwright_api.expect(
                 page.locator(
-                    '.st-key-shade_source_taxonomy_table [data-testid="stDataFrame"]'
+                    '.st-key-taxonomy_concept_shade_coverage [data-testid="stDataFrame"]'
                 )
-            ).to_have_count(1, timeout=30_000)
+            ).to_have_count(0, timeout=30_000)
+            shade_coverage = page.locator(".st-key-taxonomy_concept_shade_coverage")
+            playwright_api.expect(shade_coverage).to_be_visible(timeout=30_000)
+            playwright_api.expect(shade_coverage).not_to_contain_text("Included")
+            playwright_api.expect(shade_coverage).to_contain_text("No Shade")
+            playwright_api.expect(shade_coverage).to_contain_text("Limited Shade")
+            playwright_api.expect(shade_coverage).to_contain_text("Significant Shade")
+            playwright_api.expect(shade_coverage).to_contain_text("Unknown")
+            shade_coverage.get_by_role(
+                "button", name="Shade coverage", exact=False
+            ).click(timeout=30_000)
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+            playwright_api.expect(
+                shade_coverage.get_by_text("Values", exact=True)
+            ).to_be_visible(timeout=30_000)
+            playwright_api.expect(
+                shade_coverage.get_by_role("button", name="Edit dimension", exact=True)
+            ).to_be_visible(timeout=30_000)
+            playwright_api.expect(
+                shade_coverage.get_by_text("Schema details", exact=True)
+            ).to_be_visible(timeout=30_000)
             playwright_api.expect(
                 page.get_by_role("button", name="Dataset", exact=True)
             ).to_be_enabled(timeout=30_000)

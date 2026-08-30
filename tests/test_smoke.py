@@ -348,7 +348,10 @@ def test_workspace_ux_safeguards_are_present():
     assert '"Save now"' not in data_page
     assert 'type="primary" if current == view else "secondary"' in labels_page
     assert 'key="label_workflow_navigation"' in labels_page
-    assert '"Reset definitions permanently"' in taxonomy
+    assert "render_taxonomy_editor" in taxonomy
+    assert '"Enabled for labeling"' in taxonomy
+    assert '":blue-badge[Custom]"' in taxonomy
+    assert '"Schema details"' in taxonomy
     assert 'role="status" aria-live="polite"' in builder
     assert '@st.dialog("Remove GIS overlay?"' in visuals
     assert "min-height: 24.5rem" in builder
@@ -406,22 +409,22 @@ def test_manual_entry_form_does_not_use_arrow_backed_dataframe_widget():
 
 def test_taxonomy_has_a_dedicated_data_menu_page():
     source = Path("shade_gis/pages/taxonomy_page.py").read_text(encoding="utf-8")
+    components = Path("shade_gis/taxonomy_components.py").read_text(encoding="utf-8")
 
-    assert 'st.title("Assessment Design")' in source
-    assert "terminology_editing = render_taxonomy_section_header(" in source
-    assert "render_terminology_editor(methodology)" in source
-    assert "render_shade_source_taxonomy_editor(methodology)" in source
-    assert "render_shade_coverage_taxonomy_editor(methodology, taxonomy)" in source
-    assert '"Reset definitions"' in Path("shade_gis/taxonomy_components.py").read_text(
-        encoding="utf-8"
-    )
-    assert 'with st.container(key="terminology_table")' in source
+    assert 'st.title("Taxonomy")' in source
+    assert "render_taxonomy_editor(" in source
     assert 'with st.container(key="taxonomy_workspace")' in source
-    assert 'with st.container(key="taxonomy_card_terminology")' in source
-    assert 'with st.container(key="taxonomy_card_source")' in source
-    assert 'with st.container(key="taxonomy_card_coverage")' in source
-    assert "max-width: 1120px" in source
-    assert "table-layout: fixed" in source
+    assert '"Search dimensions"' in components
+    assert '"Search terminology"' in components
+    assert '"+ Add dimension"' in components
+    assert '["Dimensions", "Terminology"]' in components
+    assert '"Enabled for labeling"' in components
+    assert "_render_group_header" in components
+    assert "taxonomy-value-row" in components
+    assert '"Schema details"' in components
+    assert "render_assessment_mode_builder" not in source
+    assert "st.data_editor(" not in components
+    assert "max-width: 960px" in source
 
 
 def test_preview_exports_use_catalog_and_provenance_sections():

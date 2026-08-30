@@ -9,17 +9,19 @@ from shade_gis.pages.data_page import (
     manual_entry_validation_error,
 )
 from shade_gis.taxonomy_components import (
-    render_shade_coverage_taxonomy_editor,
-    render_shade_source_taxonomy_editor,
-    render_terminology_editor,
+    concept_group,
+    hydrate_legacy_shade_metadata,
+    humanize_value,
     reset_shade_coverage_definitions,
     reset_shade_source_definitions,
+    sync_legacy_shade_metadata,
     taxonomy_editor_key,
     taxonomy_edit_mode_key,
     toggle_taxonomy_edit_mode,
 )
 from shade_gis.shade_dimensions import normalize_terminology
 from shade_gis.ui_tables import dataset_preview_page
+from stop_gis.assessment_modes import modes_for_template
 
 
 def status_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -173,140 +175,55 @@ def test_coverage_definition_reset_preserves_display_labels(monkeypatch, taxonom
     )
 
 
-def test_terminology_editor_updates_project_methodology(monkeypatch):
-    calls = []
-
-    class FakeTextColumn:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    class FakeColumnConfig:
-        TextColumn = FakeTextColumn
-
-    class FakeStreamlit:
-        session_state = {"active_project_id": "project-1"}
-        column_config = FakeColumnConfig()
-
-        @staticmethod
-        def data_editor(frame, **kwargs):
-            calls.append((frame, kwargs))
-            return pd.DataFrame(
-                [
-                    {
-                        "term": "Boarding Zone",
-                        "operational_definition": "The project-specific boarding location.",
-                    }
-                ]
-            )
-
-    from shade_gis import taxonomy_components
-
-    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
-    methodology = {"terminology": []}
-
-    edited = render_terminology_editor(methodology)
-
-    assert edited == [
-        {
-            "term": "Boarding Zone",
-            "operational_definition": "The project-specific boarding location.",
-        }
-    ]
-    assert methodology["terminology"] == edited
-    assert calls[0][1]["num_rows"] == "dynamic"
-    assert calls[0][1]["height"] == "auto"
-    assert calls[0][1]["row_height"] == 44
-    assert calls[0][1]["key"] == "terminology_editor:project-1"
-
-
-def test_source_taxonomy_editor_updates_definitions_without_editing_codes(monkeypatch):
-    calls = []
-
-    class FakeTextColumn:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    class FakeColumnConfig:
-        TextColumn = FakeTextColumn
-
-    class FakeStreamlit:
-        session_state = {"active_project_id": "project-1"}
-        column_config = FakeColumnConfig()
-
-        @staticmethod
-        def data_editor(frame, **kwargs):
-            calls.append(kwargs)
-            edited = frame.copy()
-            edited.loc[edited["code"] == "Natural", "shade_source"] = "Vegetation"
-            edited.loc[edited["code"] == "Natural", "operational_definition"] = (
-                "Custom natural definition."
-            )
-            return edited
-
-    from shade_gis import taxonomy_components
-
-    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
-    methodology = {}
-
-    edited = render_shade_source_taxonomy_editor(methodology)
-
-    assert edited[0] == {
-        "code": "Natural",
-        "shade_source": "Vegetation",
-        "operational_definition": "Custom natural definition.",
+def test_unified_taxonomy_hydrates_saved_shade_labels_and_definitions(taxonomy):
+    methodology = {
+        "shade_coverage_taxonomy": [
+            {"code": "No Shade", "shade_coverage": "Unshaded", "operational_definition": "None."},
+            {"code": "Limited Shade", "shade_coverage": "Partial shade", "operational_definition": "Some."},
+            {"code": "Significant Shade", "shade_coverage": "Broad shade", "operational_definition": "Most."},
+        ],
+        "shade_source_taxonomy": [
+            {"code": "Natural", "shade_source": "Vegetation", "operational_definition": "Plants."},
+            {"code": "Purpose-built", "shade_source": "Shelter", "operational_definition": "Designed."},
+            {"code": "Incidental", "shade_source": "Nearby structure", "operational_definition": "Incidental."},
+        ],
     }
-    assert methodology["shade_source_taxonomy"] == edited
-    assert "disabled" not in calls[0]
-    assert calls[0]["column_order"] == ["shade_source", "operational_definition"]
-    assert calls[0]["num_rows"] == "fixed"
+
+    modes = hydrate_legacy_shade_metadata(
+        modes_for_template("passenger_comfort"), methodology, taxonomy
+    )
+    by_key = {mode["key"]: mode for mode in modes}
+
+    assert by_key["shade_coverage"]["value_labels"]["limited"] == "Partial shade"
+    assert by_key["shade_coverage"]["value_definitions"]["limited"] == "Some."
+    assert by_key["shade_coverage"]["value_labels"]["unclear"] == "Unknown"
+    assert by_key["shade_source"]["value_labels"]["natural"] == "Vegetation"
+    assert humanize_value(by_key["shade_source"], "purpose_built") == "Shelter"
+    assert concept_group(by_key["shade_source"]) == "Shade"
+    assert concept_group(by_key["bench"]) == "Comfort"
 
 
-def test_coverage_taxonomy_editor_updates_definitions_without_editing_codes(
-    monkeypatch, taxonomy
-):
-    calls = []
-
-    class FakeTextColumn:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    class FakeColumnConfig:
-        TextColumn = FakeTextColumn
-
-    class FakeStreamlit:
-        session_state = {"active_project_id": "project-1"}
-        column_config = FakeColumnConfig()
-
-        @staticmethod
-        def data_editor(frame, **kwargs):
-            calls.append(kwargs)
-            edited = frame.copy()
-            edited.loc[edited["code"] == "Limited Shade", "shade_coverage"] = (
-                "Partial Shade"
-            )
-            edited.loc[
-                edited["code"] == "Limited Shade",
-                "operational_definition",
-            ] = "Custom limited definition."
-            return edited
-
-    from shade_gis import taxonomy_components
-
-    monkeypatch.setattr(taxonomy_components, "st", FakeStreamlit)
-
+def test_unified_taxonomy_syncs_inline_edits_to_legacy_saved_fields(taxonomy):
     methodology = {}
-    edited = render_shade_coverage_taxonomy_editor(methodology, taxonomy)
+    modes = hydrate_legacy_shade_metadata(
+        modes_for_template("passenger_comfort"), methodology, taxonomy
+    )
+    by_key = {mode["key"]: mode for mode in modes}
+    by_key["shade_coverage"]["value_labels"]["limited"] = "Partial shade"
+    by_key["shade_coverage"]["value_definitions"]["limited"] = "Custom partial definition."
+    by_key["shade_source"]["value_labels"]["natural"] = "Vegetation"
+    by_key["shade_source"]["value_definitions"]["natural"] = "Custom plant definition."
 
-    definitions = {item["name"]: item["description"] for item in edited}
-    assert definitions["Limited Shade"] == "Custom limited definition."
-    display_labels = {
-        item["code"]: item["shade_coverage"]
-        for item in methodology["shade_coverage_taxonomy"]
-    }
-    assert display_labels["Limited Shade"] == "Partial Shade"
-    assert "disabled" not in calls[0]
-    assert calls[0]["column_order"] == ["shade_coverage", "operational_definition"]
-    assert calls[0]["num_rows"] == "fixed"
+    sync_legacy_shade_metadata(modes, methodology, taxonomy)
+
+    coverage = {item["code"]: item for item in methodology["shade_coverage_taxonomy"]}
+    sources = {item["code"]: item for item in methodology["shade_source_taxonomy"]}
+    canonical = {item["name"]: item for item in taxonomy}
+    assert coverage["Limited Shade"]["shade_coverage"] == "Partial shade"
+    assert coverage["Limited Shade"]["operational_definition"] == "Custom partial definition."
+    assert canonical["Limited Shade"]["description"] == "Custom partial definition."
+    assert sources["Natural"]["shade_source"] == "Vegetation"
+    assert sources["Natural"]["operational_definition"] == "Custom plant definition."
 
 
 def test_manual_entry_dataframe_uses_plain_object_columns():

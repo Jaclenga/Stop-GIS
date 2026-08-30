@@ -176,6 +176,7 @@ from shade_gis.shade_dimensions import (
 )
 from stop_gis.assessment_modes import (
     DEFAULT_SCORING_PROFILES,
+    assessment_codebook,
     modes_for_template,
     normalize_modes,
 )
@@ -706,13 +707,15 @@ def study_config_payload() -> dict[str, Any]:
     )
     visualization["voting"]["shade_source_taxonomy"] = source_taxonomy
     visualization["voting"]["shade_coverage_taxonomy"] = coverage_taxonomy
+    assessment_modes = normalize_modes(
+        st.session_state.get("assessment_modes", DEFAULT_ASSESSMENT_MODES)
+    )
     return {
         "study_id": st.session_state.get("active_project_id")
         or slugify_repo_name(st.session_state["project"].get("name", "stop-audit")),
         "project": public_project,
-        "assessment_modes": normalize_modes(
-            st.session_state.get("assessment_modes", DEFAULT_ASSESSMENT_MODES)
-        ),
+        "assessment_modes": assessment_modes,
+        "codebook": assessment_codebook(assessment_modes),
         "scoring": st.session_state.get("scoring", DEFAULT_SCORING),
         "taxonomy": taxonomy,
         "terminology": terminology,

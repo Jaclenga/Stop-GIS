@@ -34,6 +34,7 @@ from shade_gis.deployment import (
     github_repository_slug,
     normalize_deploy_commit_message,
 )
+from stop_gis.assessment_modes import assessment_codebook, materialize_assessment_columns
 
 
 RUNTIME_REQUIREMENTS = (
@@ -95,7 +96,15 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         github_repository_slug(spec.repository)
         or spec.repository.strip().removesuffix(".git")
     )
-    stops = spec.stops.copy()
+    try:
+        configured_schema = json.loads(spec.config_json)
+    except json.JSONDecodeError as error:
+        raise ValueError("The study configuration is not valid JSON.") from error
+    codebook_json = json.dumps(
+        assessment_codebook(configured_schema.get("assessment_modes", [])),
+        indent=2,
+    )
+    stops = materialize_assessment_columns(spec.stops.copy())
     stops["priority_score"] = calculate_priority_scores(stops, spec.priority_weights)
 
     files: dict[str, bytes] = {
@@ -105,6 +114,7 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
         # scripts can upgrade safely; the contents and public UI are Stop-GIS.
         "shade_study_stops.csv": stops.to_csv(index=False).encode("utf-8"),
         "shade_study_config.json": spec.config_json.encode("utf-8"),
+        "stop_audit_codebook.json": codebook_json.encode("utf-8"),
         "stop_gis/__init__.py": (Path(__file__).resolve().parents[2] / "stop_gis" / "__init__.py").read_bytes(),
         "stop_gis/assessment_modes.py": (Path(__file__).resolve().parents[2] / "stop_gis" / "assessment_modes.py").read_bytes(),
         "requirements.txt": RUNTIME_REQUIREMENTS.encode("utf-8"),
@@ -122,7 +132,8 @@ def build_deployment_bundle(spec: DeploymentBundleSpec) -> bytes:
     if not spec.raw_labels.empty:
         files["shade_study_raw_labels.csv"] = spec.raw_labels.to_csv(index=False).encode("utf-8")
     if spec.assessments is not None and not spec.assessments.empty:
-        files["stop_audit_assessments.csv"] = spec.assessments.to_csv(index=False).encode("utf-8")
+        assessments = materialize_assessment_columns(spec.assessments)
+        files["stop_audit_assessments.csv"] = assessments.to_csv(index=False).encode("utf-8")
     release_hashes = {
         name: hashlib.sha256(content).hexdigest()
         for name, content in sorted(files.items())

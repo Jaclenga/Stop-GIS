@@ -19,8 +19,8 @@ without building a new data application for every audit.
 
 ## What Stop-GIS assesses
 
-An administrator enables only the assessment modes needed by a project.
-Built-in definitions cover:
+Researchers define and include only the coding dimensions needed by a project.
+Starter definitions cover:
 
 - stop amenities such as benches, shelters, lighting, trash cans, and passenger
   information;
@@ -29,9 +29,11 @@ Built-in definitions cover:
 - passenger-comfort factors such as shade, cleanliness, and traffic exposure;
 - custom categorical, multi-select, boolean, numeric, or text observations.
 
-Each mode has a stable key, display label, operational definition, value type,
-allowed values, collection settings, and visibility rules. New modes do not
-require new database columns.
+Each dimension has a stable key, display label, operational definition, value
+type, researcher-defined allowed values, collection settings, and visibility
+rules. New dimensions do not require source-code changes or new database
+columns. Exports include analysis-ready dimension columns and a machine-readable
+schema/codebook.
 
 ### Starter templates
 
@@ -47,14 +49,14 @@ values, requirements, ordering, display surfaces, and scoring.
 
 ## Workflow
 
-1. **Create** a project and select a template or configure assessment modes.
+1. **Create** a project and select a template or define coding dimensions.
 2. **Import** stops from GTFS, CSV, GeoJSON, Shapefile, an HTTP API, or manual
    entry. Arbitrary imported attributes are preserved.
 3. **Collect** immutable reviewer submissions with evidence method, comments,
    confidence, timestamps, and reviewer identity.
 4. **Review** conflicts while retaining independent observations and appending
    adjudications and audit-history events.
-5. **Analyze** enabled modes on maps, filters, tables, and dashboards.
+5. **Analyze** included dimensions on maps, filters, tables, and dashboards.
 6. **Publish** a standalone, versioned study website or download its data.
 
 Stop-GIS automatically saves the active project, validates publication data,

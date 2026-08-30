@@ -1251,7 +1251,7 @@ def render_review_label_section(
 def render_assessment_collection(project_id: str, stops: pd.DataFrame) -> None:
     st.subheader("Submit Stop Assessment")
     st.caption(
-        "Record only the modes enabled by this project. Each submission is immutable; applying it updates the current map projection without replacing the raw assessment."
+        "Record the coding dimensions included by this project. Each submission is immutable; applying it updates the current dataset without replacing the raw assessment."
     )
     stop_options = stops.reset_index(drop=True)
     labels = [stop_picker_label(row) for _, row in stop_options.iterrows()]
@@ -1405,6 +1405,6 @@ def render_labels_page() -> None:
                 ]
             )
             if not reliability.empty:
-                st.markdown("#### Reliability by assessment mode")
+                st.markdown("#### Reliability by coding dimension")
                 st.dataframe(reliability, width="stretch", hide_index=True)
         render_review_audit_history(project_id, None)

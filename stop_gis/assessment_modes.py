@@ -231,6 +231,12 @@ def normalize_mode_definition(mode: Mapping[str, Any], *, sort_order: int = 1) -
     if isinstance(mode.get("display"), Mapping):
         display.update({name: bool(value) for name, value in mode["display"].items() if name in display})
     scoring = mode.get("scoring") if isinstance(mode.get("scoring"), Mapping) else {}
+    value_labels = mode.get("value_labels") if isinstance(mode.get("value_labels"), Mapping) else {}
+    value_definitions = (
+        mode.get("value_definitions")
+        if isinstance(mode.get("value_definitions"), Mapping)
+        else {}
+    )
     return {
         "key": key,
         "label": str(mode.get("label") or key.replace("_", " ").title()).strip(),
@@ -247,6 +253,19 @@ def normalize_mode_definition(mode: Mapping[str, Any], *, sort_order: int = 1) -
         "sort_order": int(mode.get("sort_order") or sort_order),
         "measurement_level": measurement,
         "scoring": {str(name): float(value) for name, value in scoring.items() if _finite_number(value)},
+        # Optional presentation metadata keeps stored category codes stable while
+        # allowing the taxonomy editor to use plain-language labels and guidance.
+        # Older saved projects omit these keys and continue to normalize normally.
+        "value_labels": {
+            str(name): str(value).strip()
+            for name, value in value_labels.items()
+            if str(name) in allowed_values and str(value).strip()
+        },
+        "value_definitions": {
+            str(name): str(value).strip()
+            for name, value in value_definitions.items()
+            if str(name) in allowed_values and str(value).strip()
+        },
         "display": display,
     }
 
@@ -274,6 +293,94 @@ def modes_for_template(template_key: str) -> list[dict[str, Any]]:
     for item in modes:
         item["enabled"] = item["key"] in enabled
     return modes
+
+
+def apply_template_to_modes(
+    modes: Iterable[Mapping[str, Any]] | None, template_key: str
+) -> list[dict[str, Any]]:
+    """Apply starter inclusion states without deleting researcher-defined work."""
+    template = {mode["key"]: mode for mode in modes_for_template(template_key)}
+    current = normalize_modes(modes)
+    current_by_key = {mode["key"]: mode for mode in current}
+    result = []
+    for key, starter in template.items():
+        if key in current_by_key:
+            item = dict(current_by_key[key])
+            item["enabled"] = starter["enabled"]
+            result.append(item)
+        else:
+            result.append(starter)
+    result.extend(mode for mode in current if mode["key"] not in template)
+    return normalize_modes(result)
+
+
+def mode_value_label(mode: Mapping[str, Any], code: Any) -> str:
+    """Return a researcher-facing label while preserving the stored code."""
+    value = str(code)
+    labels = mode.get("value_labels") if isinstance(mode.get("value_labels"), Mapping) else {}
+    configured = str(labels.get(value, "") or "").strip()
+    if configured:
+        return configured
+    if str(mode.get("key", "")) == "shade_coverage":
+        return {
+            "none": "No shade",
+            "limited": "Limited shade",
+            "significant": "Significant shade",
+            "unclear": "Unknown",
+        }.get(value, value.replace("_", " ").capitalize())
+    return {
+        "unclear": "Unclear",
+        "unknown": "Unknown",
+        "not_applicable": "Not applicable",
+        "purpose_built": "Purpose-built",
+        "real_time_information": "Real-time information",
+    }.get(value, value.replace("_", " ").capitalize())
+
+
+def assessment_codebook(modes: Iterable[Mapping[str, Any]] | None) -> dict[str, Any]:
+    """Build a portable schema/codebook for configured coding dimensions."""
+    dimensions = []
+    configured_modes = list(modes or [])
+    for mode in normalize_modes(configured_modes) if configured_modes else []:
+        definitions = (
+            mode.get("value_definitions")
+            if isinstance(mode.get("value_definitions"), Mapping)
+            else {}
+        )
+        values = [
+            {
+                "code": code,
+                "label": mode_value_label(mode, code),
+                "definition": str(definitions.get(code, "") or "").strip(),
+            }
+            for code in mode["allowed_values"]
+        ]
+        missing_values = [
+            value["code"]
+            for value in values
+            if value["code"].casefold() in {
+                "unknown", "unclear", "not_applicable", "needs_review"
+            }
+            or value["label"].casefold() in {
+                "unknown", "unclear", "not applicable", "needs review"
+            }
+        ]
+        dimensions.append(
+            {
+                "key": mode["key"],
+                "name": mode["label"],
+                "description": mode["description"],
+                "operational_definition": mode["operational_definition"],
+                "value_type": mode["value_type"],
+                "allowed_values": values,
+                "missing_values": missing_values,
+                "multiple": mode["multiple"],
+                "required": mode["required"],
+                "enabled": mode["enabled"],
+                "measurement_level": mode["measurement_level"],
+            }
+        )
+    return {"schema_version": 1, "dimensions": dimensions}
 
 
 def legacy_shade_modes(taxonomy: Iterable[Mapping[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -430,6 +537,70 @@ def assessment_values_from_record(record: Mapping[str, Any]) -> dict[str, Any]:
             for item in pieces if str(item).strip()
         ]
     return values
+
+
+def observed_dimension_values(
+    records: Iterable[Mapping[str, Any]],
+) -> dict[str, set[str]]:
+    """Collect the stored values used by each dimension across observations."""
+    usage: dict[str, set[str]] = {}
+    for record in records:
+        for key, raw_value in assessment_values_from_record(record).items():
+            values = (
+                raw_value
+                if isinstance(raw_value, (list, tuple, set))
+                else [raw_value]
+            )
+            for value in values:
+                if value is None or (isinstance(value, str) and not value.strip()):
+                    continue
+                usage.setdefault(str(key), set()).add(str(value))
+    return usage
+
+
+def validate_assessment_schema_change(
+    existing_modes: Iterable[Mapping[str, Any]] | None,
+    proposed_modes: Iterable[Mapping[str, Any]] | None,
+    observed_values: Mapping[str, set[str]],
+    *,
+    allow_destructive: bool = False,
+) -> None:
+    """Reject schema mutations that would orphan or reinterpret observations."""
+    if allow_destructive:
+        return
+    existing = {mode["key"]: mode for mode in normalize_modes(existing_modes)}
+    proposed = {mode["key"]: mode for mode in normalize_modes(proposed_modes)}
+    for key, values in observed_values.items():
+        if not values or key not in existing:
+            continue
+        if key not in proposed:
+            raise AssessmentValidationError(
+                f"Cannot delete or rename dimension {key!r} because observations exist. "
+                "Disable it or run an explicit data migration first."
+            )
+        before = existing[key]
+        after = proposed[key]
+        if before["value_type"] != after["value_type"]:
+            raise AssessmentValidationError(
+                f"Cannot change the value type for dimension {key!r} after observations exist."
+            )
+        if before["multiple"] != after["multiple"]:
+            raise AssessmentValidationError(
+                f"Cannot change single/multiple selection for dimension {key!r} after observations exist."
+            )
+        if before["measurement_level"] != after["measurement_level"]:
+            raise AssessmentValidationError(
+                f"Cannot change the measurement level for dimension {key!r} after observations exist."
+            )
+        if before["allowed_values"] != after["allowed_values"]:
+            raise AssessmentValidationError(
+                f"Cannot add, remove, or reorder values for dimension {key!r} "
+                "after observations exist."
+            )
+        if before["ordering"] != after["ordering"]:
+            raise AssessmentValidationError(
+                f"Cannot reorder dimension {key!r} after observations exist."
+            )
 
 
 def materialize_assessment_columns(df: pd.DataFrame) -> pd.DataFrame:

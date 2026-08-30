@@ -1,4 +1,4 @@
-"""Streamlit controls for configuring and completing assessment modes."""
+"""Streamlit controls for completing researcher-defined coding dimensions."""
 
 from __future__ import annotations
 
@@ -10,154 +10,10 @@ import streamlit as st
 
 from stop_gis.assessment_modes import (
     AssessmentValidationError,
-    STUDY_TEMPLATES,
     enabled_modes,
-    normalize_modes,
+    mode_value_label,
     validate_assessment_values,
 )
-
-
-def _mode_table(modes: list[dict[str, Any]]) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "enabled": mode["enabled"],
-                "key": mode["key"],
-                "label": mode["label"],
-                "operational_definition": mode["operational_definition"],
-                "value_type": mode["value_type"],
-                "allowed_values": ", ".join(mode["allowed_values"]),
-                "measurement_level": mode["measurement_level"],
-                "multiple": mode["multiple"],
-                "allow_comment": mode["allow_comment"],
-                "collect_confidence": mode["collect_confidence"],
-                "required": mode["required"],
-                "sort_order": mode["sort_order"],
-                "show_on_map": mode["display"]["map"],
-                "filter": mode["display"]["filter"],
-                "summary": mode["display"]["summary"],
-                "export": mode["display"]["export"],
-                "weight_mapping": json.dumps(mode["scoring"], sort_keys=True),
-            }
-            for mode in normalize_modes(modes)
-        ]
-    )
-
-
-def _update_modes_from_table(
-    original: list[dict[str, Any]], edited: pd.DataFrame
-) -> list[dict[str, Any]]:
-    by_key = {mode["key"]: mode for mode in normalize_modes(original)}
-    result = []
-    for _, row in edited.iterrows():
-        key = str(row.get("key", "")).strip()
-        if key not in by_key:
-            continue
-        mode = dict(by_key[key])
-        mode.update(
-            {
-                "enabled": bool(row.get("enabled", False)),
-                "label": str(row.get("label", "")).strip(),
-                "operational_definition": str(row.get("operational_definition", "")).strip(),
-                "value_type": str(row.get("value_type", "categorical")),
-                "allowed_values": [piece.strip() for piece in str(row.get("allowed_values", "")).split(",") if piece.strip()],
-                "measurement_level": str(row.get("measurement_level", "nominal")),
-                "multiple": bool(row.get("multiple", False)),
-                "allow_comment": bool(row.get("allow_comment", True)),
-                "collect_confidence": bool(row.get("collect_confidence", True)),
-                "required": bool(row.get("required", False)),
-                "sort_order": int(row.get("sort_order") or 1),
-            }
-        )
-        if mode["measurement_level"] == "ordinal":
-            mode["ordering"] = list(mode["allowed_values"])
-        mode["display"] = {
-            "map": bool(row.get("show_on_map", False)),
-            "filter": bool(row.get("filter", False)),
-            "summary": bool(row.get("summary", False)),
-            "export": bool(row.get("export", False)),
-        }
-        try:
-            scoring = json.loads(str(row.get("weight_mapping", "{}")) or "{}")
-            if isinstance(scoring, dict):
-                mode["scoring"] = scoring
-        except json.JSONDecodeError:
-            pass
-        result.append(mode)
-    return normalize_modes(result)
-
-
-def render_assessment_mode_builder(modes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    st.subheader("Assessment modes")
-    st.caption(
-        "Enable only the fields reviewers need. Stable keys are locked; labels, definitions, values, order, visibility, and scoring mappings are project-specific."
-    )
-    template_labels = {config["label"]: key for key, config in STUDY_TEMPLATES.items()}
-    template_label = st.selectbox("Starter template", list(template_labels), key="assessment_template")
-    if st.button("Apply template", key="apply_assessment_template"):
-        from stop_gis.assessment_modes import modes_for_template
-
-        modes = modes_for_template(template_labels[template_label])
-        st.session_state["assessment_modes"] = modes
-        st.rerun()
-
-    with st.expander("Add a custom mode", expanded=False):
-        custom_key = st.text_input("Stable key", placeholder="snow_clearance", key="custom_mode_key")
-        custom_label = st.text_input("Label", placeholder="Snow clearance", key="custom_mode_label")
-        custom_definition = st.text_area("Operational definition", key="custom_mode_definition")
-        custom_type = st.selectbox("Value type", ["categorical", "boolean", "number", "text"], key="custom_mode_type")
-        custom_values = st.text_input(
-            "Allowed values (comma-separated)", disabled=custom_type != "categorical", key="custom_mode_values"
-        )
-        if st.button("Add mode", key="add_custom_assessment_mode"):
-            candidate = {
-                "key": custom_key,
-                "label": custom_label,
-                "operational_definition": custom_definition,
-                "value_type": custom_type,
-                "allowed_values": [piece.strip() for piece in custom_values.split(",") if piece.strip()],
-                "enabled": True,
-                "sort_order": len(modes) + 1,
-            }
-            try:
-                updated_modes = normalize_modes([*modes, candidate])
-            except AssessmentValidationError as error:
-                st.error(str(error))
-            else:
-                st.session_state["assessment_modes"] = updated_modes
-                st.rerun()
-
-    edited = st.data_editor(
-        _mode_table(modes),
-        disabled=["key"],
-        hide_index=True,
-        width="stretch",
-        key="assessment_modes_editor",
-        column_config={
-            "enabled": st.column_config.CheckboxColumn("Enabled"),
-            "key": st.column_config.TextColumn("Stable key"),
-            "label": st.column_config.TextColumn("Reviewer label"),
-            "operational_definition": st.column_config.TextColumn("Operational definition", width="large"),
-            "allowed_values": st.column_config.TextColumn("Allowed values (comma-separated)", width="large"),
-            "value_type": st.column_config.SelectboxColumn("Value type", options=["categorical", "boolean", "number", "text"]),
-            "measurement_level": st.column_config.SelectboxColumn("Measurement", options=["nominal", "ordinal", "interval", "ratio"]),
-            "multiple": st.column_config.CheckboxColumn("Multi-select"),
-            "allow_comment": st.column_config.CheckboxColumn("Comment"),
-            "collect_confidence": st.column_config.CheckboxColumn("Confidence"),
-            "required": st.column_config.CheckboxColumn("Required"),
-            "sort_order": st.column_config.NumberColumn("Order", min_value=1, step=1),
-            "show_on_map": st.column_config.CheckboxColumn("Map"),
-            "filter": st.column_config.CheckboxColumn("Filter"),
-            "summary": st.column_config.CheckboxColumn("Summary"),
-            "export": st.column_config.CheckboxColumn("Export"),
-            "weight_mapping": st.column_config.TextColumn("Value scores (JSON)", width="large"),
-        },
-    )
-    try:
-        return _update_modes_from_table(modes, edited)
-    except AssessmentValidationError as error:
-        st.error(str(error))
-        return normalize_modes(modes)
 
 
 def render_scoring_builder(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -210,6 +66,72 @@ def render_scoring_builder(profiles: list[dict[str, Any]]) -> list[dict[str, Any
     return result
 
 
+def categorical_control_kind(mode: dict[str, Any]) -> str:
+    """Choose a compact generic control from the configured value count."""
+    value_count = len(mode.get("allowed_values", []))
+    if mode.get("multiple"):
+        return "pills" if value_count <= 8 else "multiselect"
+    if value_count <= 4:
+        return "segmented"
+    if value_count <= 8:
+        return "pills"
+    return "selectbox"
+
+
+def render_dimension_value_control(
+    mode: dict[str, Any], *, label: str, default: Any, key: str, help_text: str | None
+) -> Any:
+    """Render one researcher-defined dimension without field-specific UI code."""
+    options = list(mode["allowed_values"])
+
+    def format_value(value: Any) -> str:
+        return mode_value_label(mode, value)
+
+    kind = categorical_control_kind(mode)
+    if mode["multiple"]:
+        default_values = default if isinstance(default, list) else []
+        selected = [value for value in default_values if value in options]
+        if kind == "pills":
+            return st.pills(
+                label, options, selection_mode="multi", default=selected,
+                format_func=format_value, help=help_text, key=key, width="stretch",
+            )
+        return st.multiselect(
+            label, options, default=selected, format_func=format_value,
+            help=help_text, key=key,
+        )
+    selected_default = default if default in options else None
+    if kind == "segmented":
+        return st.segmented_control(
+            label, options, default=selected_default, format_func=format_value,
+            help=help_text, key=key, width="stretch",
+        )
+    if kind == "pills":
+        return st.pills(
+            label, options, default=selected_default, format_func=format_value,
+            help=help_text, key=key, width="stretch",
+        )
+    select_options = [""] + options
+    default_index = select_options.index(default) if default in select_options else 0
+    return st.selectbox(
+        label, select_options, index=default_index,
+        format_func=lambda value: "Not assessed" if value == "" else format_value(value),
+        help=help_text, key=key,
+    )
+
+
+def _render_selected_value_definitions(mode: dict[str, Any], value: Any) -> None:
+    definitions = mode.get("value_definitions", {})
+    selected = value if isinstance(value, list) else [value]
+    guidance = [
+        f"**{mode_value_label(mode, code)}:** {definitions[code]}"
+        for code in selected
+        if code in definitions and str(definitions[code]).strip()
+    ]
+    if guidance:
+        st.caption("  \n".join(guidance))
+
+
 def render_assessment_form(
     modes: list[dict[str, Any]],
     *,
@@ -219,7 +141,7 @@ def render_assessment_form(
     """Render enabled modes and return a validated payload on submission."""
     active = enabled_modes(modes)
     if not active:
-        st.warning("This project has no enabled assessment modes.")
+        st.warning("This project has no included coding dimensions.")
         return None
     defaults = defaults or {}
     values: dict[str, Any] = {}
@@ -230,18 +152,12 @@ def render_assessment_form(
         label = mode["label"] + (" *" if mode["required"] else "")
         help_text = mode["operational_definition"] or mode["description"] or None
         default = defaults.get(key)
-        if mode["multiple"]:
-            default_values = default if isinstance(default, list) else []
-            values[key] = st.multiselect(
-                label, mode["allowed_values"], default=[value for value in default_values if value in mode["allowed_values"]],
-                help=help_text, key=f"{key_prefix}:{key}",
+        if mode["value_type"] == "categorical":
+            values[key] = render_dimension_value_control(
+                mode, label=label, default=default,
+                key=f"{key_prefix}:{key}", help_text=help_text,
             )
-        elif mode["value_type"] == "categorical":
-            # Keep an explicit blank choice even for required modes so validation
-            # can distinguish a reviewer decision from the first preselected item.
-            options = [""] + mode["allowed_values"]
-            default_index = options.index(default) if default in options else 0
-            values[key] = st.selectbox(label, options, index=default_index, help=help_text, key=f"{key_prefix}:{key}")
+            _render_selected_value_definitions(mode, values[key])
         elif mode["value_type"] == "boolean":
             boolean_options = [True, False] if mode["required"] else ["", True, False]
             default_index = boolean_options.index(default) if isinstance(default, bool) else 0

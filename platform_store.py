@@ -18,6 +18,8 @@ from stop_gis.assessment_modes import (
     apply_assessment_values,
     legacy_shade_modes,
     normalize_modes,
+    observed_dimension_values,
+    validate_assessment_schema_change,
     validate_assessment_values,
 )
 
@@ -422,6 +424,8 @@ def assessment_mode_record(project_id: str, mode: dict[str, Any]) -> tuple[Any, 
         int(mode["sort_order"]),
         mode["measurement_level"],
         json.dumps(mode["scoring"], ensure_ascii=True),
+        json.dumps(mode.get("value_labels", {}), ensure_ascii=True),
+        json.dumps(mode.get("value_definitions", {}), ensure_ascii=True),
         json.dumps(mode["display"], ensure_ascii=True),
     )
 
@@ -454,8 +458,9 @@ def migrate_legacy_projects_to_assessment_modes(conn: sqlite3.Connection) -> Non
                 project_id, mode_key, label, description, operational_definition,
                 value_type, allowed_values_json, ordering_json, multiple,
                 allow_comment, collect_confidence, enabled, required, sort_order,
-                measurement_level, scoring_json, display_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                measurement_level, scoring_json, value_labels_json,
+                value_definitions_json, display_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [assessment_mode_record(project_id, mode) for mode in legacy_shade_modes(taxonomy)],
         )
@@ -489,6 +494,17 @@ def init_database(path: Path | None = None) -> Path:
         if "review_method" not in rating_columns:
             conn.execute(
                 "ALTER TABLE blind_ratings ADD COLUMN review_method TEXT NOT NULL DEFAULT 'standardized_image'"
+            )
+        assessment_mode_columns = {
+            str(row[1]) for row in conn.execute("PRAGMA table_info(assessment_modes)").fetchall()
+        }
+        if "value_labels_json" not in assessment_mode_columns:
+            conn.execute(
+                "ALTER TABLE assessment_modes ADD COLUMN value_labels_json TEXT NOT NULL DEFAULT '{}'"
+            )
+        if "value_definitions_json" not in assessment_mode_columns:
+            conn.execute(
+                "ALTER TABLE assessment_modes ADD COLUMN value_definitions_json TEXT NOT NULL DEFAULT '{}'"
             )
         migrate_shade_source_labels(conn)
         migrate_legacy_projects_to_assessment_modes(conn)
@@ -951,6 +967,29 @@ def review_event_values(
     )
 
 
+def _assessment_mode_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "key": row["mode_key"],
+        "label": row["label"],
+        "description": row["description"],
+        "operational_definition": row["operational_definition"],
+        "value_type": row["value_type"],
+        "allowed_values": json.loads(row["allowed_values_json"] or "[]"),
+        "ordering": json.loads(row["ordering_json"] or "[]"),
+        "multiple": bool(row["multiple"]),
+        "allow_comment": bool(row["allow_comment"]),
+        "collect_confidence": bool(row["collect_confidence"]),
+        "enabled": bool(row["enabled"]),
+        "required": bool(row["required"]),
+        "sort_order": int(row["sort_order"]),
+        "measurement_level": row["measurement_level"],
+        "scoring": json.loads(row["scoring_json"] or "{}"),
+        "value_labels": json.loads(row["value_labels_json"] or "{}"),
+        "value_definitions": json.loads(row["value_definitions_json"] or "{}"),
+        "display": json.loads(row["display_json"] or "{}"),
+    }
+
+
 def list_assessment_modes(project_id: str, path: Path | None = None) -> list[dict[str, Any]]:
     init_database(path)
     with connect(path) as conn:
@@ -962,29 +1001,37 @@ def list_assessment_modes(project_id: str, path: Path | None = None) -> list[dic
             """,
             (project_id,),
         ).fetchall()
-    modes = []
-    for row in rows:
-        modes.append(
-            {
-                "key": row["mode_key"],
-                "label": row["label"],
-                "description": row["description"],
-                "operational_definition": row["operational_definition"],
-                "value_type": row["value_type"],
-                "allowed_values": json.loads(row["allowed_values_json"] or "[]"),
-                "ordering": json.loads(row["ordering_json"] or "[]"),
-                "multiple": bool(row["multiple"]),
-                "allow_comment": bool(row["allow_comment"]),
-                "collect_confidence": bool(row["collect_confidence"]),
-                "enabled": bool(row["enabled"]),
-                "required": bool(row["required"]),
-                "sort_order": int(row["sort_order"]),
-                "measurement_level": row["measurement_level"],
-                "scoring": json.loads(row["scoring_json"] or "{}"),
-                "display": json.loads(row["display_json"] or "{}"),
-            }
+    return normalize_modes([_assessment_mode_from_row(row) for row in rows])
+
+
+def _stored_dimension_usage(
+    project_id: str, connection: sqlite3.Connection
+) -> dict[str, set[str]]:
+    records: list[dict[str, Any]] = []
+    for row in connection.execute(
+        "SELECT assessment_values_json FROM assessments WHERE project_id = ?",
+        (project_id,),
+    ).fetchall():
+        records.append(
+            {"assessment_values": json.loads(row["assessment_values_json"] or "{}")}
         )
-    return normalize_modes(modes)
+    for row in connection.execute(
+        """
+        SELECT shading, shade_coverage, shade_sources, extra_json
+        FROM stops WHERE project_id = ?
+        """,
+        (project_id,),
+    ).fetchall():
+        record = {
+            "shading": row["shading"],
+            "shade_coverage": row["shade_coverage"],
+            "shade_sources": row["shade_sources"],
+        }
+        extra = json.loads(row["extra_json"] or "{}")
+        if isinstance(extra, dict):
+            record.update(extra)
+        records.append(record)
+    return observed_dimension_values(records)
 
 
 def save_assessment_modes(
@@ -993,11 +1040,25 @@ def save_assessment_modes(
     path: Path | None = None,
     *,
     connection: sqlite3.Connection | None = None,
+    allow_destructive: bool = False,
 ) -> list[dict[str, Any]]:
     normalized = normalize_modes(modes)
     owns_connection = connection is None
+    if owns_connection:
+        init_database(path)
     conn = connection or connect(path)
     try:
+        existing_rows = conn.execute(
+            "SELECT * FROM assessment_modes WHERE project_id = ?",
+            (project_id,),
+        ).fetchall()
+        existing_modes = [_assessment_mode_from_row(row) for row in existing_rows]
+        validate_assessment_schema_change(
+            existing_modes,
+            normalized,
+            _stored_dimension_usage(project_id, conn),
+            allow_destructive=allow_destructive,
+        )
         conn.execute("DELETE FROM assessment_modes WHERE project_id = ?", (project_id,))
         conn.executemany(
             """
@@ -1005,8 +1066,9 @@ def save_assessment_modes(
                 project_id, mode_key, label, description, operational_definition,
                 value_type, allowed_values_json, ordering_json, multiple,
                 allow_comment, collect_confidence, enabled, required, sort_order,
-                measurement_level, scoring_json, display_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                measurement_level, scoring_json, value_labels_json,
+                value_definitions_json, display_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [assessment_mode_record(project_id, mode) for mode in normalized],
         )
@@ -1821,6 +1883,8 @@ CREATE TABLE IF NOT EXISTS assessment_modes (
     sort_order INTEGER NOT NULL DEFAULT 1,
     measurement_level TEXT NOT NULL DEFAULT 'nominal',
     scoring_json TEXT NOT NULL DEFAULT '{}',
+    value_labels_json TEXT NOT NULL DEFAULT '{}',
+    value_definitions_json TEXT NOT NULL DEFAULT '{}',
     display_json TEXT NOT NULL DEFAULT '{}',
     PRIMARY KEY (project_id, mode_key)
 );

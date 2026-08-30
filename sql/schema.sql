@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS assessment_modes (
   measurement_level TEXT NOT NULL DEFAULT 'nominal'
     CHECK (measurement_level IN ('nominal', 'ordinal', 'interval', 'ratio')),
   scoring_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  value_labels_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  value_definitions_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   display_json JSONB NOT NULL DEFAULT '{}'::jsonb,
   PRIMARY KEY (project_id, mode_key)
 );

@@ -21,6 +21,7 @@ pd.options.future.infer_string = False
 from public_voting import normalize_voting_config, render_voting_panel
 from stop_gis.assessment_modes import (
     add_composite_scores,
+    assessment_codebook,
     categorical_summary,
     materialize_assessment_columns,
     normalize_modes,
@@ -358,6 +359,7 @@ def normalize_published_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     if normalized.get("assessment_modes"):
         normalized["assessment_modes"] = normalize_modes(normalized["assessment_modes"])
+        normalized["codebook"] = assessment_codebook(normalized["assessment_modes"])
     return normalized
 
 
@@ -443,7 +445,7 @@ def render_assessment_summaries(df: pd.DataFrame, modes: list[dict[str, Any]]) -
     if not tables:
         return
     labels = {mode["key"]: mode["label"] for mode in normalize_modes(modes)}
-    st.markdown("#### Assessment Mode Distributions")
+    st.markdown("#### Coding Dimension Distributions")
     columns = st.columns(2)
     for index, (key, table) in enumerate(tables.items()):
         with columns[index % 2]:
@@ -2150,18 +2152,24 @@ def render_methodology(config: dict[str, Any]) -> None:
             st.markdown(body)
     modes = config.get("assessment_modes", [])
     if modes:
-        st.markdown("## Enabled Assessment Modes")
+        st.markdown("## Coding Dimensions")
+        codebook = assessment_codebook(modes)
         mode_rows = [
             {
-                "Key": mode["key"],
-                "Label": mode["label"],
-                "Operational Definition": mode["operational_definition"],
-                "Allowed Values": "; ".join(mode["allowed_values"]),
-                "Measurement Level": mode["measurement_level"],
-                "Required": mode["required"],
+                "Dimension": dimension["name"],
+                "Operational Definition": dimension["operational_definition"]
+                or dimension["description"],
+                "Allowed Values": "; ".join(
+                    value["label"] for value in dimension["allowed_values"]
+                ),
+                "Missing / Unclear": "; ".join(
+                    value["label"]
+                    for value in dimension["allowed_values"]
+                    if value["code"] in dimension["missing_values"]
+                ),
             }
-            for mode in normalize_modes(modes)
-            if mode["enabled"]
+            for dimension in codebook["dimensions"]
+            if dimension["enabled"]
         ]
         st.dataframe(pd.DataFrame(mode_rows), width="stretch", hide_index=True)
     taxonomy = config.get("taxonomy", [])
@@ -2725,7 +2733,9 @@ def assessment_export_frames(
     visible_keys = {
         mode["key"]
         for mode in normalized_modes
-        if mode["enabled"] and mode["display"]["export"]
+        # Disabled dimensions stop future collection but remain exportable so
+        # historical observations are never silently dropped.
+        if mode["display"]["export"]
     }
     hidden_columns = {
         field
@@ -2749,7 +2759,13 @@ def assessment_export_frames(
         )
 
     exported_assessments = (
-        assessments.copy() if assessments is not None else pd.DataFrame()
+        materialize_assessment_columns(assessments.copy())
+        if assessments is not None
+        else pd.DataFrame()
+    )
+    exported_assessments = exported_assessments.drop(
+        columns=[key for key in hidden_columns if key in exported_assessments.columns],
+        errors="ignore",
     )
     for column in ["assessment_values", "comments", "confidence"]:
         if column in exported_assessments.columns:
@@ -2791,6 +2807,8 @@ def export_file_catalog(
         if not exported_assessments.empty
         else b""
     )
+    codebook = assessment_codebook(config.get("assessment_modes", []))
+    codebook_json = json.dumps(codebook, indent=2, default=str).encode("utf-8")
     config_json = json.dumps(config, indent=2, default=str).encode("utf-8")
     catalog = [
         {
@@ -2825,6 +2843,17 @@ def export_file_catalog(
             "file_name": "stop_audit_raw_labels.csv",
             "mime": "text/csv",
             "available": not raw_labels.empty,
+        },
+        {
+            "name": "Coding Dimensions Codebook",
+            "description": "Machine-readable dimension keys, labels, definitions, allowed values, and missing-value semantics.",
+            "records": len(codebook["dimensions"]),
+            "data": codebook_json,
+            "size": readable_file_size(len(codebook_json)),
+            "updated": imported_at,
+            "file_name": "stop_audit_codebook.json",
+            "mime": "application/json",
+            "available": True,
         },
         {
             "name": "Study Configuration",
