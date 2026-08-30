@@ -136,15 +136,19 @@ Key references include:
 - [Architecture invariants](docs/architecture_invariants.md)
 - [Shade-GIS migration](docs/migrating-from-shade-gis.md)
 - [Android field client](android_app/README.md)
+- [AI use statement](AI_USE.md)
 
 ## Demo data
 
 The bundled Tampa/HART project is a small workflow demonstration. Its amenity
 observations are example data, not a complete or current HART inventory.
 
-## License and citation
+## License
 
-Stop-GIS is released under the MIT License. Cite the software version and
-archive the study configuration, assessment definitions, raw observations,
-scoring profiles, and exported dataset used in an analysis. Citation metadata
-is available in [CITATION.cff](CITATION.cff).
+Stop-GIS is released under the [MIT License](LICENSE).
+
+## Citation
+
+Cite the software version and archive the study configuration, assessment
+definitions, raw observations, scoring profiles, and exported dataset used in
+an analysis. Citation metadata is available in [CITATION.cff](CITATION.cff).
