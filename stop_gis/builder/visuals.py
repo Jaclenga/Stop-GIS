@@ -284,32 +284,47 @@ COLOR_PALETTE = [
 ]
 
 SHADE_PALETTES = {
+    # Ordered for the default taxonomy: No Shade, Limited, Significant, Needs Review, then extras.
     "Default stop audit": [
-        "#dc143c",
-        "#d69e2e",
-        "#228b22",
-        "#4682b4",
-        "#805aaa",
-        "#808080",
+        "#e03131",
+        "#f08c00",
+        "#2f9e44",
+        "#868e96",
+        "#1971c2",
+        "#7950f2",
     ],
     "Colorblind friendly": [
         "#d55e00",
         "#e69f00",
         "#009e73",
+        "#949494",
         "#0072b2",
         "#cc79a7",
-        "#999999",
     ],
-    "High contrast": ["#b91c1c", "#f97316", "#15803d", "#2563eb", "#7c3aed", "#475569"],
+    "High contrast": [
+        "#c92a2a",
+        "#e67700",
+        "#2b8a3e",
+        "#495057",
+        "#1864ab",
+        "#6741d9",
+    ],
     "Infrastructure mix": [
-        "#dc2626",
-        "#ca8a04",
-        "#16a34a",
-        "#0ea5e9",
-        "#9333ea",
-        "#71717a",
+        "#fa5252",
+        "#fab005",
+        "#12b886",
+        "#868e96",
+        "#228be6",
+        "#7950f2",
     ],
-    "Civic map": ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#64748b"],
+    "Civic map": [
+        "#c92a2a",
+        "#f59f00",
+        "#37b24d",
+        "#adb5bd",
+        "#364fc7",
+        "#9c36b5",
+    ],
 }
 
 
