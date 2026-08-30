@@ -20,7 +20,7 @@ DB_USER = os.environ.get("PGUSER", "postgres")
 DB_PASS = os.environ.get("PGPASSWORD", "postgres")
 
 HERE = Path(__file__).parent.parent
-STOPS_FILE = HERE / "stops.txt"
+STOPS_FILE = HERE / "data" / "demo" / "stops.txt"
 MIGRATIONS_DIR = HERE / "sql" / "migrations"
 
 SCHEMA = "public"

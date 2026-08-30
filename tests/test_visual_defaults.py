@@ -9,8 +9,8 @@ import pandas as pd
 from PIL import Image
 
 import published_app
-from shade_gis.pages import visuals_page
-from shade_gis.builder_visuals import (
+from stop_gis.pages import visuals_page
+from stop_gis.builder.visuals import (
     DEFAULT_VISUALIZATION,
     LEGACY_DEFAULT_METRIC_CARDS,
     RECORD_COUNT_FIELD,

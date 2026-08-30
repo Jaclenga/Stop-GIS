@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from shade_gis.data_quality import DATA_QUALITY_ISSUES, evaluate_data_quality
+from stop_gis.domain.data_quality import DATA_QUALITY_ISSUES, evaluate_data_quality
 
 
 def quality_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:

@@ -1,7 +1,7 @@
 import streamlit as st
 
-from platform_store import list_assessments
-from shade_gis.taxonomy_components import (
+from stop_gis.persistence.store import list_assessments
+from stop_gis.ui.taxonomy import (
     bump_taxonomy_workspace_revision,
     render_taxonomy_editor,
 )

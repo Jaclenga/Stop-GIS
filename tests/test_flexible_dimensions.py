@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 import published_app
-from platform_store import (
+from stop_gis.persistence.store import (
     add_assessment,
     create_project,
     list_assessment_modes,
@@ -16,8 +16,8 @@ from platform_store import (
     load_project_bundle,
     save_assessment_modes,
 )
-from shade_gis.deploy import DeploymentBundleSpec, build_deployment_bundle
-from shade_gis.taxonomy_components import (
+from stop_gis.deploy import DeploymentBundleSpec, build_deployment_bundle
+from stop_gis.ui.taxonomy import (
     _dimension_row_label,
     build_custom_dimension,
     is_custom_dimension,

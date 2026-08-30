@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 import published_app
-from shade_gis.pages import labels_page, preview_page
+from stop_gis.pages import labels_page, preview_page
 from stop_gis import public_app
 from stop_gis.assessment_modes import modes_for_template
 

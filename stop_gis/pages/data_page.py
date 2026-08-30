@@ -9,13 +9,13 @@ from builder_app import (
     save_active_project_to_store,
     set_page,
 )
-from platform_store import (
+from stop_gis.persistence.store import (
     database_status,
     list_projects,
     list_review_history,
     list_shade_labels,
 )
-from shade_gis.builder_imports import (
+from stop_gis.builder.imports import (
     OPTIONAL_FIELDS,
     REQUIRED_STOP_FIELDS,
     clean_import_key,
@@ -35,9 +35,9 @@ from shade_gis.builder_imports import (
     read_csv_bytes,
     render_mapped_import_controls,
 )
-from shade_gis.builder_labels import disagreement_queue_table, majority_label_table
-from shade_gis.shade_dimensions import normalize_shade_coverage
-from shade_gis.ui_tables import (
+from stop_gis.builder.labels import disagreement_queue_table, majority_label_table
+from stop_gis.domain.shade_dimensions import normalize_shade_coverage
+from stop_gis.ui.tables import (
     DATASET_PREVIEW_PAGE_SIZES,
     dataset_preview_page,
     render_dataframe_table,

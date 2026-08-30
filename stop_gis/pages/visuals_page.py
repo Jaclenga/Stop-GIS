@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from builder_app import REVIEW_STATUS_COLORS, VISUAL_MAP_HEIGHT, rgb_to_hex, set_page
-from shade_gis.builder_imports import (
+from stop_gis.builder.imports import (
     calculate_priority_scores,
     format_bytes,
     max_upload_bytes,
@@ -18,7 +18,7 @@ from shade_gis.builder_imports import (
     parse_shapefile_overlay_zip,
     timestamp_with_timezone,
 )
-from shade_gis.builder_visuals import (
+from stop_gis.builder.visuals import (
     CHART_AGGREGATIONS,
     CHART_TYPES,
     COLOR_PALETTE,

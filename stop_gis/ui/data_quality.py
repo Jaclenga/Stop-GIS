@@ -7,8 +7,8 @@ import math
 import pandas as pd
 import streamlit as st
 
-from shade_gis.data_quality import DATA_QUALITY_ISSUES, ISSUE_BY_KEY, evaluate_data_quality
-from shade_gis.ui_tables import (
+from stop_gis.domain.data_quality import DATA_QUALITY_ISSUES, ISSUE_BY_KEY, evaluate_data_quality
+from stop_gis.ui.tables import (
     DATASET_PREVIEW_PAGE_SIZES,
     dataset_preview_page,
     render_dataframe_table,

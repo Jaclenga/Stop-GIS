@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from shade_gis.pages import voting_deployment
+from stop_gis.pages import voting_deployment
 
 
 def test_transient_database_action_clears_connection_string(monkeypatch):
@@ -101,7 +101,7 @@ def test_setup_rate_limit_is_server_side_and_bounded(monkeypatch):
 
 
 def test_browser_secret_generator_never_binds_secret_to_streamlit_state():
-    source = Path("shade_gis/pages/voting_deployment.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/voting_deployment.py").read_text(encoding="utf-8")
 
     assert "crypto.getRandomValues(bytes)" in source
     assert "new Uint8Array(32)" in source

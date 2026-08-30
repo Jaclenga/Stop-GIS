@@ -20,7 +20,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Callable, Sequence
 
-from shade_gis.builder_imports import _open_pinned_api_response, _validated_web_target
+from stop_gis.builder.imports import _open_pinned_api_response, _validated_web_target
 
 
 GITHUB_HOST = "github.com"

@@ -4,9 +4,9 @@ import streamlit as st
 
 from stop_gis import public_app as published_app
 from builder_app import active_raw_labels, study_config_payload
-from platform_store import list_assessments
-from shade_gis.builder_imports import calculate_priority_scores
-from shade_gis.shade_dimensions import (
+from stop_gis.persistence.store import list_assessments
+from stop_gis.builder.imports import calculate_priority_scores
+from stop_gis.domain.shade_dimensions import (
     normalize_coverage_display_taxonomy,
     normalize_source_taxonomy,
 )

@@ -6,8 +6,8 @@ import pandas as pd
 import streamlit as st
 
 from stop_gis import public_app as published_app
-from platform_store import add_image, list_images
-from shade_gis.blind_coding import (
+from stop_gis.persistence.store import add_image, list_images
+from stop_gis.domain.blind_coding import (
     COVERAGE_OPTIONS,
     IMAGE_ADEQUACY_OPTIONS,
     LOCATION_RECOGNIZED_OPTIONS,

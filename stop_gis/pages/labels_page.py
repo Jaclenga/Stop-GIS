@@ -20,7 +20,7 @@ from builder_app import (
     load_project_into_session,
     save_active_project_to_store,
 )
-from platform_store import (
+from stop_gis.persistence.store import (
     add_adjudication,
     add_assessment,
     add_shade_label,
@@ -34,7 +34,7 @@ from stop_gis.assessment_modes import (
     normalize_modes,
     reliability_for_mode,
 )
-from shade_gis.builder_labels import (
+from stop_gis.builder.labels import (
     RESOLVED_REVIEW_STATUSES,
     label_source_code,
     review_queue_label,
@@ -43,8 +43,8 @@ from shade_gis.builder_labels import (
     stop_review_snapshot,
     taxonomy_names,
 )
-from shade_gis.builder_visuals import build_deck_chart
-from shade_gis.shade_dimensions import (
+from stop_gis.builder.visuals import build_deck_chart
+from stop_gis.domain.shade_dimensions import (
     infer_sources_from_legacy_category,
     normalize_coverage_display_taxonomy,
     normalize_shade_coverage,

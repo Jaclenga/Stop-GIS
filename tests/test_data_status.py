@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from shade_gis.pages.data_page import (
+from stop_gis.pages.data_page import (
     dataset_status_metrics,
     dataset_status_table,
     manual_entry_dataframe,
     manual_entry_validation_error,
 )
-from shade_gis.taxonomy_components import (
+from stop_gis.ui.taxonomy import (
     concept_group,
     hydrate_legacy_shade_metadata,
     humanize_value,
@@ -19,8 +19,8 @@ from shade_gis.taxonomy_components import (
     taxonomy_edit_mode_key,
     toggle_taxonomy_edit_mode,
 )
-from shade_gis.shade_dimensions import normalize_terminology
-from shade_gis.ui_tables import dataset_preview_page
+from stop_gis.domain.shade_dimensions import normalize_terminology
+from stop_gis.ui.tables import dataset_preview_page
 from stop_gis.assessment_modes import modes_for_template
 
 
@@ -76,7 +76,7 @@ def test_normalize_terminology_cleans_rows_and_preserves_an_intentionally_empty_
 
 
 def test_taxonomy_edit_mode_is_project_scoped_and_toggleable(monkeypatch):
-    from shade_gis import taxonomy_components
+    from stop_gis.ui import taxonomy as taxonomy_components
 
     class FakeStreamlit:
         session_state = {"active_project_id": "project-1"}
@@ -92,7 +92,7 @@ def test_taxonomy_edit_mode_is_project_scoped_and_toggleable(monkeypatch):
 
 
 def test_source_definition_reset_preserves_display_labels(monkeypatch):
-    from shade_gis import taxonomy_components
+    from stop_gis.ui import taxonomy as taxonomy_components
 
     class FakeStreamlit:
         session_state = {"active_project_id": "project-1"}
@@ -132,7 +132,7 @@ def test_source_definition_reset_preserves_display_labels(monkeypatch):
 
 
 def test_coverage_definition_reset_preserves_display_labels(monkeypatch, taxonomy):
-    from shade_gis import taxonomy_components
+    from stop_gis.ui import taxonomy as taxonomy_components
 
     class FakeStreamlit:
         session_state = {"active_project_id": "project-1"}

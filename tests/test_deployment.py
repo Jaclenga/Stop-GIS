@@ -12,10 +12,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-import shade_gis.deployment as deployment_module
-from shade_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
+import stop_gis.deploy.service as deployment_module
+from stop_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
 
-from shade_gis.deployment import (
+from stop_gis.deploy.service import (
     CREATED_REPOSITORY_FILES,
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
     CommandResult,
@@ -34,7 +34,7 @@ from shade_gis.deployment import (
 
 
 def test_release_identity_changes_when_only_configuration_changes():
-    from shade_gis.pages import deploy_page
+    from stop_gis.pages import deploy_page
 
     base = dict(
         repository="owner/study",
@@ -59,7 +59,7 @@ def test_release_identity_changes_when_only_configuration_changes():
 
 
 def test_stored_deployment_result_is_bound_to_bundle(monkeypatch):
-    from shade_gis.pages import deploy_page
+    from stop_gis.pages import deploy_page
 
     monkeypatch.setattr(deploy_page.st, "session_state", {})
     target = DeploymentTarget(repository="owner/study", mode="existing")
@@ -96,7 +96,7 @@ def test_create_publish_rejects_invalid_visibility_before_running_commands():
 
 
 def test_deploy_page_restores_and_remembers_settings_per_project(monkeypatch):
-    from shade_gis.pages import deploy_page
+    from stop_gis.pages import deploy_page
 
     session_state = {"active_project_id": "project-one"}
     monkeypatch.setattr(
@@ -344,11 +344,11 @@ def test_website_verification_rejects_unrelated_success_page(monkeypatch):
             pass
 
     monkeypatch.setattr(
-        "shade_gis.deployment._validated_web_target",
+        "stop_gis.deploy.service._validated_web_target",
         lambda url, **_kwargs: (url, ["8.8.8.8"]),
     )
     monkeypatch.setattr(
-        "shade_gis.deployment._open_pinned_api_response",
+        "stop_gis.deploy.service._open_pinned_api_response",
         lambda _url, _addresses: (FakeConnection(), FakeResponse()),
     )
 
@@ -385,7 +385,7 @@ def test_website_verification_requires_all_exact_static_identity_values(monkeypa
             pass
 
     monkeypatch.setattr(
-        "shade_gis.deployment._validated_web_target",
+        "stop_gis.deploy.service._validated_web_target",
         lambda url, **_kwargs: (url, ["8.8.8.8"]),
     )
 
@@ -393,7 +393,7 @@ def test_website_verification_requires_all_exact_static_identity_values(monkeypa
         requested_urls.append(url)
         return FakeConnection(), FakeResponse()
 
-    monkeypatch.setattr("shade_gis.deployment._open_pinned_api_response", fake_open)
+    monkeypatch.setattr("stop_gis.deploy.service._open_pinned_api_response", fake_open)
 
     verified, _message = verify_website(
         "https://website.example",
@@ -689,7 +689,7 @@ def test_readiness_requires_confirmation_for_existing_public_repository():
 def test_website_verification_rejects_private_targets_and_redirects(monkeypatch):
     monkeypatch.delenv("SHADE_GIS_ALLOW_PRIVATE_WEBSITE_URLS", raising=False)
     monkeypatch.setattr(
-        "shade_gis.builder_imports.socket.getaddrinfo",
+        "stop_gis.builder.imports.socket.getaddrinfo",
         lambda host, port, type: [(None, type, None, "", ("127.0.0.1", port))],
     )
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from platform_store import (
+from stop_gis.persistence.store import (
     ProjectConflictError,
     add_adjudication,
     add_assessment,

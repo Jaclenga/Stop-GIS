@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from platform_store import (
+from stop_gis.persistence.store import (
     ProjectConflictError,
     add_shade_label,
     copy_readonly_source_to_fallback,

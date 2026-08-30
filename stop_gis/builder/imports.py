@@ -15,8 +15,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from shade_gis.identifiers import canonical_identifier
-from shade_gis.shade_dimensions import (
+from stop_gis.domain.identifiers import canonical_identifier
+from stop_gis.domain.shade_dimensions import (
     infer_sources_from_legacy_category,
     normalize_shade_coverage,
     split_shade_sources,

@@ -5,7 +5,7 @@ import sqlite3
 import pandas as pd
 import pytest
 
-from platform_store import (
+from stop_gis.persistence.store import (
     add_adjudication,
     add_assessment,
     create_project,

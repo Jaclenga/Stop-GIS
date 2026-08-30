@@ -20,8 +20,9 @@ from typing import Any, Iterable
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA = APP_DIR / "shading_data.csv"
-DEFAULT_STOPS = APP_DIR / "stops.txt"
+DEMO_DATA_DIR = APP_DIR / "data" / "demo"
+DEFAULT_DATA = DEMO_DATA_DIR / "shading_data.csv"
+DEFAULT_STOPS = DEMO_DATA_DIR / "stops.txt"
 DEFAULT_URL = (
     "https://services1.arcgis.com/IbNXlmt2RVVRCZ6M/arcgis/rest/services/"
     "HeatVulnerabilityIndex/FeatureServer/0/query?where=1%3D1&outFields=*"

@@ -18,9 +18,10 @@ migration again to install the adjudication-lineage trigger.
 
 ## Intentionally retained identifiers
 
-The following names remain compatibility contracts rather than public product branding:
+The obsolete `shade_gis` Python package has been removed; application imports
+now use `stop_gis`. The following persisted names remain compatibility contracts
+rather than public product branding:
 
-- the `shade_gis` import package, while new imports use the `stop_gis` namespace facade;
 - `shade_taxonomy`, `shade_labels`, `shade_votes`, and their shade-specific columns;
 - former environment-variable names, which remain fallback aliases;
 - `.shade_gis_votes.sqlite3`, `shade_study_*.csv/json`, and `static/shade_gis_identity.json` in existing generated deployments;

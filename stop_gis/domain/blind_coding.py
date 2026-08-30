@@ -13,7 +13,7 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from platform_store import clean_scalar, connect, empty_dataframe, init_database, utc_timestamp
+from stop_gis.persistence.store import clean_scalar, connect, empty_dataframe, init_database, utc_timestamp
 
 
 PHASES = ("setup", "coding", "adjudication", "closed")

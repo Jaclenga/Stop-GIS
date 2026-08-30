@@ -16,16 +16,24 @@ def test_core_modules_compile_without_bytecode_writes():
         "public_voting.py",
         "stop_gis/public_app.py",
         "stop_gis/public_voting.py",
-        "shade_gis/ui_tables.py",
-        "shade_gis/taxonomy_components.py",
-        "shade_gis/data_quality_components.py",
-        "shade_gis/shade_dimensions.py",
-        "shade_gis/deploy/artifacts.py",
-        "shade_gis/deploy/bundle.py",
-        "shade_gis/pages/preview_page.py",
-        "shade_gis/pages/data_quality_page.py",
-        "shade_gis/pages/voting_page.py",
-        "shade_gis/pages/deploy_page.py",
+        "stop_gis/persistence/store.py",
+        "stop_gis/builder/imports.py",
+        "stop_gis/builder/labels.py",
+        "stop_gis/builder/visuals.py",
+        "stop_gis/domain/blind_coding.py",
+        "stop_gis/domain/data_quality.py",
+        "stop_gis/domain/identifiers.py",
+        "stop_gis/domain/shade_dimensions.py",
+        "stop_gis/ui/tables.py",
+        "stop_gis/ui/taxonomy.py",
+        "stop_gis/ui/data_quality.py",
+        "stop_gis/deploy/artifacts.py",
+        "stop_gis/deploy/bundle.py",
+        "stop_gis/deploy/service.py",
+        "stop_gis/pages/preview_page.py",
+        "stop_gis/pages/data_quality_page.py",
+        "stop_gis/pages/voting_page.py",
+        "stop_gis/pages/deploy_page.py",
     ]:
         source = Path(filename).read_text(encoding="utf-8")
         compile(source, filename, "exec")
@@ -63,7 +71,7 @@ def test_builder_and_published_runtime_disable_arrow_string_inference():
 
 def test_runtime_and_generated_bundle_pin_pandas_below_three():
     requirements = Path("requirements/requirements.txt").read_text(encoding="utf-8")
-    bundle_source = Path("shade_gis/deploy/bundle.py").read_text(encoding="utf-8")
+    bundle_source = Path("stop_gis/deploy/bundle.py").read_text(encoding="utf-8")
 
     assert "pandas>=2.2,<3" in requirements
     assert "pyarrow>=24,<25" in requirements
@@ -74,9 +82,9 @@ def test_runtime_and_generated_bundle_pin_pandas_below_three():
 
 def test_builder_coordinates_deployment_without_embedding_generated_scripts():
     builder_source = Path("builder_app.py").read_text(encoding="utf-8")
-    artifact_source = Path("shade_gis/deploy/artifacts.py").read_text(encoding="utf-8")
+    artifact_source = Path("stop_gis/deploy/artifacts.py").read_text(encoding="utf-8")
     powershell_template = Path(
-        "shade_gis/deploy/templates/deploy_to_github.ps1"
+        "stop_gis/deploy/templates/deploy_to_github.ps1"
     ).read_text(encoding="utf-8")
 
     assert "DeploymentBundleSpec(" in builder_source
@@ -99,8 +107,8 @@ def test_default_streamlit_entrypoint_is_builder():
 
 def test_visual_pages_do_not_reference_removed_dense_map_overrides():
     for filename in [
-        "shade_gis/pages/visuals_page.py",
-        "shade_gis/pages/preview_page.py",
+        "stop_gis/pages/visuals_page.py",
+        "stop_gis/pages/preview_page.py",
         "stop_gis/public_app.py",
     ]:
         source = Path(filename).read_text(encoding="utf-8")
@@ -163,7 +171,7 @@ def test_project_label_progress_preserves_small_nonzero_values():
 
 def test_summary_metrics_only_render_in_analytics():
     published_source = Path("stop_gis/public_app.py").read_text(encoding="utf-8")
-    preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
+    preview_source = Path("stop_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert published_source.count("render_metric_cards(df)") == 1
     assert "published_app.render_metric_cards(visible_stops)" not in preview_source
@@ -181,14 +189,14 @@ def test_public_taxonomy_table_does_not_expose_sort_order():
 
 
 def test_preview_uses_the_shared_stop_and_voting_panel():
-    preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
+    preview_source = Path("stop_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert "published_app.render_stop_and_voting_panel(" in preview_source
 
 
 def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navigation():
     builder_source = Path("builder_app.py").read_text(encoding="utf-8")
-    preview_source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
+    preview_source = Path("stop_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert '("Dataset", "Data")' in builder_source
     assert '("Labeling", "Labels")' in builder_source
@@ -245,7 +253,7 @@ def test_builder_has_project_home_and_clickable_brand_navigation():
 
 
 def test_labeling_workflow_uses_action_oriented_navigation():
-    source = Path("shade_gis/pages/labels_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/labels_page.py").read_text(encoding="utf-8")
 
     assert 'st.title("Dataset Review")' in source
     assert '"+ Submit Label"' in source
@@ -264,7 +272,7 @@ def test_labeling_workflow_uses_action_oriented_navigation():
 
 
 def test_blind_coding_uses_research_workflow_hierarchy():
-    source = Path("shade_gis/pages/blind_coding_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/blind_coding_page.py").read_text(encoding="utf-8")
 
     assert 'st.title("Intercoder Review")' in source
     assert 'st.subheader("Study Setup")' in source
@@ -285,7 +293,7 @@ def test_blind_coding_uses_research_workflow_hierarchy():
 
 
 def test_voting_groups_configuration_and_hides_deployment_details():
-    source = Path("shade_gis/pages/voting_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/voting_page.py").read_text(encoding="utf-8")
 
     assert 'st.title("Community Voting")' in source
     assert 'st.subheader("Configuration")' in source
@@ -309,8 +317,8 @@ def test_voting_groups_configuration_and_hides_deployment_details():
 
 
 def test_preview_configuration_pages_do_not_duplicate_full_public_renderers():
-    visuals = Path("shade_gis/pages/visuals_page.py").read_text(encoding="utf-8")
-    docs = Path("shade_gis/pages/docs_page.py").read_text(encoding="utf-8")
+    visuals = Path("stop_gis/pages/visuals_page.py").read_text(encoding="utf-8")
+    docs = Path("stop_gis/pages/docs_page.py").read_text(encoding="utf-8")
 
     assert '"Open full preview →"' in visuals
     assert 'st.subheader("Custom Chart Preview")' not in visuals
@@ -341,10 +349,10 @@ def test_public_filters_use_one_disclosure_instead_of_nested_expanders():
 
 def test_workspace_ux_safeguards_are_present():
     builder = Path("builder_app.py").read_text(encoding="utf-8")
-    data_page = Path("shade_gis/pages/data_page.py").read_text(encoding="utf-8")
-    labels_page = Path("shade_gis/pages/labels_page.py").read_text(encoding="utf-8")
-    taxonomy = Path("shade_gis/taxonomy_components.py").read_text(encoding="utf-8")
-    visuals = Path("shade_gis/pages/visuals_page.py").read_text(encoding="utf-8")
+    data_page = Path("stop_gis/pages/data_page.py").read_text(encoding="utf-8")
+    labels_page = Path("stop_gis/pages/labels_page.py").read_text(encoding="utf-8")
+    taxonomy = Path("stop_gis/ui/taxonomy.py").read_text(encoding="utf-8")
+    visuals = Path("stop_gis/pages/visuals_page.py").read_text(encoding="utf-8")
 
     assert '"Publication intent"' in data_page
     assert "save automatically to the active project" in data_page
@@ -365,20 +373,20 @@ def test_workspace_ux_safeguards_are_present():
 def test_page_modules_use_explicit_dependencies_and_shared_components():
     page_sources = [
         path.read_text(encoding="utf-8")
-        for path in Path("shade_gis/pages").glob("*.py")
+        for path in Path("stop_gis/pages").glob("*.py")
     ]
 
     assert all("from builder_app import *" not in source for source in page_sources)
-    assert "shade_gis.data_quality_components" in Path(
-        "shade_gis/pages/data_quality_page.py"
+    assert "stop_gis.ui.data_quality" in Path(
+        "stop_gis/pages/data_quality_page.py"
     ).read_text(encoding="utf-8")
-    assert "shade_gis.taxonomy_components" in Path(
-        "shade_gis/pages/taxonomy_page.py"
+    assert "stop_gis.ui.taxonomy" in Path(
+        "stop_gis/pages/taxonomy_page.py"
     ).read_text(encoding="utf-8")
 
 
 def test_data_page_uses_progress_dashboard_and_collapsed_dataset_preview():
-    source = Path("shade_gis/pages/data_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/data_page.py").read_text(encoding="utf-8")
 
     assert 'st.subheader("Dataset Status")' in source
     assert '"Open Dataset Review →"' in source
@@ -392,7 +400,7 @@ def test_data_page_uses_progress_dashboard_and_collapsed_dataset_preview():
 
 
 def test_data_quality_has_a_dedicated_data_menu_page():
-    source = Path("shade_gis/pages/data_quality_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/data_quality_page.py").read_text(encoding="utf-8")
 
     assert 'st.title("Data Quality")' in source
     assert "render_data_quality_dashboard(" in source
@@ -400,7 +408,7 @@ def test_data_quality_has_a_dedicated_data_menu_page():
 
 
 def test_manual_entry_form_does_not_use_arrow_backed_dataframe_widget():
-    source = Path("shade_gis/pages/data_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/data_page.py").read_text(encoding="utf-8")
     manual_entry_source = source.split("with manual_tab:", 1)[1].split(
         "source_cols = st.columns", 1
     )[0]
@@ -411,8 +419,8 @@ def test_manual_entry_form_does_not_use_arrow_backed_dataframe_widget():
 
 
 def test_taxonomy_has_a_dedicated_data_menu_page():
-    source = Path("shade_gis/pages/taxonomy_page.py").read_text(encoding="utf-8")
-    components = Path("shade_gis/taxonomy_components.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/taxonomy_page.py").read_text(encoding="utf-8")
+    components = Path("stop_gis/ui/taxonomy.py").read_text(encoding="utf-8")
 
     assert 'st.title("Taxonomy")' in source
     assert "render_taxonomy_editor(" in source
@@ -431,7 +439,7 @@ def test_taxonomy_has_a_dedicated_data_menu_page():
 
 
 def test_preview_exports_use_catalog_and_provenance_sections():
-    source = Path("shade_gis/pages/preview_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
     assert "published_app.render_export_files(" in source
     assert "published_app.render_dataset_provenance(" in source

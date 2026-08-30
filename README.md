@@ -125,6 +125,30 @@ Shade remains a first-class compatibility subject through coordinated coverage
 and source modes. Existing shade data, voting deployments, databases, and
 internal identifiers are upgraded additively rather than renamed in place.
 
+### Repository layout
+
+```text
+app.py / streamlit_app.py   Thin local entry points
+builder_app.py              Builder composition and compatibility facade
+stop_gis/
+  builder/                  Import, labeling, and visualization services
+  domain/                   Taxonomy, identifiers, quality, and coding rules
+  ui/                       Reusable Streamlit components
+  pages/                    Builder page composition
+  deploy/                   Bundle generation and publishing services
+  persistence/              Project storage adapters
+  public_app.py             Shared published-study runtime
+  public_voting.py          Shared public voting runtime
+data/demo/                  Versioned demonstration inputs
+scripts/                    Maintenance and data-preparation commands
+tests/                      Unit, integration, architecture, and UI tests
+docs/                       User and maintainer documentation
+```
+
+Application code uses the `stop_gis` namespace throughout. Persisted legacy
+identifiers remain supported where changing them could orphan existing project
+data, but the retired `shade_gis` source package is no longer present.
+
 ## Documentation
 
 The [documentation hub](docs/README.md) organizes guides by task and audience.
@@ -140,8 +164,9 @@ Key references include:
 
 ## Demo data
 
-The bundled Tampa/HART project is a small workflow demonstration. Its amenity
-observations are example data, not a complete or current HART inventory.
+The bundled Tampa/HART inputs live in [`data/demo/`](data/demo/). This is a
+small workflow demonstration; its amenity observations are example data, not a
+complete or current HART inventory.
 
 ## License
 

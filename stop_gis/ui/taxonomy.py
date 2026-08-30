@@ -9,7 +9,7 @@ from typing import Any
 
 import streamlit as st
 
-from shade_gis.shade_dimensions import (
+from stop_gis.domain.shade_dimensions import (
     SHADE_COVERAGE_TAXONOMY,
     SHADE_SOURCE_TAXONOMY,
     normalize_coverage_display_taxonomy,

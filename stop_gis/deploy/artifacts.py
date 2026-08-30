@@ -5,7 +5,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from shade_gis.deployment import (
+from stop_gis.deploy.service import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
     normalize_deploy_commit_message,
 )

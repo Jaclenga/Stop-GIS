@@ -18,10 +18,10 @@ from builder_app import (
     load_project_into_session,
     set_page,
 )
-from platform_store import list_images
-from shade_gis.data_quality import evaluate_data_quality
-from shade_gis.deploy import deploy_launcher_script, github_new_repo_url, slugify_repo_name
-from shade_gis.deployment import (
+from stop_gis.persistence.store import list_images
+from stop_gis.domain.data_quality import evaluate_data_quality
+from stop_gis.deploy import deploy_launcher_script, github_new_repo_url, slugify_repo_name
+from stop_gis.deploy.service import (
     STREAMLIT_WORKSPACE_URL,
     DeploymentTarget,
     PublishResult,
@@ -38,7 +38,7 @@ from shade_gis.deployment import (
     unpublish_website,
     verify_website,
 )
-from shade_gis.pages.voting_deployment import render_voting_deployment_wizard
+from stop_gis.pages.voting_deployment import render_voting_deployment_wizard
 
 
 DEPLOYMENT_RESULT_KEY = "deploy_page_result"

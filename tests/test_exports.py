@@ -19,8 +19,8 @@ from builder_app import (
     deployment_session_freshness_issue,
     study_config_json,
 )
-from platform_store import add_shade_label, create_project, list_shade_labels, save_project_bundle
-from shade_gis.deploy import (
+from stop_gis.persistence.store import add_shade_label, create_project, list_shade_labels, save_project_bundle
+from stop_gis.deploy import (
     deploy_launcher_script,
     deploy_readme,
     deploy_script,
@@ -524,7 +524,7 @@ def test_streamlit_entrypoint_separates_builder_repo_from_public_preview():
 
 
 def test_deploy_page_requires_destination_settings_before_publishing():
-    source = Path("shade_gis/pages/deploy_page.py").read_text(encoding="utf-8")
+    source = Path("stop_gis/pages/deploy_page.py").read_text(encoding="utf-8")
 
     assert "max-width: 900px" in source
     assert 'STAGES = ("Check project", "Prepare website", "Publish", "Verify website")' in source

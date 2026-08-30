@@ -4,7 +4,7 @@ import inspect
 
 import pandas as pd
 
-from platform_store import (
+from stop_gis.persistence.store import (
     add_image,
     add_review_event,
     add_shade_label,
@@ -27,7 +27,7 @@ from builder_app import (
     review_queue_label,
     review_queue_table,
 )
-from shade_gis.pages import labels_page
+from stop_gis.pages import labels_page
 
 
 def disagreement_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -89,7 +89,7 @@ def test_resolved_status_without_a_resolution_timestamp_does_not_hide_new_disagr
 
 
 def test_builder_fleiss_kappa_rejects_unequal_rater_counts():
-    from shade_gis.builder_labels import fleiss_kappa
+    from stop_gis.builder.labels import fleiss_kappa
 
     labels = pd.DataFrame(
         [

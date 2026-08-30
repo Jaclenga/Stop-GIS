@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 from stop_gis import public_app as published_app
 from stop_gis.public_voting import DEFAULT_VOTING_CONFIG
 
-from shade_gis.builder_imports import (
+from stop_gis.builder.imports import (
     REQUIRED_STOP_FIELDS,
     hex_to_rgb,
     normalize_hex_color,

@@ -7,7 +7,7 @@ from stop_gis.public_voting import (
     normalize_voting_config,
     render_voting_panel,
 )
-from shade_gis.shade_dimensions import (
+from stop_gis.domain.shade_dimensions import (
     normalize_coverage_display_taxonomy,
     normalize_source_taxonomy,
 )

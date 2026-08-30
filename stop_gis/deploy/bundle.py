@@ -11,8 +11,8 @@ from typing import Any
 
 import pandas as pd
 
-from shade_gis.builder_imports import calculate_priority_scores
-from shade_gis.deploy.artifacts import (
+from stop_gis.builder.imports import calculate_priority_scores
+from stop_gis.deploy.artifacts import (
     deployment_guide,
     deploy_readme,
     deploy_script,
@@ -28,7 +28,7 @@ from shade_gis.deploy.artifacts import (
     streamlit_entrypoint_path,
     verify_database_script,
 )
-from shade_gis.deployment import (
+from stop_gis.deploy.service import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
     WEBSITE_IDENTITY_FILE,
     github_repository_slug,

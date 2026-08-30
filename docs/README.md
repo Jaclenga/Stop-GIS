@@ -25,7 +25,7 @@ working local installation.
 
 Deployment documentation is generated with each study so its commands,
 repository details, and voting requirements match that exact release. Template
-sources live in `shade_gis/deploy/templates/` and are maintainer-facing.
+sources live in `stop_gis/deploy/templates/` and are maintainer-facing.
 
 ## Develop and maintain
 

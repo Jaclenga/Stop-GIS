@@ -5,8 +5,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from shade_gis.identifiers import canonical_identifier
-from shade_gis.shade_dimensions import normalize_shade_coverage, split_shade_sources
+from stop_gis.domain.identifiers import canonical_identifier
+from stop_gis.domain.shade_dimensions import normalize_shade_coverage, split_shade_sources
 
 
 REVIEW_STATUS_NAMES = {

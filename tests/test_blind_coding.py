@@ -5,8 +5,8 @@ import re
 import pandas as pd
 import pytest
 
-from platform_store import add_image, create_project
-from shade_gis.blind_coding import (
+from stop_gis.persistence.store import add_image, create_project
+from stop_gis.domain.blind_coding import (
     BlindCodingError,
     advance_blind_phase,
     blind_adjudication_queue,
@@ -320,7 +320,7 @@ def test_krippendorff_alpha_normalizes_units_with_unequal_rater_counts():
 def test_assignment_creation_rejects_concurrent_assessment_unit_change(
     db_path, project, taxonomy, methodology, visualization, minimal_stops, monkeypatch
 ):
-    import shade_gis.blind_coding as blind_coding
+    import stop_gis.domain.blind_coding as blind_coding
 
     project_id, _ = make_project(
         db_path, project, taxonomy, methodology, visualization, minimal_stops

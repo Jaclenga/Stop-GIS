@@ -1,6 +1,6 @@
 """Deployment package generation and publishing helpers."""
 
-from shade_gis.deploy.artifacts import (
+from stop_gis.deploy.artifacts import (
     deployment_guide,
     deploy_launcher_script,
     deploy_readme,
@@ -19,7 +19,7 @@ from shade_gis.deploy.artifacts import (
     streamlit_entrypoint_path,
     verify_database_script,
 )
-from shade_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
+from stop_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
 
 __all__ = [
     "deployment_guide",

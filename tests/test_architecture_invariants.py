@@ -11,23 +11,23 @@ import pandas as pd
 import pytest
 
 import published_app
-import shade_gis.deploy.bundle as bundle_module
-from shade_gis.builder_imports import prepare_stop_dataset
-from shade_gis.builder_labels import (
+import stop_gis.deploy.bundle as bundle_module
+from stop_gis.builder.imports import prepare_stop_dataset
+from stop_gis.builder.labels import (
     disagreement_queue_table,
     fleiss_kappa,
     krippendorff_alpha_nominal,
     majority_label_table,
 )
-from shade_gis.builder_visuals import mappable_stop_rows as builder_mappable_stop_rows
-from shade_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
-from shade_gis.deployment import (
+from stop_gis.builder.visuals import mappable_stop_rows as builder_mappable_stop_rows
+from stop_gis.deploy.bundle import DeploymentBundleSpec, build_deployment_bundle
+from stop_gis.deploy.service import (
     DeploymentTarget,
     github_repository_slug,
     validate_deployment_bundle,
 )
-from shade_gis.identifiers import canonical_identifier
-from shade_gis.pages import deploy_page
+from stop_gis.domain.identifiers import canonical_identifier
+from stop_gis.pages import deploy_page
 
 
 @pytest.mark.parametrize(

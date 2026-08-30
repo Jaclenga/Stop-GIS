@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import builder_app
-import shade_gis.builder_imports as builder_imports
+import stop_gis.builder.imports as builder_imports
 from builder_app import (
     fetch_api_bytes,
     import_stop_dataset,

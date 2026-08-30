@@ -18,7 +18,7 @@ pd.options.future.infer_string = False
 
 from stop_gis import public_app as published_app
 from stop_gis.public_voting import normalize_voting_config
-from platform_store import (
+from stop_gis.persistence.store import (
     ProjectConflictError,
     add_shade_label,
     create_project,
@@ -36,7 +36,7 @@ from platform_store import (
     save_project_bundle,
     update_project_details,
 )
-from shade_gis.builder_imports import (
+from stop_gis.builder.imports import (
     REQUIRED_STOP_FIELDS,
     OPTIONAL_FIELDS,
     apply_field_mapping,
@@ -68,7 +68,7 @@ from shade_gis.builder_imports import (
     validate_api_url,
     validate_zip_bytes,
 )
-from shade_gis.builder_labels import (
+from stop_gis.builder.labels import (
     agreement_overview_metrics,
     agreement_metric_summary,
     average_pairwise_cohen_kappa,
@@ -92,7 +92,7 @@ from shade_gis.builder_labels import (
     stop_review_snapshot,
     taxonomy_names,
 )
-from shade_gis.builder_visuals import (
+from stop_gis.builder.visuals import (
     CATEGORICAL_MAP_FILTERS,
     CHART_AGGREGATIONS,
     CHART_TYPES,
@@ -145,7 +145,7 @@ from shade_gis.builder_visuals import (
     rgba_from_hex,
     selected_dashboard_sections,
 )
-from shade_gis.deploy import (
+from stop_gis.deploy import (
     DeploymentBundleSpec,
     build_deployment_bundle,
     deploy_launcher_script,
@@ -158,11 +158,11 @@ from shade_gis.deploy import (
     slugify_repo_name,
     streamlit_entrypoint_path,
 )
-from shade_gis.deployment import (
+from stop_gis.deploy.service import (
     DEFAULT_DEPLOY_COMMIT_MESSAGE,
 )
-from shade_gis.data_quality import evaluate_data_quality
-from shade_gis.shade_dimensions import (
+from stop_gis.domain.data_quality import evaluate_data_quality
+from stop_gis.domain.shade_dimensions import (
     DEFAULT_TERMINOLOGY as CORE_DEFAULT_TERMINOLOGY,
     DEFAULT_COVERAGE_TAXONOMY,
     SHADE_COVERAGE_OPTIONS as CORE_SHADE_COVERAGE_OPTIONS,
@@ -183,8 +183,9 @@ from stop_gis.assessment_modes import (
 
 
 APP_DIR = Path(__file__).parent
-DATA_PATH = APP_DIR / "stops.txt"
-SHADE_DATA_PATH = APP_DIR / "shading_data.csv"
+DEMO_DATA_DIR = APP_DIR / "data" / "demo"
+DATA_PATH = DEMO_DATA_DIR / "stops.txt"
+SHADE_DATA_PATH = DEMO_DATA_DIR / "shading_data.csv"
 APP_TITLE = "Stop-GIS Builder"
 VISUAL_MAP_HEIGHT = 500
 AUTOSAVE_STATUS_KEY = "workspace_autosave_status"
@@ -1711,16 +1712,16 @@ def render_header() -> str:
 
 
 def main() -> None:
-    from shade_gis.pages.data_page import render_data_page
-    from shade_gis.pages.blind_coding_page import render_blind_coding_page
-    from shade_gis.pages.data_quality_page import render_data_quality_page
-    from shade_gis.pages.deploy_page import render_deploy_page
-    from shade_gis.pages.docs_page import render_methodology_page
-    from shade_gis.pages.labels_page import render_labels_page
-    from shade_gis.pages.preview_page import render_preview_page
-    from shade_gis.pages.taxonomy_page import render_taxonomy_page
-    from shade_gis.pages.visuals_page import render_visuals_page
-    from shade_gis.pages.voting_page import render_voting_page
+    from stop_gis.pages.data_page import render_data_page
+    from stop_gis.pages.blind_coding_page import render_blind_coding_page
+    from stop_gis.pages.data_quality_page import render_data_quality_page
+    from stop_gis.pages.deploy_page import render_deploy_page
+    from stop_gis.pages.docs_page import render_methodology_page
+    from stop_gis.pages.labels_page import render_labels_page
+    from stop_gis.pages.preview_page import render_preview_page
+    from stop_gis.pages.taxonomy_page import render_taxonomy_page
+    from stop_gis.pages.visuals_page import render_visuals_page
+    from stop_gis.pages.voting_page import render_voting_page
 
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     ensure_state()

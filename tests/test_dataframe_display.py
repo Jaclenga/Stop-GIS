@@ -7,8 +7,8 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from shade_gis.data_quality import evaluate_data_quality
-from shade_gis.ui_tables import dataframe_html
+from stop_gis.domain.data_quality import evaluate_data_quality
+from stop_gis.ui.tables import dataframe_html
 
 
 def exact_data_quality_summary() -> pd.DataFrame:
@@ -35,7 +35,7 @@ def test_each_data_quality_summary_column_converts_in_its_own_subprocess(column:
 import sys
 import pandas as pd
 import pyarrow as pa
-from shade_gis.data_quality import evaluate_data_quality
+from stop_gis.domain.data_quality import evaluate_data_quality
 
 summary = evaluate_data_quality(pd.DataFrame(), pd.DataFrame()).summary_table()
 for name in ["Validation issue", "Status"]:
