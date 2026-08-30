@@ -783,7 +783,7 @@ def test_builder_navigation_pages_render(
                     )
                     marker_shape = marker_shape_control.get_by_role("combobox")
                     marker_shape.click()
-                    page.get_by_role("option", name="Square", exact=True).click()
+                    page.get_by_role("option", name="Pin", exact=True).click()
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                     marker_shape = marker_shape_control.get_by_role("combobox")
                     selected_value = marker_shape.input_value().strip()
@@ -792,8 +792,8 @@ def test_builder_navigation_pages_render(
                     # 1.x range: React Aria exposes the selection as the input
                     # value, while BaseWeb included it in the accessible label.
                     assert (
-                        selected_value == "Square"
-                        or selected_label == "Selected Square. Marker shape"
+                        selected_value == "Pin"
+                        or selected_label == "Selected Pin. Marker shape"
                     )
 
                     marker_size = page.get_by_role("slider", name="Marker size")

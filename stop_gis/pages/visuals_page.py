@@ -7,7 +7,12 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from stop_gis.builder.app import REVIEW_STATUS_COLORS, VISUAL_MAP_HEIGHT, rgb_to_hex, set_page
+from stop_gis.builder.app import (
+    REVIEW_STATUS_COLORS,
+    VISUAL_MAP_HEIGHT,
+    rgb_to_hex,
+    set_page,
+)
 from stop_gis.builder.imports import (
     calculate_priority_scores,
     format_bytes,
@@ -28,8 +33,10 @@ from stop_gis.builder.visuals import (
     MAP_STYLES,
     MARKER_SHAPES,
     MAX_CUSTOM_CHARTS,
+    PALETTE_DESCRIPTIONS,
     RECORD_COUNT_FIELD,
     SHADE_PALETTES,
+    apply_palette_to_taxonomy,
     build_deck_chart,
     clean_gis_overlays,
     clean_selected_options,
@@ -45,6 +52,8 @@ from stop_gis.builder.visuals import (
     get_display_column_options,
     get_selected_display_columns,
     has_column_data,
+    normalize_palette_name,
+    palette_color,
 )
 
 
@@ -97,9 +106,7 @@ def visual_map_render_key(
         "field_color_maps",
     )
     payload = {
-        "visualization": {
-            field: visualization.get(field) for field in style_fields
-        },
+        "visualization": {field: visualization.get(field) for field in style_fields},
         "taxonomy": [
             {
                 "name": item.get("name"),
@@ -115,13 +122,6 @@ def visual_map_render_key(
     return f"visual_map_{fingerprint}"
 
 
-def session_backed_color_picker(label: str, default: Any, key: str) -> str:
-    """Initialize a keyed color once without also passing a widget default."""
-    if key not in st.session_state:
-        st.session_state[key] = normalize_hex_color(default)
-    return st.color_picker(label, key=key)
-
-
 def render_palette_controls(
     visualization: dict[str, Any],
     stops: pd.DataFrame,
@@ -133,32 +133,24 @@ def render_palette_controls(
     )
     st.markdown("#### Color Palette")
     if field == "shading":
-        previous_palette = visualization.get("shade_palette", "Custom")
-        palette_options = ["Custom"] + list(SHADE_PALETTES)
-        if previous_palette not in palette_options:
-            previous_palette = "Custom"
+        previous_palette = normalize_palette_name(
+            visualization.get("shade_palette"), "Default / Civic"
+        )
+        palette_options = list(SHADE_PALETTES)
         selected_palette = st.selectbox(
-            "Premade shade palette",
+            "Shade palette",
             palette_options,
             index=palette_options.index(previous_palette),
+            help=(
+                "Default / Civic — Balanced colors for general mapping. "
+                "Colorblind friendly — Accessible categorical colors (recommended). "
+                "High contrast — Stronger visual separation."
+            ),
         )
-        if selected_palette != "Custom" and selected_palette != previous_palette:
-            palette = SHADE_PALETTES[selected_palette]
-            for index, item in enumerate(taxonomy):
-                color = palette[index % len(palette)]
-                item["color"] = color
-                st.session_state[f"shade_color_{index}"] = color
+        if selected_palette != previous_palette:
+            apply_palette_to_taxonomy(taxonomy, selected_palette)
         visualization["shade_palette"] = selected_palette
-
-        grid = st.columns(2)
-        for index, item in enumerate(taxonomy):
-            name = str(item.get("name", "")).strip() or f"Category {index + 1}"
-            with grid[index % 2]:
-                item["color"] = session_backed_color_picker(
-                    name,
-                    normalize_hex_color(item.get("color", "#808080")),
-                    key=f"shade_color_{index}",
-                )
+        st.caption(PALETTE_DESCRIPTIONS[selected_palette])
         return
 
     if field == "review_status":
@@ -208,31 +200,40 @@ def render_palette_controls(
             )
         return
 
-    color_map = ensure_field_color_map(visualization, stops, field)
     values = field_values_for_colors(stops, field)
     if not values:
         st.caption("No values are available for the selected column.")
         return
-    total_unique = (
-        stops[field]
-        .fillna("Unknown")
-        .astype(str)
-        .str.strip()
-        .replace("", "Unknown")
-        .nunique()
+    field_palettes = visualization.setdefault("field_palettes", {})
+    previous_palette = normalize_palette_name(
+        field_palettes.get(field), "Colorblind friendly"
     )
-    if total_unique > len(values):
-        st.caption(f"Showing colors for the first {len(values)} values in this column.")
-    grid = st.columns(2)
-    for index, value in enumerate(values):
-        with grid[index % 2]:
-            color_map[value] = st.color_picker(
-                value[:80],
-                normalize_hex_color(
-                    color_map.get(value, COLOR_PALETTE[index % len(COLOR_PALETTE)])
-                ),
-                key=f"field_color_{field}_{index}",
-            )
+    palette_options = list(SHADE_PALETTES)
+    selected_palette = st.selectbox(
+        f"{display_label(field)} palette",
+        palette_options,
+        index=palette_options.index(previous_palette),
+        key=f"field_palette_{field}",
+        help=(
+            "Default / Civic — Balanced colors for general mapping. "
+            "Colorblind friendly — Accessible categorical colors (recommended). "
+            "High contrast — Stronger visual separation."
+        ),
+    )
+    if selected_palette != previous_palette:
+        color_map = visualization.setdefault("field_color_maps", {}).setdefault(
+            field, {}
+        )
+        color_map.clear()
+        color_map.update(
+            {
+                value: palette_color(selected_palette, index)
+                for index, value in enumerate(values)
+            }
+        )
+    field_palettes[field] = selected_palette
+    ensure_field_color_map(visualization, stops, field)
+    st.caption(PALETTE_DESCRIPTIONS[selected_palette])
 
 
 def gis_overlay_id(name: str, index: int) -> str:
@@ -647,7 +648,9 @@ def render_visuals_page() -> None:
                 height=VISUAL_MAP_HEIGHT,
                 key=visual_map_render_key(visualization, taxonomy),
             )
-        st.caption("Open Preview to verify the complete public map, analytics, methodology, and exports.")
+        st.caption(
+            "Open Preview to verify the complete public map, analytics, methodology, and exports."
+        )
         st.button(
             "Open full preview →",
             type="secondary",

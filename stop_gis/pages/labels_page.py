@@ -719,6 +719,15 @@ def build_stop_reference_deck(
         selected_layer.id = "selected_reference_stop_layer"
         selected_layer.pickable = False
         deck.layers = [*deck.layers, selected_layer]
+        selected_symbol_layers = [
+            layer
+            for layer in selected_deck.layers
+            if getattr(layer, "id", "") == "semantic_status_symbols"
+        ]
+        if selected_symbol_layers:
+            selected_symbol_layer = selected_symbol_layers[-1]
+            selected_symbol_layer.id = "selected_reference_status_symbol"
+            deck.layers.append(selected_symbol_layer)
     return deck
 
 

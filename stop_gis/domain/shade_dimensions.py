@@ -153,25 +153,25 @@ DEFAULT_COVERAGE_TAXONOMY = [
     {
         "name": "No Shade",
         "description": "No shade visibly reaches the waiting area.",
-        "color": "#dc143c",
+        "color": "#ef4444",
         "sort_order": 1,
     },
     {
         "name": "Limited Shade",
         "description": "Shade visibly covers part of the waiting area, but not most of it.",
-        "color": "#d69e2e",
+        "color": "#f59e0b",
         "sort_order": 2,
     },
     {
         "name": "Significant Shade",
         "description": "Shade visibly covers most of the waiting area or seating area.",
-        "color": "#228b22",
+        "color": "#22c55e",
         "sort_order": 3,
     },
     {
         "name": "Needs Review",
         "description": "The stop needs imagery, review, or disagreement resolution.",
-        "color": "#808080",
+        "color": "#3b82f6",
         "sort_order": 4,
     },
 ]
@@ -282,4 +282,3 @@ def normalize_coverage_taxonomy(taxonomy: list[dict[str, Any]] | None) -> list[d
             ):
                 default[key] = configured_item[key]
     return normalized_taxonomy
-

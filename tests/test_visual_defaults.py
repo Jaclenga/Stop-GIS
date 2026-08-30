@@ -11,44 +11,21 @@ from PIL import Image
 from stop_gis import public_app as published_app
 from stop_gis.pages import visuals_page
 from stop_gis.builder.visuals import (
+    BUILTIN_CATEGORY_SYMBOLS,
     DEFAULT_VISUALIZATION,
     LEGACY_DEFAULT_METRIC_CARDS,
     RECORD_COUNT_FIELD,
+    SHADE_PALETTES,
+    apply_palette_to_taxonomy,
     build_deck_chart,
     build_custom_chart_data,
+    build_tooltip_text,
+    ensure_field_color_map,
     get_custom_charts,
     migrate_legacy_analytics_config,
     selected_dashboard_sections,
 )
-
-
-def test_session_backed_color_picker_uses_only_session_state_for_default(monkeypatch):
-    calls = []
-
-    class FakeStreamlit:
-        session_state = {}
-
-        @staticmethod
-        def color_picker(*args, **kwargs):
-            calls.append((args, kwargs))
-            return FakeStreamlit.session_state[kwargs["key"]]
-
-    monkeypatch.setattr(visuals_page, "st", FakeStreamlit)
-
-    selected = visuals_page.session_backed_color_picker(
-        "No Shade", "#dc143c", "shade_color_0"
-    )
-    FakeStreamlit.session_state["shade_color_0"] = "#123456"
-    selected_again = visuals_page.session_backed_color_picker(
-        "No Shade", "#dc143c", "shade_color_0"
-    )
-
-    assert selected == "#dc143c"
-    assert selected_again == "#123456"
-    assert calls == [
-        (("No Shade",), {"key": "shade_color_0"}),
-        (("No Shade",), {"key": "shade_color_0"}),
-    ]
+from stop_gis.domain.shade_dimensions import DEFAULT_COVERAGE_TAXONOMY
 
 
 def test_visual_map_render_key_changes_with_marker_controls():
@@ -63,6 +40,203 @@ def test_visual_map_render_key_changes_with_marker_controls():
 
     assert initial_key.startswith("visual_map_")
     assert len({initial_key, square_key, resized_key}) == 3
+
+
+def test_palette_catalog_exposes_exactly_three_unique_choices():
+    assert list(SHADE_PALETTES) == [
+        "Default / Civic",
+        "Colorblind friendly",
+        "High contrast",
+    ]
+    assert len(SHADE_PALETTES) == len(set(SHADE_PALETTES)) == 3
+    assert SHADE_PALETTES == {
+        "Default / Civic": [
+            "#ef4444",
+            "#f59e0b",
+            "#22c55e",
+            "#3b82f6",
+            "#a855f7",
+            "#64748b",
+        ],
+        "Colorblind friendly": [
+            "#d55e00",
+            "#e69f00",
+            "#009e73",
+            "#949494",
+            "#0072b2",
+            "#cc79a7",
+            "#999999",
+        ],
+        "High contrast": [
+            "#c92a2a",
+            "#e67700",
+            "#2b8a3e",
+            "#495057",
+            "#1864ab",
+            "#6741d9",
+        ],
+    }
+
+
+def test_shade_palette_selector_exposes_only_the_three_named_palettes(monkeypatch):
+    calls = []
+
+    class FakeStreamlit:
+        @staticmethod
+        def markdown(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def caption(*_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def selectbox(label, options, **kwargs):
+            calls.append((label, list(options), kwargs))
+            return options[kwargs["index"]]
+
+    monkeypatch.setattr(visuals_page, "st", FakeStreamlit)
+    visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
+
+    visuals_page.render_palette_controls(
+        visualization,
+        pd.DataFrame({"shading": ["No Shade"]}),
+        copy.deepcopy(DEFAULT_COVERAGE_TAXONOMY),
+        {"Shade coverage": "shading"},
+    )
+
+    assert calls[0][0] == "Shade palette"
+    assert calls[0][1] == list(SHADE_PALETTES)
+    assert "recommended" in calls[0][2]["help"]
+
+
+def test_arbitrary_categories_default_to_colorblind_palette_and_extend_cleanly():
+    values = [f"Category {index}" for index in range(8)]
+    stops = pd.DataFrame({"custom_taxonomy": values})
+    visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
+
+    color_map = ensure_field_color_map(visualization, stops, "custom_taxonomy")
+
+    assert visualization["field_palettes"]["custom_taxonomy"] == "Colorblind friendly"
+    assert [color_map[value] for value in values[:7]] == SHADE_PALETTES[
+        "Colorblind friendly"
+    ]
+    assert len(set(color_map.values())) == len(values)
+
+
+def test_builtin_taxonomy_defaults_to_semantic_civic_colors():
+    assert [item["name"] for item in DEFAULT_COVERAGE_TAXONOMY] == [
+        "No Shade",
+        "Limited Shade",
+        "Significant Shade",
+        "Needs Review",
+    ]
+    assert [item["color"] for item in DEFAULT_COVERAGE_TAXONOMY] == SHADE_PALETTES[
+        "Default / Civic"
+    ][:4]
+    assert DEFAULT_VISUALIZATION["shade_palette"] == "Default / Civic"
+
+
+def test_palette_switching_changes_only_taxonomy_colors():
+    taxonomy = copy.deepcopy(DEFAULT_COVERAGE_TAXONOMY)
+    non_color_values = [
+        {key: value for key, value in item.items() if key != "color"}
+        for item in taxonomy
+    ]
+
+    apply_palette_to_taxonomy(taxonomy, "High contrast")
+
+    assert [item["color"] for item in taxonomy] == SHADE_PALETTES["High contrast"][:4]
+    assert [
+        {key: value for key, value in item.items() if key != "color"}
+        for item in taxonomy
+    ] == non_color_values
+
+
+def test_legacy_palette_names_migrate_without_remaining_visible_options():
+    aliases = {
+        "Default stop audit": "Default / Civic",
+        "Infrastructure mix": "Default / Civic",
+        "Civic map": "Default / Civic",
+        "High contrast": "High contrast",
+        "Colorblind friendly": "Colorblind friendly",
+    }
+    for legacy_name, expected in aliases.items():
+        config = {"analytics_schema_version": 2, "shade_palette": legacy_name}
+        assert migrate_legacy_analytics_config(config)["shade_palette"] == expected
+        assert (
+            published_app.normalize_published_visualization(config)["shade_palette"]
+            == expected
+        )
+
+
+def test_builtin_map_and_legend_share_non_color_status_symbols():
+    taxonomy = copy.deepcopy(DEFAULT_COVERAGE_TAXONOMY)
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": str(index),
+                "stop_name": name,
+                "stop_lat": 27.95 + index * 0.001,
+                "stop_lon": -82.45 - index * 0.001,
+                "shading": name,
+                "review_status": "Accepted",
+                "priority_score": 0,
+            }
+            for index, name in enumerate(BUILTIN_CATEGORY_SYMBOLS)
+        ]
+    )
+    visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
+    visualization["display_columns"] = ["stop_name"]
+
+    deck = json.loads(build_deck_chart(stops, taxonomy, visualization).to_json())
+    symbol_layer = next(
+        layer for layer in deck["layers"] if layer["id"] == "semantic_status_symbols"
+    )
+    rendered_symbols = {
+        row["shading"]: row["marker_symbol"] for row in symbol_layer["data"]
+    }
+    legend = published_app.taxonomy_legend_markup(taxonomy)
+
+    assert rendered_symbols == BUILTIN_CATEGORY_SYMBOLS
+    assert build_tooltip_text(stops, visualization).startswith(
+        "Shade coverage: {shading}"
+    )
+    for category, symbol in BUILTIN_CATEGORY_SYMBOLS.items():
+        assert category in legend
+        assert f">{symbol}<" in legend
+
+
+def test_semantic_symbols_align_with_pin_and_center_on_other_marker_shapes():
+    taxonomy = copy.deepcopy(DEFAULT_COVERAGE_TAXONOMY)
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "stop_name": "Main St",
+                "stop_lat": 27.9506,
+                "stop_lon": -82.4572,
+                "shading": "No Shade",
+                "review_status": "Accepted",
+                "priority_score": 0,
+            }
+        ]
+    )
+
+    for shape in ["Circle", "Pin", "Square", "Diamond", "Triangle"]:
+        visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
+        visualization.update({"marker_shape": shape, "marker_size": 24})
+        for chart_builder in (build_deck_chart, published_app.build_deck_chart):
+            layers = json.loads(
+                chart_builder(stops, taxonomy, visualization).to_json()
+            )["layers"]
+            symbol_layer = next(
+                layer for layer in layers if layer["id"] == "semantic_status_symbols"
+            )
+
+            assert symbol_layer["data"][0]["marker_symbol_offset"] == (
+                [0, -11] if shape == "Pin" else [0, 0]
+            )
 
 
 def test_public_voting_is_off_by_default_but_fully_configured():
