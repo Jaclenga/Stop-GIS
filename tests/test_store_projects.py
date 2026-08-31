@@ -11,6 +11,7 @@ from stop_gis.persistence.store import (
     add_shade_label,
     copy_readonly_source_to_fallback,
     create_project,
+    database_path,
     delete_project,
     init_database,
     list_projects,
@@ -21,6 +22,20 @@ from stop_gis.persistence.store import (
     save_project_bundle,
     update_project_details,
 )
+
+
+def test_database_path_tracks_environment_override_changes(db_path, monkeypatch):
+    first = db_path.with_name("first-isolated.sqlite3")
+    second = db_path.with_name("second-isolated.sqlite3")
+
+    monkeypatch.setenv("STOP_GIS_DB_PATH", str(first))
+    assert database_path() == first.resolve()
+
+    monkeypatch.setenv("STOP_GIS_DB_PATH", str(second))
+    assert database_path() == second.resolve()
+
+    monkeypatch.delenv("STOP_GIS_DB_PATH")
+    assert database_path() == db_path.resolve()
 
 
 def test_create_project_roundtrip(db_path, project, taxonomy, methodology, visualization, minimal_stops):

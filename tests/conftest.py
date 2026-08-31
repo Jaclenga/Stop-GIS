@@ -27,6 +27,12 @@ def db_path() -> Path:
         shutil.rmtree(directory, ignore_errors=True)
 
 
+@pytest.fixture(autouse=True)
+def isolate_default_project_store(monkeypatch, db_path: Path) -> None:
+    """Keep any test that omits an explicit path out of the user's real store."""
+    monkeypatch.setenv("SHADE_GIS_DB_PATH", str(db_path))
+
+
 @pytest.fixture
 def project() -> dict:
     data = copy.deepcopy(DEFAULT_PROJECT)

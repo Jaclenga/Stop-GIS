@@ -28,6 +28,7 @@ from stop_gis.assessment_modes import (
 # inside the shared runtime package.
 APP_DIR = Path(__file__).resolve().parents[2]
 _ACTIVE_DATABASE_PATH: Path | None = None
+_ACTIVE_DATABASE_CONFIGURATION: Path | None = None
 _UNUSABLE_DATABASE_PATHS: set[Path] = set()
 _DATABASE_FALLBACK_REASON = ""
 _READABLE_SOURCE_DATABASE_PATH: Path | None = None
@@ -57,11 +58,18 @@ def fallback_database_paths() -> list[Path]:
     ]
 
 
+def configured_database_path() -> Path | None:
+    configured = os.environ.get("STOP_GIS_DB_PATH") or os.environ.get("SHADE_GIS_DB_PATH")
+    if not configured:
+        return None
+    return Path(configured).expanduser().resolve()
+
+
 def candidate_database_paths() -> list[Path]:
     candidates = []
-    configured = os.environ.get("STOP_GIS_DB_PATH") or os.environ.get("SHADE_GIS_DB_PATH")
+    configured = configured_database_path()
     if configured:
-        candidates.append(Path(configured))
+        candidates.append(configured)
     preferred = default_database_path()
     legacy = legacy_database_path()
     # Discover an existing Stop-GIS store before creating a new empty store.
@@ -185,9 +193,20 @@ def copy_readonly_source_to_fallback(source: Path, target: Path) -> None:
 
 
 def choose_database_path() -> Path:
-    global _ACTIVE_DATABASE_PATH, _DATABASE_FALLBACK_REASON, _READABLE_SOURCE_DATABASE_PATH
-    if _ACTIVE_DATABASE_PATH and _ACTIVE_DATABASE_PATH not in _UNUSABLE_DATABASE_PATHS:
+    global _ACTIVE_DATABASE_CONFIGURATION, _ACTIVE_DATABASE_PATH
+    global _DATABASE_FALLBACK_REASON, _READABLE_SOURCE_DATABASE_PATH
+    configuration = configured_database_path()
+    if (
+        _ACTIVE_DATABASE_PATH
+        and _ACTIVE_DATABASE_PATH not in _UNUSABLE_DATABASE_PATHS
+        and _ACTIVE_DATABASE_CONFIGURATION == configuration
+    ):
         return _ACTIVE_DATABASE_PATH
+
+    # Environment overrides are commonly changed by tests and command-line
+    # launchers after this module has already been imported. Never let a path
+    # cached under an earlier configuration bypass the new isolated database.
+    _ACTIVE_DATABASE_PATH = None
 
     last_error: BaseException | None = None
     for candidate in candidate_database_paths():
@@ -205,6 +224,7 @@ def choose_database_path() -> Path:
                 _READABLE_SOURCE_DATABASE_PATH = candidate
             continue
         _ACTIVE_DATABASE_PATH = candidate
+        _ACTIVE_DATABASE_CONFIGURATION = configuration
         return candidate
 
     if last_error:
