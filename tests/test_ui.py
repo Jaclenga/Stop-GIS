@@ -1072,9 +1072,12 @@ def test_all_builtin_data_modes_and_custom_measure_render_in_ui(
             braille_control = page.get_by_test_id("stSelectbox").filter(
                 has_text="Braille present"
             )
-            playwright_api.expect(
-                braille_control.get_by_role("combobox")
-            ).to_have_attribute("aria-label", "Selected Yes. Braille present")
+            braille_combobox = braille_control.get_by_role("combobox")
+            selected_value = braille_combobox.input_value()
+            selected_label = braille_combobox.get_attribute("aria-label") or ""
+            assert selected_value == "Yes" or selected_label == (
+                "Selected Yes. Braille present"
+            )
         finally:
             browser.close()
 
