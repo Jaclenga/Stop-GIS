@@ -63,7 +63,7 @@
             "none"
         }
         $Searched = $SearchDirectories -join ", "
-        throw "Could not find '$BundleName' or a numbered browser copy. Click 'Download website package' first. Searched: $Searched. Available shade ZIP files: $Available. To use another folder, set `$BundlePath at the top of this block."
+        throw "Could not find '$BundleName' or a numbered browser copy. Click 'Download release package' first. Searched: $Searched. Available shade ZIP files: $Available. To use another folder, set `$BundlePath at the top of this block."
     }
 
     $ZipPath = $ZipCandidate.FullName

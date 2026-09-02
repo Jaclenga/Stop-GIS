@@ -17,8 +17,10 @@ import streamlit as st
 pd.options.future.infer_string = False
 
 from stop_gis import public_app as published_app
+from stop_gis.features import AGENT_WORKFLOWS_ENABLED, PHOTO_WORKFLOWS_ENABLED
 from stop_gis.public_voting import normalize_voting_config
 from stop_gis.persistence.store import (
+    DuplicateProjectNameError,
     ProjectConflictError,
     add_shade_label,
     create_project,
@@ -261,7 +263,6 @@ DEFAULT_METHODOLOGY = {
     "data_sources": (
         "- Hillsborough Area Regional Transit (HART) GTFS stops and routes\n"
         "- Small example amenity, accessibility, and passenger-comfort observations\n"
-        "- Example imagery-based waiting-area shade reviews\n"
         "- Expert, field-audit, imported, or community-submitted assessments\n"
         "- Optional project-specific attributes and GIS overlays"
     ),
@@ -273,7 +274,6 @@ DEFAULT_METHODOLOGY = {
     ),
     "bibliography": (
         "Works referenced:\n"
-        "    Google. (n.d.). Google Maps imagery [Map and street-level imagery]. Retrieved July 2, 2026, from https://www.google.com/maps\n"
         "    Hillsborough Area Regional Transit. (Year). General Transit Feed Specification (GTFS) data feed [Data set]. Retrieved June 17, 2026, from the HART GTFS feed.\n"
         "    Lanza, K., & Durand, C. P. (2021). Heat-moderating effects of bus stop shelters and tree shade on public transport ridership. International Journal of Environmental Research and Public Health, 18(2), 463. https://doi.org/10.3390/ijerph18020463\n"
         "    Briant, S., Cushing, D. F., Washington, T., Pham, K., Pemasiri Hewa Thondilege, A. S., White, K. M., ... & Fookes, C. (2026). Thermal comfort at bus stops in a subtropical context: Investigating perceptions and satisfaction levels while waiting for the bus. In Human-Building Interaction: The Nexus of Architecture, Building Science and Interaction Design (pp. 119-145). Springer Nature Switzerland.\n"
@@ -281,9 +281,9 @@ DEFAULT_METHODOLOGY = {
     ),
     "limitations": (
         "The bundled starter data is example data, not a complete or current infrastructure inventory. "
-        "Google Maps image dates, camera angle, season, time of day, temporary obstructions, incomplete "
-        "street-level coverage, and reviewer uncertainty can all affect visible shade labels. Published "
-        "releases should document these limitations and perform a project-specific review before use."
+        "Collection date, season, time of day, temporary conditions, source completeness, and reviewer "
+        "uncertainty can affect assessments. Published releases should document these limitations and "
+        "perform a project-specific review before use."
     ),
     "release_history": "- 0.1.0: Draft Stop-GIS configuration with Tampa/HART stops and a small set of example observations",
     "terminology": [dict(item) for item in DEFAULT_TERMINOLOGY],
@@ -325,9 +325,10 @@ LABEL_SOURCE_OPTIONS = [
     "Crowdsourcing",
     "Field audit",
     "Imported dataset",
-    "LLM-assisted suggestion",
     "Manual review",
 ]
+if AGENT_WORKFLOWS_ENABLED:
+    LABEL_SOURCE_OPTIONS.insert(-1, "LLM-assisted suggestion")
 
 LABELER_ROLE_OPTIONS = [
     "Reviewer",
@@ -335,8 +336,9 @@ LABELER_ROLE_OPTIONS = [
     "Project Admin",
     "Expert",
     "Public",
-    "Model",
 ]
+if AGENT_WORKFLOWS_ENABLED:
+    LABELER_ROLE_OPTIONS.append("Model")
 
 SHADE_SOURCE_OPTIONS = list(CORE_SHADE_SOURCE_OPTIONS)
 
@@ -585,6 +587,13 @@ def save_active_project_to_store(review_event: dict[str, Any] | None = None) -> 
             "message": f"All changes saved · {saved_at}",
         }
         return True
+    except DuplicateProjectNameError as error:
+        st.session_state[AUTOSAVE_STATUS_KEY] = {
+            "state": "failed",
+            "message": "Autosave paused — choose a unique project name.",
+        }
+        st.error(str(error))
+        return False
     except ProjectConflictError as error:
         st.session_state[AUTOSAVE_STATUS_KEY] = {
             "state": "failed",
@@ -648,7 +657,11 @@ def ensure_state() -> None:
     if projects:
         mark_project_store_initialized()
     elif not project_store_initialized():
-        create_seed_project()
+        try:
+            create_seed_project()
+        except DuplicateProjectNameError:
+            # Another app session may have created the seed after our initial read.
+            pass
         mark_project_store_initialized()
         projects = list_projects()
 
@@ -831,7 +844,11 @@ def build_github_deploy_bundle(
     stops = st.session_state["stops"]
     if not stops.empty:
         project_id = str(st.session_state.get("active_project_id") or "")
-        images = list_images(project_id) if project_id else pd.DataFrame()
+        images = (
+            list_images(project_id)
+            if PHOTO_WORKFLOWS_ENABLED and project_id
+            else pd.DataFrame()
+        )
         quality_report = evaluate_data_quality(stops, images)
         if not quality_report.publication_ready:
             raise ValueError(
@@ -998,7 +1015,7 @@ def render_project_settings() -> None:
                     visibility=visibility,
                     expected_revision=str(project.get("_store_updated_at") or ""),
                 )
-            except ProjectConflictError as error:
+            except (DuplicateProjectNameError, ProjectConflictError) as error:
                 st.error(str(error))
                 return
             if st.session_state.get("active_project_id") == project_id:
@@ -1012,7 +1029,7 @@ def render_project_settings() -> None:
     st.divider()
     st.subheader("Danger zone")
     st.caption(
-        "Deleting a project permanently removes its stops, images, labels, reviews, and releases from this device."
+        "Deleting a project permanently removes its stops, stored evidence, labels, reviews, and releases from this device."
     )
     if st.button(
         "Delete project",
@@ -1340,7 +1357,11 @@ def render_home_page() -> None:
                 if st.button(
                     "Create project", key="home_create_project", width="stretch"
                 ):
-                    project_id = create_blank_project(new_project_name)
+                    try:
+                        project_id = create_blank_project(new_project_name)
+                    except DuplicateProjectNameError as error:
+                        st.error(str(error))
+                        return
                     load_project_into_session(project_id)
                     set_page("Data")
                     st.rerun()
@@ -1412,8 +1433,8 @@ def render_header() -> str:
     primary_navigation = [
         ("Dataset", "Data"),
         ("Labeling", "Labels"),
-        ("Build", "Preview"),
-        ("Publish", "Deploy"),
+        ("Public Voting", "Voting"),
+        ("Publish", "Preview"),
     ]
     secondary_navigation = {
         "Dataset": [
@@ -1424,9 +1445,12 @@ def render_header() -> str:
         "Labeling": [
             ("Dataset Review", "Labels"),
             ("Intercoder Review", "Blind Coding"),
-            ("Community Voting", "Voting"),
         ],
-        "Build": [("Visuals", "Visuals"), ("Docs", "Docs"), ("Preview", "Preview")],
+        "Publish": [
+            ("Preview & Exports", "Preview"),
+            ("Release Notes", "Docs"),
+            ("Dataset Release", "Deploy"),
+        ],
     }
     page_sections = {
         "Data": "Dataset",
@@ -1434,10 +1458,9 @@ def render_header() -> str:
         "Taxonomy": "Dataset",
         "Labels": "Labeling",
         "Blind Coding": "Labeling",
-        "Voting": "Labeling",
-        "Visuals": "Build",
-        "Docs": "Build",
-        "Preview": "Build",
+        "Voting": "Public Voting",
+        "Docs": "Publish",
+        "Preview": "Publish",
         "Deploy": "Publish",
     }
     pages = ["Home", *page_sections]
@@ -1720,7 +1743,6 @@ def main() -> None:
     from stop_gis.pages.labels_page import render_labels_page
     from stop_gis.pages.preview_page import render_preview_page
     from stop_gis.pages.taxonomy_page import render_taxonomy_page
-    from stop_gis.pages.visuals_page import render_visuals_page
     from stop_gis.pages.voting_page import render_voting_page
 
     st.set_page_config(page_title=APP_TITLE, layout="wide")
@@ -1738,8 +1760,6 @@ def main() -> None:
         render_blind_coding_page()
     elif page == "Taxonomy":
         render_taxonomy_page()
-    elif page == "Visuals":
-        render_visuals_page()
     elif page == "Voting":
         render_voting_page()
     elif page == "Docs":

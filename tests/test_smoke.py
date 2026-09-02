@@ -98,9 +98,8 @@ def test_builder_launcher_uses_canonical_application():
     assert builder.main.__module__ == "stop_gis.builder.app"
 
 
-def test_visual_pages_do_not_reference_removed_dense_map_overrides():
+def test_public_visual_surfaces_do_not_reference_removed_dense_map_overrides():
     for filename in [
-        "stop_gis/pages/visuals_page.py",
         "stop_gis/pages/preview_page.py",
         "stop_gis/public_app.py",
     ]:
@@ -187,19 +186,23 @@ def test_preview_uses_the_shared_stop_and_voting_panel():
     assert "published_app.render_stop_and_voting_panel(" in preview_source
 
 
-def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navigation():
+def test_mvp_navigation_prioritizes_dataset_team_coding_voting_and_release():
     builder_source = Path("stop_gis/builder/app.py").read_text(encoding="utf-8")
     preview_source = Path("stop_gis/pages/preview_page.py").read_text(encoding="utf-8")
+    feature_source = Path("stop_gis/features.py").read_text(encoding="utf-8")
 
     assert '("Dataset", "Data")' in builder_source
     assert '("Labeling", "Labels")' in builder_source
-    assert '("Build", "Preview")' in builder_source
-    assert '("Publish", "Deploy")' in builder_source
+    assert '("Public Voting", "Voting")' in builder_source
+    assert '("Publish", "Preview")' in builder_source
+    assert '("Build", "Preview")' not in builder_source
     assert '"Dataset": [' in builder_source
     assert '("Quality", "Data Quality")' in builder_source
     assert '("Dataset Review", "Labels")' in builder_source
     assert '("Intercoder Review", "Blind Coding")' in builder_source
-    assert '("Community Voting", "Voting")' in builder_source
+    assert '("Preview & Exports", "Preview")' in builder_source
+    assert '("Release Notes", "Docs")' in builder_source
+    assert '("Dataset Release", "Deploy")' in builder_source
     assert 'key=f"primary_nav_{label.lower()}"' in builder_source
     assert 'key="header_project"' in builder_source
     assert 'f"{selector_label} ▾"' not in builder_source
@@ -208,6 +211,14 @@ def test_agreement_workflow_is_embedded_in_preview_analytics_not_top_level_navig
     assert 'elif page == "Agreement"' not in builder_source
     assert "render_agreement_analytics_section(" not in preview_source
     assert "include_agreement=True" in preview_source
+    assert "PHOTO_WORKFLOWS_ENABLED = False" in feature_source
+    assert "AGENT_WORKFLOWS_ENABLED = False" in feature_source
+    assert "if AGENT_WORKFLOWS_ENABLED:" in builder_source
+
+    from stop_gis.builder import app as builder_app
+
+    assert "LLM-assisted suggestion" not in builder_app.LABEL_SOURCE_OPTIONS
+    assert "Model" not in builder_app.LABELER_ROLE_OPTIONS
 
 
 def test_builder_has_project_home_and_clickable_brand_navigation():
@@ -274,7 +285,11 @@ def test_blind_coding_uses_research_workflow_hierarchy():
     assert '"Reviews per item"' in source
     assert '"Agreement threshold"' in source
     assert "Items below this agreement level are flagged for adjudication." in source
-    assert '"Add Review Image"' in source
+    assert 'assessment_unit = "stop"' in source
+    assert '"Add Review Image"' not in source
+    assert "st.image(" not in source
+    assert '"Image URL"' not in source
+    assert '"project_imagery"' not in source
     assert '"Start Intercoder Review"' in source
     assert 'st.expander("Advanced versioning", expanded=False)' in source
     assert 'st.expander("Admin preview", expanded=False)' in source
@@ -310,13 +325,8 @@ def test_voting_groups_configuration_and_hides_deployment_details():
 
 
 def test_preview_configuration_pages_do_not_duplicate_full_public_renderers():
-    visuals = Path("stop_gis/pages/visuals_page.py").read_text(encoding="utf-8")
     docs = Path("stop_gis/pages/docs_page.py").read_text(encoding="utf-8")
 
-    assert '"Open full preview →"' in visuals
-    assert 'st.subheader("Custom Chart Preview")' not in visuals
-    assert 'st.subheader("Data Table Preview")' not in visuals
-    assert 'st.subheader("Available Fields")' not in visuals
     assert "render_builder_about_page" not in docs
     assert "authoritative public rendering" in docs
 
@@ -345,7 +355,6 @@ def test_workspace_ux_safeguards_are_present():
     data_page = Path("stop_gis/pages/data_page.py").read_text(encoding="utf-8")
     labels_page = Path("stop_gis/pages/labels_page.py").read_text(encoding="utf-8")
     taxonomy = Path("stop_gis/ui/taxonomy.py").read_text(encoding="utf-8")
-    visuals = Path("stop_gis/pages/visuals_page.py").read_text(encoding="utf-8")
 
     assert '"Publication intent"' in data_page
     assert "save automatically to the active project" in data_page
@@ -357,7 +366,6 @@ def test_workspace_ux_safeguards_are_present():
     assert '":blue-badge[Custom]"' in taxonomy
     assert '"Schema details"' in taxonomy
     assert 'role="status" aria-live="polite"' in builder
-    assert '@st.dialog("Remove GIS overlay?"' in visuals
     assert "min-height: 24.5rem" in builder
     assert "\n            height: 24.5rem;" not in builder
     assert "max-width: 760px" in builder
@@ -398,6 +406,7 @@ def test_data_quality_has_a_dedicated_data_menu_page():
     assert 'st.title("Data Quality")' in source
     assert "render_data_quality_dashboard(" in source
     assert "show_heading=False" in source
+    assert "include_image_checks=PHOTO_WORKFLOWS_ENABLED" in source
 
 
 def test_manual_entry_form_does_not_use_arrow_backed_dataframe_widget():

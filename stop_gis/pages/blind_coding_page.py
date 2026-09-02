@@ -6,7 +6,6 @@ import pandas as pd
 import streamlit as st
 
 from stop_gis import public_app as published_app
-from stop_gis.persistence.store import add_image, list_images
 from stop_gis.domain.blind_coding import (
     COVERAGE_OPTIONS,
     IMAGE_ADEQUACY_OPTIONS,
@@ -16,6 +15,7 @@ from stop_gis.domain.blind_coding import (
     WAITING_AREA_OPTIONS,
     BlindCodingError,
     CODEBOOK_DEFINITIONS,
+    DEFAULT_STOP_INSTRUCTIONS,
     advance_blind_phase,
     blind_adjudication_queue,
     blind_agreement_report,
@@ -37,7 +37,7 @@ FIELD_LABELS = {
     "coverage": "Coverage",
     "waiting_area_covered": "Passenger waiting area covered",
     "permanence": "Shade permanence",
-    "image_adequacy": "Image adequacy",
+    "image_adequacy": "Evidence adequacy",
 }
 
 PHASE_LABELS = {
@@ -109,9 +109,7 @@ def render_phase_confirmation(project_id: str, protocol: dict[str, Any]) -> None
 
 
 def _unit_label(protocol: dict[str, Any], *, plural: bool = False) -> str:
-    unit = (
-        "stop" if str(protocol.get("assessment_unit", "image")) == "stop" else "image"
-    )
+    unit = "stop"
     return f"{unit}s" if plural else unit
 
 
@@ -127,7 +125,7 @@ def _rating_inputs(
     key_prefix: str,
     *,
     include_recognition: bool,
-    assessment_unit: str = "image",
+    assessment_unit: str = "stop",
 ) -> dict[str, Any]:
     first, second = st.columns(2)
     with first:
@@ -140,7 +138,7 @@ def _rating_inputs(
             key=f"{key_prefix}:waiting_area",
         )
         adequacy = st.selectbox(
-            "Evidence adequacy" if assessment_unit == "stop" else "Image adequacy",
+            "Evidence adequacy",
             IMAGE_ADEQUACY_OPTIONS,
             key=f"{key_prefix}:adequacy",
         )
@@ -166,19 +164,15 @@ def _rating_inputs(
             horizontal=True,
             key=f"{key_prefix}:recognized",
         )
-    review_method = "standardized_image"
-    if assessment_unit == "stop":
-        review_method = st.selectbox(
-            "Evidence source used",
-            ["field_survey", "google_maps", "project_imagery", "other"],
-            format_func=lambda value: {
-                "field_survey": "Field survey",
-                "google_maps": "Google Maps / Street View",
-                "project_imagery": "Project imagery",
-                "other": "Other evidence",
-            }[value],
-            key=f"{key_prefix}:review_method",
-        )
+    review_method = st.selectbox(
+        "Evidence source used",
+        ["field_survey", "other"],
+        format_func=lambda value: {
+            "field_survey": "Field survey",
+            "other": "Dataset or other evidence",
+        }[value],
+        key=f"{key_prefix}:review_method",
+    )
     return {
         "shade_source": shade_source,
         "coverage": coverage,
@@ -191,26 +185,21 @@ def _rating_inputs(
     }
 
 
-def _render_image(source: str, display_id: str) -> None:
-    if source:
-        st.image(source, caption=display_id, width="stretch")
-    else:
-        st.error("This assignment has no accessible standardized image.")
-
-
-def _render_codebook(assessment_unit: str = "image") -> None:
+def _render_codebook(assessment_unit: str = "stop") -> None:
     rows = []
     for field, definitions in CODEBOOK_DEFINITIONS.items():
         for code, definition in definitions.items():
             rows.append(
                 {
-                    "Variable": (
-                        "Evidence adequacy"
-                        if assessment_unit == "stop" and field == "image_adequacy"
-                        else FIELD_LABELS[field]
-                    ),
+                    "Variable": FIELD_LABELS[field],
                     "Code": code,
-                    "Operational definition": definition,
+                    "Operational definition": (
+                        definition.replace("the image", "the available evidence")
+                        .replace("The image", "The evidence")
+                        .replace("from the image", "from the available evidence")
+                        if assessment_unit == "stop"
+                        else definition
+                    ),
                 }
             )
     with st.expander("Codebook definitions", expanded=False):
@@ -219,17 +208,11 @@ def _render_codebook(assessment_unit: str = "image") -> None:
 
 def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
     st.subheader("Reviewer Experience")
-    assessment_unit = str(protocol.get("assessment_unit", "image"))
-    if assessment_unit == "image":
-        st.info(
-            "This view intentionally withholds stop IDs, routes, maps, geography, existing labels, "
-            "comments, and other reviewers' answers until you submit your own assessment."
-        )
-    else:
-        st.info(
-            "This stop-level review shows location details for field or map-based assessment. Existing "
-            "labels, comments, and other reviewers' answers remain hidden until independent review closes."
-        )
+    assessment_unit = "stop"
+    st.info(
+        "This stop-level review supports independent field or dataset-based assessment. Existing "
+        "labels, comments, and other reviewers' answers remain hidden until independent review closes."
+    )
     if protocol["phase"] != "coding":
         st.warning(
             "The research administrator has not started Intercoder Review, or review has closed."
@@ -269,31 +252,9 @@ def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
     )
     assignment = pending.loc[pending["assignment_id"] == selected_assignment].iloc[0]
     display_id = str(assignment["display_id"])
-    source = str(assignment.get("storage_path", "") or assignment.get("uri", "") or "")
     st.markdown(f"### {display_id}")
-    if assessment_unit == "image":
-        _render_image(source, display_id)
-    else:
-        st.markdown(f"**{assignment.get('stop_name', '')}**  ")
-        st.write(f"Stop ID: {assignment.get('stop_id', '')}")
-        latitude = assignment.get("stop_lat")
-        longitude = assignment.get("stop_lon")
-        if pd.notna(latitude) and pd.notna(longitude):
-            maps_url = f"https://www.google.com/maps/search/?api=1&query={latitude},{longitude}"
-            st.link_button("Open location in Google Maps", maps_url)
-        evidence_sources = assignment.get("evidence_sources", [])
-        if isinstance(evidence_sources, list) and evidence_sources:
-            with st.expander(
-                f"Project imagery ({len(evidence_sources)})", expanded=False
-            ):
-                for index, evidence_source in enumerate(evidence_sources, start=1):
-                    _render_image(
-                        str(evidence_source), f"{display_id} evidence {index}"
-                    )
-        else:
-            st.caption(
-                "No project imagery is attached. Use the prespecified field or map evidence source."
-            )
+    st.markdown(f"**{assignment.get('stop_name', '')}**  ")
+    st.write(f"Stop ID: {assignment.get('stop_id', '')}")
     st.markdown("#### Reviewer instructions")
     st.write(str(protocol["instructions"]))
     _render_codebook(assessment_unit)
@@ -324,34 +285,18 @@ def render_coder_workflow(project_id: str, protocol: dict[str, Any]) -> None:
                 st.rerun()
 
 
-def _registered_image_label(row: pd.Series) -> str:
-    stop = str(row.get("stop_id", "") or "Unlinked")
-    image_type = str(row.get("image_type", "") or "Image")
-    return f"{row['id']} · stop {stop} · {image_type}"
-
-
 def render_protocol_setup(
     project_id: str, stops: pd.DataFrame, protocol: dict[str, Any]
 ) -> None:
     st.subheader("Study Setup")
     st.caption("Define what reviewers assess and how agreement will be evaluated.")
     with st.container(border=True):
-        _render_codebook(str(protocol.get("assessment_unit", "image")))
+        _render_codebook("stop")
         with st.form("blind_protocol_form"):
-            assessment_unit = st.radio(
-                "Assessment unit",
-                ["image", "stop"],
-                index=0
-                if str(protocol.get("assessment_unit", "image")) == "image"
-                else 1,
-                format_func=lambda value: (
-                    "Standardized image" if value == "image" else "Transit stop"
-                ),
-                horizontal=True,
-                help=(
-                    "Image mode assigns each image separately. Stop mode assigns one review per stop, "
-                    "even when the stop has multiple evidence images."
-                ),
+            assessment_unit = "stop"
+            st.markdown("**Assessment unit:** Transit stop")
+            st.caption(
+                "The MVP assigns stops directly for independent field or dataset review."
             )
             columns = st.columns(2)
             target_ratings = columns[0].number_input(
@@ -370,7 +315,9 @@ def render_protocol_setup(
                 help="Items below this agreement level are flagged for adjudication.",
             )
             instructions = st.text_area(
-                "Reviewer instructions", value=str(protocol["instructions"]), height=110
+                "Reviewer instructions",
+                value=str(protocol.get("instructions") or DEFAULT_STOP_INSTRUCTIONS),
+                height=110,
             )
             with st.expander("Advanced versioning", expanded=False):
                 st.caption(
@@ -397,94 +344,32 @@ def render_protocol_setup(
             st.rerun()
 
     st.subheader("Review Materials")
-    st.caption(
-        "Add the standardized images or transit stops that reviewers will assess."
-    )
+    st.caption("Choose the transit stops that reviewers will assess independently.")
     stop_records = stops.reset_index(drop=True)
-    saved_unit = str(protocol.get("assessment_unit", "image"))
-    if saved_unit == "image":
-        st.markdown("#### Review Images")
-        st.caption(
-            "Use cropped or de-identified images with neutral filenames. Remove readable route signs, "
-            "addresses, and recognizable landmarks when practical."
+    st.markdown("#### Transit stops")
+    st.caption(
+        "Each selected stop becomes one assessment unit. Stop details remain visible for field or dataset review."
+    )
+    if stop_records.empty:
+        st.info("No transit stops are available yet.")
+        return
+    unit_labels = {
+        str(row.get("stop_id", "")): (
+            f"{row.get('stop_id', '')} · {row.get('stop_name', '')}"
         )
-        st.caption(
-            "Review images are added by URL; file upload is not enabled in this workspace."
-        )
-        if not stop_records.empty:
-            with st.form("blind_register_image_form"):
-                stop_index = st.selectbox(
-                    "Transit stop",
-                    range(len(stop_records)),
-                    format_func=lambda index: (
-                        f"{stop_records.iloc[index].get('stop_id', '')} · "
-                        f"{stop_records.iloc[index].get('stop_name', '')}"
-                    ),
-                )
-                image_url = st.text_input("Image URL")
-                register = st.form_submit_button("Add Review Image")
-            if register:
-                if not image_url.strip():
-                    st.error("A standardized image URL is required.")
-                else:
-                    stop_id = str(stop_records.iloc[int(stop_index)].get("stop_id", ""))
-                    add_image(
-                        project_id,
-                        {
-                            "stop_id": stop_id,
-                            "uri": image_url.strip(),
-                            "image_type": "blind_coding_standardized",
-                            "source": "blind protocol setup",
-                        },
-                    )
-                    st.success(
-                        "Standardized image registered with a neutral internal ID."
-                    )
-                    st.rerun()
-        units = list_images(project_id)
-        if units.empty:
-            st.info("No registered images are available yet.")
-            return
-        unit_labels = {
-            str(row["id"]): _registered_image_label(row) for _, row in units.iterrows()
-        }
-        st.dataframe(
-            units[
-                [
-                    column
-                    for column in ["id", "stop_id", "image_type", "created_at"]
-                    if column in units
-                ]
-            ],
-            width="stretch",
-            hide_index=True,
-        )
-    else:
-        st.markdown("#### Transit stops")
-        st.caption(
-            "Each selected stop becomes one assessment unit. Attached images are supporting evidence "
-            "and do not create additional ratings. Location details remain visible for field and map review."
-        )
-        if stop_records.empty:
-            st.info("No transit stops are available yet.")
-            return
-        unit_labels = {
-            str(
-                row.get("stop_id", "")
-            ): f"{row.get('stop_id', '')} · {row.get('stop_name', '')}"
-            for _, row in stop_records.iterrows()
-        }
-        st.dataframe(
-            stop_records[
-                [
-                    column
-                    for column in ["stop_id", "stop_name", "stop_lat", "stop_lon"]
-                    if column in stop_records
-                ]
-            ],
-            width="stretch",
-            hide_index=True,
-        )
+        for _, row in stop_records.iterrows()
+    }
+    st.dataframe(
+        stop_records[
+            [
+                column
+                for column in ["stop_id", "stop_name", "stop_lat", "stop_lon"]
+                if column in stop_records
+            ]
+        ],
+        width="stretch",
+        hide_index=True,
+    )
 
     st.markdown("#### Reviewer Assignments")
     with st.form("blind_assignment_form"):
@@ -618,11 +503,7 @@ def render_admin_workflow(
     else:
         with st.container(border=True):
             metrics = st.columns(4)
-            unit_key = (
-                "stops"
-                if str(protocol.get("assessment_unit", "image")) == "stop"
-                else "images"
-            )
+            unit_key = "stops"
             metrics[0].metric("Review items", progress[unit_key])
             metrics[1].metric("Assigned reviewers", progress["coders"])
             metrics[2].metric("Submitted reviews", progress["submitted"])
@@ -699,25 +580,11 @@ def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> No
     item = queue.loc[queue["blind_unit_id"] == selected_id].iloc[0]
     display_id = str(item["display_id"])
     st.markdown(f"### {display_id}")
-    if str(protocol.get("assessment_unit", "image")) == "image":
-        _render_image(
-            str(item.get("storage_path", "") or item.get("uri", "") or ""), display_id
-        )
-    else:
-        st.write(f"{item.get('stop_name', '')} · Stop ID {item.get('stop_id', '')}")
-        evidence_sources = item.get("evidence_sources", [])
-        if isinstance(evidence_sources, list) and evidence_sources:
-            with st.expander(
-                f"Project imagery ({len(evidence_sources)})", expanded=False
-            ):
-                for index, evidence_source in enumerate(evidence_sources, start=1):
-                    _render_image(
-                        str(evidence_source), f"{display_id} evidence {index}"
-                    )
+    st.write(f"{item.get('stop_name', '')} · Stop ID {item.get('stop_id', '')}")
     st.caption(
         "Original reviewer identities are withheld. Counts below are the competing submitted codes."
     )
-    _render_codebook(str(protocol.get("assessment_unit", "image")))
+    _render_codebook("stop")
     summary = pd.DataFrame(
         [
             {"Variable": FIELD_LABELS[field], "Competing codes": item[field]}
@@ -729,7 +596,7 @@ def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> No
         decision = _rating_inputs(
             f"blind_adjudication:{selected_id}",
             include_recognition=False,
-            assessment_unit=str(protocol.get("assessment_unit", "image")),
+            assessment_unit="stop",
         )
         notes = st.text_area("Adjudication rationale")
         submitted = st.form_submit_button(
@@ -752,7 +619,7 @@ def render_adjudicator_workflow(project_id: str, protocol: dict[str, Any]) -> No
 def render_blind_coding_page() -> None:
     st.title("Intercoder Review")
     st.markdown(
-        "Collect independent assessments by image or transit stop, then reveal agreement and send "
+        "Collect independent stop assessments, then reveal agreement and send "
         "low-agreement cases for adjudication."
     )
     st.info("Reviewers cannot see existing ratings until they submit their own.")
@@ -762,6 +629,18 @@ def render_blind_coding_page() -> None:
         st.warning("Save or load a project before configuring Intercoder Review.")
         return
     protocol = get_blind_protocol(project_id)
+    if str(protocol.get("assessment_unit", "image")) == "image":
+        if protocol.get("created_at"):
+            st.warning(
+                "This project has a saved photo-based review study. Photo workflows are paused for the MVP; "
+                "the saved study and its data have not been deleted."
+            )
+            return
+        protocol = {
+            **protocol,
+            "assessment_unit": "stop",
+            "instructions": DEFAULT_STOP_INSTRUCTIONS,
+        }
     _phase_caption(protocol)
     notice = st.session_state.pop("blind_phase_notice", None)
     if notice:

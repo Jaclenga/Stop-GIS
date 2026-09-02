@@ -19,6 +19,7 @@ from stop_gis.builder.app import (
     set_page,
 )
 from stop_gis.persistence.store import list_images
+from stop_gis.features import PHOTO_WORKFLOWS_ENABLED
 from stop_gis.domain.data_quality import evaluate_data_quality
 from stop_gis.deploy import deploy_launcher_script, github_new_repo_url, slugify_repo_name
 from stop_gis.deploy.service import (
@@ -48,14 +49,14 @@ DEPLOYMENT_UNPUBLISH_KEY = "deploy_page_confirm_unpublish"
 DEPLOYMENT_UNPUBLISHED_KEY = "deploy_page_unpublished"
 DEPLOYMENT_STAGE_KEY = "deploy_page_stage"
 DEPLOYMENT_SESSION_PROJECT_KEY = "deploy_page_settings_project_id"
-STAGES = ("Check project", "Prepare website", "Publish", "Verify website")
+STAGES = ("Check release", "Prepare website", "Publish website", "Verify website")
 BUNDLE_FILE_CATALOG = [
-    ("app.py", "Public website"),
-    ("public_voting.py", "Optional visitor voting"),
-    ("shade_study_stops.csv", "Active imported dataset used by the public website"),
+    ("shade_study_stops.csv", "Versioned active dataset"),
     ("shade_study_raw_labels.csv", "Published label history, when available"),
     ("shade_study_config.json", "Project display settings"),
     ("deployment_manifest.json", "Validated project snapshot and file hashes"),
+    ("app.py", "Optional public website"),
+    ("public_voting.py", "Optional visitor voting"),
     ("requirements.txt", "Website runtime"),
     ("migrations/001_public_voting.sql", "Idempotent PostgreSQL voting schema"),
     ("migrations/least_privilege_roles.sql.example", "Recommended owner/runtime role grants"),
@@ -515,8 +516,8 @@ def _render_settings(
     bundle_name: str,
 ) -> None:
     expanded = bool(st.session_state.pop(DEPLOYMENT_SETTINGS_KEY, False))
-    with st.expander("Settings", expanded=expanded):
-        st.caption("GitHub username and destination repository are required before publishing.")
+    with st.expander("Website publishing settings", expanded=expanded):
+        st.caption("GitHub settings are only required to publish the release as a website.")
         st.caption("These settings save automatically with this project.")
         st.selectbox(
             "Publishing destination",
@@ -552,7 +553,7 @@ def _render_settings(
         st.text_input(
             "Commit message",
             key="deploy_commit_message",
-            help="Used for the Git commit created when this website is published.",
+            help="Used for the Git commit created when the public website is published.",
         )
         st.selectbox(
             "Repository visibility",
@@ -578,10 +579,10 @@ def _render_settings(
         if target.mode == "create":
             st.link_button("Open repository setup", github_new_repo_url(project, target.repository))
 
-        st.markdown("##### Manual fallback")
-        st.caption("Use this only when automatic publishing is unavailable.")
+        st.markdown("##### Release package")
+        st.caption("The same validated package is available without publishing to GitHub.")
         st.download_button(
-            "Download website package",
+            "Download release package",
             data=bundle_data,
             file_name=bundle_name,
             mime="application/zip",
@@ -621,10 +622,11 @@ def render_deploy_page() -> None:
     _remember_target_settings(project, target)
 
     render_deploy_styles()
-    st.title("Publish website")
+    st.title("Dataset Release")
     st.markdown(
         f'<p class="deploy-intro">Turn <strong>{html.escape(project.get("name", "this stop audit"))}</strong> '
-        "into a public website. Stop-GIS prepares the files, publishes them, and checks the result.</p>",
+        "into a validated, versioned dataset release. Download the release directly, then optionally "
+        "publish the same package as a public voting website.</p>",
         unsafe_allow_html=True,
     )
 
@@ -632,7 +634,11 @@ def render_deploy_page() -> None:
     bundle_error = ""
     freshness_issue = ""
     project_id = str(st.session_state.get("active_project_id") or "")
-    images = list_images(project_id) if project_id else pd.DataFrame()
+    images = (
+        list_images(project_id)
+        if PHOTO_WORKFLOWS_ENABLED and project_id
+        else pd.DataFrame()
+    )
     quality_report = evaluate_data_quality(stops, images)
     if quality_report.publication_ready:
         detected_freshness_issue = deployment_session_freshness_issue()
@@ -681,6 +687,24 @@ def render_deploy_page() -> None:
     if bundle_data:
         manifest = deployment_bundle_manifest(bundle_data)
         bundle_name = f"{bundle_stem}-{manifest['bundle_id'][:12]}.zip"
+    st.markdown("### Versioned dataset release")
+    st.caption(
+        "Download the dataset, raw label history, project configuration, and integrity manifest. "
+        "No GitHub account is required."
+    )
+    st.download_button(
+        "Download dataset release",
+        data=bundle_data,
+        file_name=bundle_name,
+        mime="application/zip",
+        type="primary",
+        disabled=not bool(bundle_data),
+        width="stretch",
+    )
+    if not bundle_data:
+        st.caption("Save or reload the latest valid project state to prepare the release package.")
+    st.divider()
+    st.markdown("### Optional public voting website")
     voting_enabled = bool(
         st.session_state.get("visualization", {}).get("voting", {}).get("enabled", False)
     )
@@ -815,7 +839,7 @@ def render_deploy_page() -> None:
     else:
         with st.container(key="deploy_publish"):
             publish_clicked = st.button(
-                "Publish website", type="primary", width="stretch"
+                "Publish public voting website", width="stretch"
             )
         st.markdown('<div class="deploy-estimate">This usually takes 1–3 minutes.</div>', unsafe_allow_html=True)
         if publish_clicked:

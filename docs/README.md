@@ -11,7 +11,6 @@ working local installation.
 | Understand the end-to-end workflow | [Product overview](../README.md#workflow) |
 | Learn navigation, autosave, confirmations, filters, and accessibility behavior | [User experience and accessibility](user-experience.md) |
 | Resolve import problems before publishing | [Data quality workflow](data_quality.md) |
-| Capture observations on Android | [Android field client](../clients/android/README.md) |
 | Get help or report a problem | [Support](project/SUPPORT.md) |
 
 ## Operate and migrate
@@ -41,7 +40,7 @@ sources live in `stop_gis/deploy/templates/` and are maintainer-facing.
 - Use **Stop-GIS** in public product text. Retain Shade-GIS names only when
   documenting compatibility contracts.
 - Use the navigation labels shown in the application: **Dataset**,
-  **Labeling**, **Build**, and **Publish**.
+  **Labeling**, **Public Voting**, and **Publish**.
 - Prefer task-based headings and short procedures over implementation history.
 - Put operator secrets and deployment-specific commands in generated deployment
   documentation, not the root README.

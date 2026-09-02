@@ -7,6 +7,7 @@ import sqlite3
 import pytest
 
 from stop_gis.persistence.store import (
+    DuplicateProjectNameError,
     ProjectConflictError,
     add_shade_label,
     copy_readonly_source_to_fallback,
@@ -489,6 +490,63 @@ def test_update_project_details_preserves_project_data(
 
     with pytest.raises(ValueError, match="Project name is required"):
         update_project_details(project_id, name="   ", path=db_path)
+
+
+def test_project_names_are_unique_ignoring_case_and_whitespace(
+    db_path, project, taxonomy, methodology, visualization, minimal_stops
+):
+    first_project_id = create_project(
+        project, taxonomy, methodology, visualization, minimal_stops, [], db_path
+    )
+
+    with pytest.raises(DuplicateProjectNameError, match="already exists"):
+        create_project(
+            {**project, "name": "  test   SHADE study  "},
+            taxonomy,
+            methodology,
+            visualization,
+            minimal_stops,
+            [],
+            db_path,
+        )
+
+    second_project_id = create_project(
+        {**project, "name": "Second Study"},
+        taxonomy,
+        methodology,
+        visualization,
+        minimal_stops,
+        [],
+        db_path,
+    )
+    with pytest.raises(DuplicateProjectNameError, match="already exists"):
+        update_project_details(
+            second_project_id,
+            name=" TEST  shade Study ",
+            path=db_path,
+        )
+
+    second_bundle = load_project_bundle(second_project_id, db_path)
+    second_bundle["project"]["name"] = " test shade study "
+    with pytest.raises(DuplicateProjectNameError, match="already exists"):
+        save_project_bundle(
+            second_project_id,
+            second_bundle["project"],
+            second_bundle["taxonomy"],
+            second_bundle["methodology"],
+            second_bundle["visualization"],
+            second_bundle["stops"],
+            second_bundle["import_log"],
+            db_path,
+        )
+
+    assert [item["name"] for item in list_projects(db_path)] == [
+        "Second Study",
+        "Test Shade Study",
+    ]
+    assert load_project_bundle(first_project_id, db_path)["project"]["name"] == (
+        "Test Shade Study"
+    )
 
 
 def test_delete_project_cascades_through_related_data(

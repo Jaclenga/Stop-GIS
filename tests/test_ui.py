@@ -178,22 +178,23 @@ def navigate_workspace_page(page, page_name: str, heading: str) -> None:
     sections = {
         "Dataset Review": ("Labeling", "Dataset Review", "Dataset Review"),
         "Intercoder Review": ("Labeling", "Dataset Review", "Dataset Review"),
-        "Community Voting": ("Labeling", "Dataset Review", "Dataset Review"),
-        "Visuals": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
-        "Docs": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
-        "Preview": ("Build", "Preview", "Tampa Bus Stop Infrastructure Demo"),
+        "Community Voting": ("Public Voting", "Community Voting", "Community Voting"),
+        "Docs": ("Publish", "Preview", "Tampa Bus Stop Infrastructure Demo"),
+        "Preview": ("Publish", "Preview", "Tampa Bus Stop Infrastructure Demo"),
         "Data Quality": ("Dataset", "Data", "Project Data"),
-        "Deploy": ("Publish", "Deploy", "Publish website"),
+        "Deploy": ("Publish", "Preview", "Tampa Bus Stop Infrastructure Demo"),
     }
     section, default_page, default_heading = sections[page_name]
-    page.locator(f".st-key-primary_nav_{section.lower()}").get_by_role("button").click(
-        timeout=30_000
-    )
+    page.get_by_role("button", name=section, exact=True).click(timeout=30_000)
     page.get_by_role("heading", name=default_heading, exact=True).wait_for(
         timeout=30_000
     )
     if page_name != default_page:
-        secondary_label = "Quality" if page_name == "Data Quality" else page_name
+        secondary_label = {
+            "Data Quality": "Quality",
+            "Docs": "Release Notes",
+            "Deploy": "Dataset Release",
+        }.get(page_name, page_name)
         page.get_by_role("button", name=secondary_label, exact=True).click(
             timeout=30_000
         )
@@ -341,7 +342,7 @@ def test_builder_header_home_and_grouped_menus(
             playwright_api.expect(
                 page.get_by_role("button", name="Use manual entries", exact=True)
             ).to_be_disabled(timeout=30_000)
-            for tab_name in ["Dataset", "Labeling", "Build", "Publish"]:
+            for tab_name in ["Dataset", "Labeling", "Public Voting", "Publish"]:
                 playwright_api.expect(
                     page.get_by_role("button", name=tab_name, exact=True)
                 ).to_be_visible(timeout=30_000)
@@ -396,6 +397,24 @@ def test_project_settings_can_edit_and_delete_a_project(
             page.get_by_role("button", name="+ New Project", exact=True).click(
                 timeout=30_000
             )
+            page.get_by_label("Project name", exact=True).fill(
+                "  tampa   BUS stop infrastructure demo  "
+            )
+            page.get_by_role("button", name="Create project", exact=True).click(
+                timeout=30_000
+            )
+            playwright_api.expect(
+                page.get_by_text(
+                    'A project named "tampa BUS stop infrastructure demo" already exists. '
+                    "Choose a different project name.",
+                    exact=True,
+                )
+            ).to_be_visible(timeout=30_000)
+
+            if not page.get_by_label("Project name", exact=True).is_visible():
+                page.get_by_role("button", name="+ New Project", exact=True).click(
+                    timeout=30_000
+                )
             page.get_by_label("Project name", exact=True).fill("Disposable project")
             page.get_by_role("button", name="Create project", exact=True).click(
                 timeout=30_000
@@ -421,6 +440,17 @@ def test_project_settings_can_edit_and_delete_a_project(
             settings_dialog = page.get_by_role("dialog")
             settings_dialog.wait_for(timeout=30_000)
             playwright_api.expect(settings_dialog).to_contain_text("Project settings")
+            settings_dialog.get_by_label("Project name", exact=True).fill(
+                " TAMPA bus  stop infrastructure demo "
+            )
+            settings_dialog.get_by_role(
+                "button", name="Save changes", exact=True
+            ).click(timeout=30_000)
+            playwright_api.expect(settings_dialog).to_contain_text(
+                'A project named "TAMPA bus stop infrastructure demo" already exists. '
+                "Choose a different project name.",
+                timeout=30_000,
+            )
             settings_dialog.get_by_label("Project name", exact=True).fill(
                 "Disposable renamed"
             )
@@ -522,11 +552,10 @@ def test_builder_navigation_pages_render(
     expected_pages = {
         "Dataset Review": "Dataset Review",
         "Intercoder Review": "Intercoder Review",
-        "Visuals": "Metrics And Visualizations",
         "Community Voting": "Community Voting",
         "Docs": "Project Documentation",
         "Preview": "Tampa Bus Stop Infrastructure Demo",
-        "Deploy": "Publish website",
+        "Deploy": "Dataset Release",
     }
     with playwright_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -651,7 +680,7 @@ def test_builder_navigation_pages_render(
                 page.get_by_role("button", name="Dataset", exact=True)
             ).to_be_enabled(timeout=30_000)
             playwright_api.expect(
-                page.get_by_role("button", name="Build", exact=True)
+                page.get_by_role("button", name="Publish", exact=True)
             ).to_be_enabled(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
@@ -749,6 +778,14 @@ def test_builder_navigation_pages_render(
                             exact=True,
                         )
                     ).to_be_visible(timeout=30_000)
+                    playwright_api.expect(
+                        page.locator("p").filter(
+                            has_text="Assessment unit: Transit stop"
+                        )
+                    ).to_be_visible(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_role("button", name="Add Review Image", exact=True)
+                    ).to_have_count(0)
                 elif nav_label == "Community Voting":
                     playwright_api.expect(
                         page.get_by_role("heading", name="Configuration", exact=True)
@@ -777,42 +814,6 @@ def test_builder_navigation_pages_render(
                         )
                     ).to_have_count(0, timeout=60_000)
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                elif nav_label == "Visuals":
-                    marker_shape_control = page.get_by_test_id("stSelectbox").filter(
-                        has_text="Marker shape"
-                    )
-                    marker_shape = marker_shape_control.get_by_role("combobox")
-                    marker_shape.click()
-                    page.get_by_role("option", name="Pin", exact=True).click()
-                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                    marker_shape = marker_shape_control.get_by_role("combobox")
-                    selected_value = marker_shape.input_value().strip()
-                    selected_label = marker_shape.get_attribute("aria-label") or ""
-                    # Streamlit's selectbox markup changed within the supported
-                    # 1.x range: React Aria exposes the selection as the input
-                    # value, while BaseWeb included it in the accessible label.
-                    assert (
-                        selected_value == "Pin"
-                        or selected_label == "Selected Pin. Marker shape"
-                    )
-
-                    marker_size = page.get_by_role("slider", name="Marker size")
-                    marker_size.press("ArrowRight")
-                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                    marker_size = page.get_by_role("slider", name="Marker size")
-                    playwright_api.expect(marker_size).to_have_attribute(
-                        "aria-valuetext", "8", timeout=30_000
-                    )
-
-                    map_chart = page.get_by_test_id("stDeckGlJsonChart").first
-                    playwright_api.expect(map_chart).to_be_visible(timeout=30_000)
-                    page.wait_for_timeout(1_500)
-                    icon_layer_errors = [
-                        message
-                        for kind, message in chart_events
-                        if kind in {"error", "pageerror"} and "IconLayer" in message
-                    ]
-                    assert icon_layer_errors == []
                 elif nav_label == "Preview":
                     map_tab = page.get_by_role("tab", name="Map", exact=True)
                     playwright_api.expect(map_tab).to_have_attribute(
@@ -841,7 +842,7 @@ def test_builder_navigation_pages_render(
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 elif nav_label == "Deploy":
                     playwright_api.expect(
-                        page.get_by_role("heading", name="Publish website", exact=True)
+                        page.get_by_role("heading", name="Dataset Release", exact=True)
                     ).to_be_visible(timeout=30_000)
                     playwright_api.expect(
                         page.get_by_text(
@@ -849,8 +850,15 @@ def test_builder_navigation_pages_render(
                         )
                     ).to_be_visible(timeout=30_000)
                     playwright_api.expect(
-                        page.get_by_role("button", name="Publish website", exact=True)
+                        page.get_by_role(
+                            "button", name="Publish public voting website", exact=True
+                        )
                     ).to_have_count(0)
+                    playwright_api.expect(
+                        page.get_by_role(
+                            "button", name="Download dataset release", exact=True
+                        )
+                    ).to_be_visible(timeout=30_000)
                     playwright_api.expect(
                         page.get_by_text(
                             "Enter your GitHub username and destination repository before publishing.",
@@ -858,7 +866,9 @@ def test_builder_navigation_pages_render(
                         )
                     ).to_be_visible(timeout=30_000)
 
-                    settings = page.get_by_text("Settings", exact=True)
+                    settings = page.get_by_text(
+                        "Website publishing settings", exact=True
+                    )
                     settings.click()
                     username_input = page.get_by_label("GitHub username", exact=True)
                     repository_input = page.get_by_label(
@@ -896,13 +906,13 @@ def test_builder_navigation_pages_render(
                         page.get_by_text("Ready to publish", exact=True)
                     ).to_be_visible(timeout=30_000)
                     publish_button = page.get_by_role(
-                        "button", name="Publish website", exact=True
+                        "button", name="Publish public voting website", exact=True
                     )
                     playwright_api.expect(publish_button).to_be_enabled(timeout=30_000)
                     for stage in [
-                        "Check project",
+                        "Check release",
                         "Prepare website",
-                        "Publish",
+                        "Publish website",
                         "Verify website",
                     ]:
                         playwright_api.expect(
@@ -914,10 +924,10 @@ def test_builder_navigation_pages_render(
                     playwright_api.expect(
                         page.get_by_text("This usually takes 1–3 minutes.", exact=True)
                     ).to_be_visible(timeout=30_000)
-                    page.get_by_text("Settings", exact=True).click()
+                    page.get_by_text("Website publishing settings", exact=True).click()
                     playwright_api.expect(
                         page.get_by_role(
-                            "button", name="Download website package", exact=True
+                            "button", name="Download release package", exact=True
                         )
                     ).to_be_visible(timeout=30_000)
                     playwright_api.expect(

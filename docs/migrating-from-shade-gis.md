@@ -24,9 +24,8 @@ rather than public product branding:
 
 - `shade_taxonomy`, `shade_labels`, `shade_votes`, and their shade-specific columns;
 - former environment-variable names, which remain fallback aliases;
-- `.shade_gis_votes.sqlite3`, `shade_study_*.csv/json`, and `static/shade_gis_identity.json` in existing generated deployments;
-- the Android application ID and its on-device observation/backup filenames.
+- `.shade_gis_votes.sqlite3`, `shade_study_*.csv/json`, and `static/shade_gis_identity.json` in existing generated deployments.
 
 Renaming those values automatically would risk orphaning user databases, deployment ownership
-records, configured secrets, or mobile evidence. They may be retired only in a future major
+records, or configured secrets. They may be retired only in a future major
 migration with explicit backup, conversion, and rollback tooling.

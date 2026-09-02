@@ -494,7 +494,7 @@ def test_deploy_launcher_is_one_guarded_block_with_bundle_discovery():
     assert 'Write-Host "Using newest deployment bundle: $($ZipCandidate.Name)"' in script
     assert '$ZipPath = Join-Path $DownloadsDirectory $BundleName' not in script
     assert 'Available shade ZIP files: $Available' in script
-    assert "Click 'Download website package' first." in script
+    assert "Click 'Download release package' first." in script
     assert 'Searched: $Searched.' in script
     assert 'set `$BundlePath at the top of this block' in script
     assert 'Get-ChildItem -LiteralPath $ExtractTo -Filter "deploy_to_github.ps1" -File -Recurse' in script
@@ -527,10 +527,12 @@ def test_deploy_page_requires_destination_settings_before_publishing():
     source = Path("stop_gis/pages/deploy_page.py").read_text(encoding="utf-8")
 
     assert "max-width: 900px" in source
-    assert 'STAGES = ("Check project", "Prepare website", "Publish", "Verify website")' in source
-    assert '"Publish website", type="primary", width="stretch"' in source
+    assert 'STAGES = ("Check release", "Prepare website", "Publish website", "Verify website")' in source
+    assert '"Publish public voting website", width="stretch"' in source
+    assert '"Download dataset release"' in source
+    assert 'type="primary"' in source
     assert "This usually takes 1–3 minutes." in source
-    assert 'st.expander("Settings", expanded=expanded)' in source
+    assert 'st.expander("Website publishing settings", expanded=expanded)' in source
     assert '"GitHub username"' in source
     assert 'key="deploy_github_username"' in source
     assert 'placeholder="github-user"' in source
@@ -567,8 +569,8 @@ def test_deploy_page_requires_destination_settings_before_publishing():
     assert "Copy link" in source
     assert '"Publish update"' in source
     assert '"Unpublish"' in source
-    assert "Manual fallback" in source
-    assert '"Download website package"' in source
+    assert "Release package" in source
+    assert '"Download release package"' in source
     assert source.count("st.code(") == 3
     assert "deploy_launcher_script(" in source
     assert 'st.radio("Publish mode"' not in source

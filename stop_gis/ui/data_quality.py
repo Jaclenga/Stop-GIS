@@ -20,13 +20,14 @@ def render_data_quality_dashboard(
     images: pd.DataFrame,
     *,
     show_heading: bool = True,
+    include_image_checks: bool = True,
 ) -> None:
     """Render the unified validation and publication-readiness workflow."""
     report = evaluate_data_quality(stops, images)
     if show_heading:
         st.subheader("Data Quality")
     st.caption(
-        "Resolve publication-blocking stop and image issues here before previewing or deploying the study."
+        "Resolve publication-blocking dataset issues here before previewing or releasing the study."
     )
 
     if report.publication_ready:
@@ -39,9 +40,20 @@ def render_data_quality_dashboard(
             "must be resolved."
         )
 
-    render_dataframe_table(report.summary_table())
+    visible_issues = [
+        issue
+        for issue in DATA_QUALITY_ISSUES
+        if include_image_checks or issue.key != "orphaned_images"
+    ]
+    summary = report.summary_table()
+    if not include_image_checks:
+        visible_labels = [issue.label for issue in visible_issues]
+        summary = summary[summary["Validation issue"].isin(visible_labels)].reset_index(
+            drop=True
+        )
+    render_dataframe_table(summary)
     st.markdown("#### Validation checks")
-    for issue in DATA_QUALITY_ISSUES:
+    for issue in visible_issues:
         count = report.count(issue.key)
         check = st.columns([2.7, 0.7, 1.25], vertical_alignment="center")
         check[0].markdown(f"**{issue.label}**  \n{issue.description}")
@@ -56,7 +68,7 @@ def render_data_quality_dashboard(
 
     st.markdown('<div id="data-quality-affected-records"></div>', unsafe_allow_html=True)
     st.markdown("#### Affected records")
-    issue_options = ["all", *[issue.key for issue in DATA_QUALITY_ISSUES]]
+    issue_options = ["all", *[issue.key for issue in visible_issues]]
     current_filter = st.session_state.get("data_quality_issue_filter", "all")
     if current_filter not in issue_options:
         st.session_state["data_quality_issue_filter"] = "all"
@@ -69,6 +81,10 @@ def render_data_quality_dashboard(
 
     if selected_issue == "all":
         affected = report.issue_records()
+        if not include_image_checks and not affected.empty:
+            affected = affected[affected["issue_key"] != "orphaned_images"].reset_index(
+                drop=True
+            )
         display_label = "issue occurrences"
     else:
         affected = report.affected_records(selected_issue)

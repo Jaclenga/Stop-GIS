@@ -10,6 +10,9 @@ configure a study, import stops, collect independent observations, review
 disagreements, analyze results, and publish a versioned Streamlit website
 without building a new data application for every audit.
 
+The current MVP is intentionally centered on public voting, versioned dataset
+releases, and collaborative stop coding and labeling.
+
 ## Start here
 
 - [Install and run Stop-GIS](#quick-start)
@@ -128,7 +131,6 @@ internal identifiers are upgraded additively rather than renamed in place.
 ### Repository layout
 
 ```text
-clients/android/            Android field-collection client
 examples/published-site/    Tracked standalone-publication example
 stop_gis/
   entrypoints/              Builder and published-app launchers
@@ -162,7 +164,6 @@ Key references include:
 - [Platform schema](docs/platform_schema.md)
 - [Architecture invariants](docs/architecture_invariants.md)
 - [Shade-GIS migration](docs/migrating-from-shade-gis.md)
-- [Android field client](clients/android/README.md)
 - [AI use statement](docs/project/AI_USE.md)
 
 ## Demo data

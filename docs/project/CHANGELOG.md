@@ -7,6 +7,12 @@ pre-release phase while the reusable platform stabilizes.
 
 ## [Unreleased]
 
+### Changed
+- Focused the MVP repository on dataset releases, public voting, and collaborative coding: removed
+  the dormant Android/photo client, orphan builder pages, and disconnected Tampa heat scripts;
+  removed active model-assisted choices and stale photo language; and made the versioned dataset
+  release download the primary release action ahead of optional website publishing.
+
 ### Added
 - Fully researcher-defined coding dimensions with generated stable keys,
   arbitrary values and value definitions, dynamic labeling controls, JSON-backed
@@ -29,6 +35,10 @@ pre-release phase while the reusable platform stabilizes.
   per-row downloads, and a separate Dataset Provenance section.
 
 ### Changed
+- Refocused the MVP navigation on Dataset, Labeling, Public Voting, and
+  Publish. Intercoder Review now assigns transit stops directly; photo-based
+  review and agent/automation workflows are paused without deleting their
+  underlying stored data.
 - Streamlined safe navigation, standardized publishing terminology, added
   accessible autosave feedback and filter recovery actions, made project cards
   content-responsive, and added confirmation before GIS overlay removal.

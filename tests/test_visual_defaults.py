@@ -9,7 +9,6 @@ import pandas as pd
 from PIL import Image
 
 from stop_gis import public_app as published_app
-from stop_gis.pages import visuals_page
 from stop_gis.builder.visuals import (
     BUILTIN_CATEGORY_SYMBOLS,
     DEFAULT_VISUALIZATION,
@@ -26,20 +25,6 @@ from stop_gis.builder.visuals import (
     selected_dashboard_sections,
 )
 from stop_gis.domain.shade_dimensions import DEFAULT_COVERAGE_TAXONOMY
-
-
-def test_visual_map_render_key_changes_with_marker_controls():
-    taxonomy = [{"name": "No Shade", "color": "#dc143c", "sort_order": 1}]
-    visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
-    initial_key = visuals_page.visual_map_render_key(visualization, taxonomy)
-
-    visualization["marker_shape"] = "Square"
-    square_key = visuals_page.visual_map_render_key(visualization, taxonomy)
-    visualization["marker_size"] = 22
-    resized_key = visuals_page.visual_map_render_key(visualization, taxonomy)
-
-    assert initial_key.startswith("visual_map_")
-    assert len({initial_key, square_key, resized_key}) == 3
 
 
 def test_palette_catalog_exposes_exactly_three_unique_choices():
@@ -76,38 +61,6 @@ def test_palette_catalog_exposes_exactly_three_unique_choices():
             "#6741d9",
         ],
     }
-
-
-def test_shade_palette_selector_exposes_only_the_three_named_palettes(monkeypatch):
-    calls = []
-
-    class FakeStreamlit:
-        @staticmethod
-        def markdown(*_args, **_kwargs):
-            return None
-
-        @staticmethod
-        def caption(*_args, **_kwargs):
-            return None
-
-        @staticmethod
-        def selectbox(label, options, **kwargs):
-            calls.append((label, list(options), kwargs))
-            return options[kwargs["index"]]
-
-    monkeypatch.setattr(visuals_page, "st", FakeStreamlit)
-    visualization = copy.deepcopy(DEFAULT_VISUALIZATION)
-
-    visuals_page.render_palette_controls(
-        visualization,
-        pd.DataFrame({"shading": ["No Shade"]}),
-        copy.deepcopy(DEFAULT_COVERAGE_TAXONOMY),
-        {"Shade coverage": "shading"},
-    )
-
-    assert calls[0][0] == "Shade palette"
-    assert calls[0][1] == list(SHADE_PALETTES)
-    assert "recommended" in calls[0][2]["help"]
 
 
 def test_arbitrary_categories_default_to_colorblind_palette_and_extend_cleanly():

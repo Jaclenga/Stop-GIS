@@ -10,6 +10,7 @@ from stop_gis.builder.app import (
     set_page,
 )
 from stop_gis.persistence.store import (
+    DuplicateProjectNameError,
     database_status,
     list_projects,
     list_review_history,
@@ -362,7 +363,11 @@ def render_project_storage_controls() -> None:
         )
     with create_cols[1]:
         if st.button("Create blank project", width="stretch"):
-            new_project_id = create_blank_project(new_project_name)
+            try:
+                new_project_id = create_blank_project(new_project_name)
+            except DuplicateProjectNameError as error:
+                st.error(str(error))
+                return
             load_project_into_session(new_project_id)
             st.rerun()
 

@@ -57,7 +57,7 @@ from stop_gis.domain.shade_dimensions import (
 
 REVIEW_STATUS_DEFINITIONS = {
     "Unlabeled": "No raw label or admin review has been collected for the stop.",
-    "Needs Review": "The stop needs imagery review, more labels, or admin resolution.",
+    "Needs Review": "The stop needs more assessments, verification, or admin resolution.",
     "Crowd Reviewed": "Community or contributor labels have been collected but not accepted as final.",
     "Expert Reviewed": "An expert reviewer has made a decision that may still need project acceptance.",
     "Accepted": "The project accepts the current label for mapping, analysis, and export.",
@@ -1130,10 +1130,7 @@ def render_raw_label_collection(
             index=manual_source_index,
             key=raw_label_widget_key(selected_stop_id, "input_source"),
         )
-        image_id = st.text_input(
-            "Image reference",
-            key=raw_label_widget_key(selected_stop_id, "image_id"),
-        )
+        image_id = ""
 
     action_cols = st.columns([2, 1], vertical_alignment="bottom")
     with action_cols[0]:

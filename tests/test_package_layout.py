@@ -17,7 +17,6 @@ def test_repository_root_contains_only_repository_metadata():
     for canonical_path in (
         "stop_gis/entrypoints/builder.py",
         "stop_gis/entrypoints/published.py",
-        "clients/android/README.md",
         "examples/published-site/app.py",
         "infrastructure/compose.yaml",
         "infrastructure/database/schema.sql",

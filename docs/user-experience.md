@@ -11,9 +11,9 @@ The builder groups work by user intent:
 | Primary area | Tasks |
 | --- | --- |
 | **Dataset** | Project overview, data quality, and assessment design |
-| **Labeling** | Dataset review, intercoder review, and community voting |
-| **Build** | Visuals, project documentation, and public preview |
-| **Publish** | Readiness, deployment settings, publishing, verification, and unpublishing |
+| **Labeling** | Dataset review and independent intercoder review |
+| **Public Voting** | Voting configuration, safeguards, and live preview |
+| **Publish** | Public preview, release notes, dataset download, and optional website publishing |
 
 The Stop-GIS brand returns directly to the project list. Project cards and the
 header project selector open a project directly because these actions are
@@ -94,8 +94,9 @@ work should also be inspected at intermediate tablet widths.
 - Public terminology should describe the study, not its implementation. Do not
   expose SQLite/PostgreSQL labels, local file paths, stack traces, or raw storage
   exceptions.
-- Publishing uses one vocabulary throughout: **Publish**, **Publish website**,
-  **Publish update**, and **Unpublish**.
+- Release actions distinguish **Download dataset release** from optional website
+  actions such as **Publish public voting website**, **Publish update**, and
+  **Unpublish**.
 - Empty maps and analytics retain a direct route back to visible results.
 
 ## Community voting

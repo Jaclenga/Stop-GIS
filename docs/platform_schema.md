@@ -136,15 +136,17 @@ overwrite or cascade-delete newer evidence. Current reviewed values are projecte
 The startup migration is additive. A project with no generic definitions receives enabled
 `shade_coverage` and `shade_source` modes derived from its legacy taxonomy. Legacy shade tables and
 columns remain so existing data and generated deployments stay readable.
-The Data page runs the active `stops` dataset and durable `images` registry through one centralized
-`Data Quality` report. Duplicate stop IDs, missing coordinates, missing required fields, invalid
-point geometries, and orphaned images are publication-blocking findings. Invalid point geometry
+The Data page runs the active `stops` dataset through one centralized `Data Quality` report.
+Duplicate stop IDs, missing coordinates, missing required fields, and invalid point geometries are
+publication-blocking findings. Invalid point geometry
 means a nonnumeric coordinate or a latitude/longitude outside WGS84 bounds; a missing coordinate is
-reported separately. An image is orphaned when `images.stop_id` is blank or does not match an active
-`stops.stop_id`. Every check exposes its count and can filter the affected-record viewer to the
-source stop or image rows. A project is publication-ready only when it contains at least one stop
+reported separately. Every check exposes its count and can filter the affected-record viewer to the
+source stop rows. A project is publication-ready only when it contains at least one stop
 and the report contains no findings. The complete operator workflow is documented in
 [`docs/data_quality.md`](data_quality.md).
+
+The image registry and its orphan check remain available for compatibility with older projects, but
+photo evidence is not part of the active MVP workflow or publication gate.
 
 The Data page also derives a compact `Dataset Status` dashboard from stop fields and raw-label history.
 A stop counts as labeled when it has at least one raw label or a canonical coverage label. Reviewed
@@ -220,37 +222,34 @@ current stop fields.
 
 ## Blind inter-rater coding
 
-Blind coding is a separate research workflow from ordinary `shade_labels`. A protocol moves forward
-through `setup`, `coding`, `adjudication`, and `closed` phases and cannot move backward. Setup fixes a
-codebook version, requires at least three ratings per image, and records a low-agreement threshold
-before coding begins. Registered images receive random `IMG-######` display IDs, and every coder gets
-their own persisted random image order.
+Intercoder review is a separate research workflow from ordinary `shade_labels`. The active workflow
+assigns transit stops, moves through `setup`, `coding`, `adjudication`, and `closed` phases, and cannot
+move backward. Setup fixes a codebook version, the required ratings per stop, and a low-agreement
+threshold before coding begins. Stops receive random `STOP-######` display IDs, and every coder gets
+their own persisted random stop order.
 
-The coder query returns only assignment ID, blind display ID, image location, order, and the coder's
-own submission status. Stop IDs, routes, maps, demographics, existing scores, previous comments,
-other ratings, and consensus are not returned. Each `blind_assignments` row can create only one
-`blind_ratings` row; both application validation and a database uniqueness constraint make the
-submission immutable. Ratings include codebook version, shade source, coverage, waiting-area
-coverage, permanence, image adequacy, 1–5 confidence, location-recognition response, and timestamp.
+The coder query returns only assignment ID, blind display ID, order, available evidence, and the
+coder's own submission status. Source stop IDs, routes, existing scores, previous comments,
+other ratings, and consensus are not returned. Each assignment can create only one rating row; both
+application validation and a database uniqueness constraint make the submission immutable. Ratings
+include the codebook version, configured variables, evidence adequacy, confidence, and timestamp.
 
 The coding phase cannot close while any assignment remains. Agreement queries and research exports
 also reject access during setup and coding, so administrators cannot inspect emerging consensus.
 After coding closes, the platform calculates pairwise percent agreement and Krippendorff's alpha for
-each variable. Coverage uses squared ordinal distance; the other variables use nominal distance. An
-image is flagged when any variable falls below the prespecified threshold. Adjudicators receive the
-blind image alias and competing-code counts without rater IDs. Their locked decision is written to
-`blind_adjudications`; raw ratings are never overwritten.
+each variable. Coverage uses squared ordinal distance; the other variables use nominal distance. A
+stop is flagged when any variable falls below the prespecified threshold. Adjudicators receive the
+blind stop alias and competing-code counts without rater IDs. Their locked decision is stored
+separately; raw ratings are never overwritten.
 
 Research exports are available only after coding closes. The locked-ratings CSV includes the private
-source image and stop linkage plus pseudonymous rater IDs. A separate adjudication CSV and protocol
+source stop linkage plus pseudonymous rater IDs. A separate adjudication CSV and protocol
 JSON keep final decisions and prespecified methods explicit. These exports are builder-side research
 artifacts and are not included automatically in a generated public study bundle.
 
 The collapsed `Admin preview` selector is workflow preview, not authentication, and is labeled so it
 does not imply permission elevation. Teams operating a shared builder must add access control around
-it. Visual clues inside imagery can also defeat geographic blinding, so
-teams should crop signs and addresses, strip EXIF/coordinate metadata, standardize framing, and use
-neutral filenames before registering an image.
+it.
 
 Agreement analytics in Preview are read-only. The moderator queue, submitted-label comparison,
 reference map, final coverage/source decision, and audit trail live exclusively in `Dataset Review`.
@@ -346,10 +345,11 @@ assessment exports remain visible but disabled when their corresponding history 
 keeps the export layout stable as the project progresses. Dataset source, format, row count, and import timestamp are shown separately in
 the `Dataset Provenance` section below the file catalog rather than as an unlabeled dataframe.
 
-The **Publish** page presents publishing as a four-stage wizard: `Check project`, `Prepare website`,
-`Publish`, and `Verify website`. It detects the local GitHub repository and default branch, reduces
-readiness failures to one outcome-level blocker, builds the public package, updates the repository
-from a clean temporary clone, and verifies a known public URL. Existing connected Streamlit sites
+The **Dataset Release** page first provides a versioned release package containing data, labels,
+configuration, and integrity metadata without requiring GitHub. Teams may optionally publish that
+same package as a public voting website. Website publishing detects the local GitHub repository and
+default branch, reduces readiness failures to one outcome-level blocker, updates the repository from
+a clean temporary clone, and verifies a known public URL. Existing connected Streamlit sites
 redeploy automatically after the repository update. First-time Streamlit hosting still requires the
 provider's one-time browser authorization.
 
@@ -365,7 +365,7 @@ and the deployment service packages as its standalone `app.py`. The package incl
 - `requirements.txt`, `.streamlit/config.toml`, generated `README.md`, `.gitignore`, and optional `deploy_to_github.ps1` helper.
 
 Repository, branch, hosting, Git, PowerShell, workflow, package contents, and diagnostic output are
-hidden under `Advanced settings` or `View technical details`. The ZIP download and generated
+secondary to the direct release download and remain under website settings or technical details. The generated
 `deploy_to_github.ps1` helper remain available there as a manual fallback. The helper is generated
 inside the package rather than the builder source tree and preserves the existing repository's
 protected `.git/`, `.github/`, `.streamlit/`, root `README.md`, `LICENSE`, `.env*`, and

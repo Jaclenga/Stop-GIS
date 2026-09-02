@@ -170,7 +170,7 @@ DEFAULT_COVERAGE_TAXONOMY = [
     },
     {
         "name": "Needs Review",
-        "description": "The stop needs imagery, review, or disagreement resolution.",
+        "description": "The stop needs more assessment, review, or disagreement resolution.",
         "color": "#3b82f6",
         "sort_order": 4,
     },

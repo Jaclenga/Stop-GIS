@@ -342,6 +342,34 @@ class ProjectConflictError(RuntimeError):
     """Raised when a stale project snapshot attempts to replace newer data."""
 
 
+class DuplicateProjectNameError(ValueError):
+    """Raised when a project name is already used by another project."""
+
+
+def normalize_project_name(value: Any) -> str:
+    """Return the displayed project name with insignificant whitespace removed."""
+    return " ".join(str(clean_scalar(value) or "").split())
+
+
+def _ensure_unique_project_name(
+    conn: sqlite3.Connection,
+    name: str,
+    *,
+    exclude_project_id: str | None = None,
+) -> None:
+    """Reject case- and whitespace-equivalent names while holding a write lock."""
+    name_key = normalize_project_name(name).casefold()
+    rows = conn.execute("SELECT id, name FROM projects").fetchall()
+    for row in rows:
+        if row["id"] == exclude_project_id:
+            continue
+        if normalize_project_name(row["name"]).casefold() == name_key:
+            raise DuplicateProjectNameError(
+                f'A project named "{normalize_project_name(name)}" already exists. '
+                "Choose a different project name."
+            )
+
+
 def database_path() -> Path:
     return choose_database_path()
 
@@ -612,7 +640,7 @@ def update_project_details(
     expected_revision: str | None = None,
     path: Path | None = None,
 ) -> str:
-    clean_name = str(clean_scalar(name) or "").strip()
+    clean_name = normalize_project_name(name)
     clean_visibility = str(clean_scalar(visibility) or "Private").strip().title()
     if not clean_name:
         raise ValueError("Project name is required")
@@ -625,6 +653,10 @@ def update_project_details(
             init_database(db_path)
             now = utc_timestamp()
             with connect(db_path) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                _ensure_unique_project_name(
+                    conn, clean_name, exclude_project_id=project_id
+                )
                 parameters = (
                     clean_name,
                     clean_scalar(agency),
@@ -1523,7 +1555,8 @@ def _save_project_bundle_once(
     now = utc_timestamp()
     project_values = {field: clean_scalar(project.get(field, "")) for field in PROJECT_FIELDS}
     deployment = project.get("deployment") if isinstance(project.get("deployment"), dict) else {}
-    if not project_values.get("name"):
+    project_values["name"] = normalize_project_name(project_values.get("name"))
+    if not project_values["name"]:
         project_values["name"] = "Untitled Stop Audit"
     if not project_values.get("visibility"):
         project_values["visibility"] = "Private"
@@ -1535,6 +1568,9 @@ def _save_project_bundle_once(
         existing = conn.execute(
             "SELECT updated_at FROM projects WHERE id = ?", (project_id,)
         ).fetchone()
+        _ensure_unique_project_name(
+            conn, project_values["name"], exclude_project_id=project_id
+        )
         if scoring is None:
             scoring_row = conn.execute(
                 "SELECT scoring_json FROM project_settings WHERE project_id = ?", (project_id,)

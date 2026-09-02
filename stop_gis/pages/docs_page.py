@@ -25,7 +25,7 @@ def render_methodology_page() -> None:
             placeholder=(
                 "- GTFS stops and routes\n"
                 "- Clearly labeled example stop-assessment observations\n"
-                "- Imagery source used for waiting-area shade review\n"
+                "- Field audits, imported assessments, or community submissions\n"
                 "- Optional project-specific attributes and GIS overlays"
             ),
         )
@@ -42,7 +42,6 @@ def render_methodology_page() -> None:
             ),
             placeholder=(
                 "Works referenced:\n"
-                "    Google. (n.d.). Google Maps imagery [Map and street-level imagery]. Retrieved Month Day, Year, from https://www.google.com/maps\n"
                 "    Transit Agency. (Year). General Transit Feed Specification (GTFS) data feed [Data set]. URL\n"
                 "    Author, A. A., & Author, B. B. (Year). Title of article. Title of Journal, volume(issue), page range. https://doi.org/xxxxx\n"
                 "    Author or Organization. (Year). Title of report. Publisher. URL"
