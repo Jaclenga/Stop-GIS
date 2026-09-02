@@ -87,6 +87,30 @@ def test_machine_key_override_is_sanitized_and_special_values_are_optional():
     assert dimension["allowed_values"][-1] == "not_applicable"
 
 
+@pytest.mark.parametrize(
+    ("name", "value_type", "expected_key"),
+    [
+        ("Braille present", "boolean", "braille_present"),
+        ("Curb height", "number", "curb_height"),
+        ("Access notes", "text", "access_notes"),
+    ],
+)
+def test_custom_measure_supports_non_categorical_response_types(
+    name, value_type, expected_key
+):
+    dimension = build_custom_dimension(
+        name=name,
+        description=f"Custom {value_type} measure.",
+        operational_definition="Apply the project-specific field protocol.",
+        value_type=value_type,
+    )
+
+    assert dimension["key"] == expected_key
+    assert dimension["value_type"] == value_type
+    assert dimension["allowed_values"] == []
+    assert dimension["enabled"] is True
+
+
 def test_taxonomy_row_surfaces_custom_state_values_and_disabled_exception():
     dimension = obstruction_dimension()
 

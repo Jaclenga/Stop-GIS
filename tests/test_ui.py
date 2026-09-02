@@ -616,7 +616,7 @@ def test_builder_navigation_pages_render(
                 timeout=30_000
             )
             page.get_by_placeholder("Search dimensions…").wait_for(timeout=30_000)
-            page.get_by_role("button", name="+ Add dimension", exact=True).wait_for(
+            page.get_by_role("button", name="+ Add custom measure", exact=True).wait_for(
                 timeout=30_000
             )
             playwright_api.expect(
@@ -955,6 +955,116 @@ def test_builder_navigation_pages_render(
                 f"UI failure while testing {current_surface['name']}: {error}"
                 f"\n\nStreamlit server log tail:\n{streamlit_server.log_tail()}"
             ) from error
+        finally:
+            browser.close()
+
+
+def test_all_builtin_data_modes_and_custom_measure_render_in_ui(
+    playwright_api, streamlit_server: StreamlitServer
+):
+    expected_modes = {
+        "shade_coverage": ("Shade coverage", "Significant Shade"),
+        "shade_source": ("Shade source", "Purpose-built"),
+        "bench": ("Bench", "Damaged"),
+        "shelter": ("Shelter", "Partial"),
+        "trash_can": ("Trash can", "Yes"),
+        "lighting": ("Lighting", "Dedicated"),
+        "passenger_information": ("Passenger information", "Real-time information"),
+        "sidewalk_connection": ("Sidewalk connection", "Adequate"),
+        "boarding_pad": ("Boarding pad", "Inadequate"),
+        "wheelchair_accessibility": ("Wheelchair accessibility", "Yes"),
+        "curb_ramp": ("Curb ramp", "Not applicable"),
+        "crosswalk": ("Crosswalk", "Yes"),
+        "bike_rack": ("Bike rack", "Yes"),
+        "cleanliness": ("Cleanliness", "Good"),
+        "traffic_exposure": ("Traffic exposure", "High"),
+    }
+
+    with playwright_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 1100})
+        try:
+            page.goto(streamlit_server.url, wait_until="domcontentloaded")
+            page.get_by_role("heading", name="Your Projects", exact=True).wait_for(
+                timeout=30_000
+            )
+            confirm_seed_project_open(page)
+            page.get_by_role("button", name="Taxonomy", exact=True).click(
+                timeout=30_000
+            )
+            page.get_by_role("heading", name="Taxonomy", exact=True).wait_for(
+                timeout=30_000
+            )
+
+            # The less frequently used groups start collapsed. Expand them so this
+            # browser test verifies every built-in mode card and its value vocabulary.
+            for group in ["accessibility", "safety", "information"]:
+                page.locator(f".st-key-taxonomy_group_{group} button").first.click(
+                    timeout=30_000
+                )
+                wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+
+            for key, (label, representative_value) in expected_modes.items():
+                card = page.locator(f".st-key-taxonomy_concept_{key}")
+                playwright_api.expect(card).to_be_visible(timeout=30_000)
+                playwright_api.expect(card).to_contain_text(label)
+                playwright_api.expect(card).to_contain_text(representative_value)
+                state_button = page.locator(
+                    f".st-key-taxonomy_dimension_state_{key} button"
+                ).first
+                playwright_api.expect(state_button).to_be_visible()
+                assert state_button.inner_text() in {"Enable", "Disable"}
+
+            page.get_by_role(
+                "button", name="+ Add custom measure", exact=True
+            ).click(timeout=30_000)
+            response_type = page.get_by_test_id("stSelectbox").filter(
+                has_text="Response type"
+            )
+            choose_streamlit_selectbox_option(
+                playwright_api, page, response_type, "Yes / No"
+            )
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+
+            page.get_by_label("Measure name", exact=True).fill("Braille present")
+            page.get_by_label("Description", exact=True).fill(
+                "Whether Braille is available on passenger information or signage."
+            )
+            page.get_by_role(
+                "button", name="Add custom measure", exact=True
+            ).click(timeout=30_000)
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+
+            braille_card = page.locator(
+                ".st-key-taxonomy_concept_braille_present"
+            )
+            playwright_api.expect(braille_card).to_be_visible(timeout=30_000)
+            playwright_api.expect(braille_card).to_contain_text("Braille present")
+            playwright_api.expect(braille_card).to_contain_text("Custom")
+            playwright_api.expect(braille_card).to_contain_text("Yes")
+            playwright_api.expect(braille_card).to_contain_text("No")
+
+            navigate_workspace_page(page, "Dataset Review", "Dataset Review")
+            page.get_by_role(
+                "button", name="+ Submit Assessment", exact=True
+            ).click(timeout=30_000)
+            page.get_by_role(
+                "heading", name="Submit Stop Assessment", exact=True
+            ).wait_for(timeout=30_000)
+            braille_control = page.get_by_test_id("stSelectbox").filter(
+                has_text="Braille present"
+            )
+            playwright_api.expect(braille_control).to_be_visible(timeout=30_000)
+            choose_streamlit_selectbox_option(
+                playwright_api, page, braille_control, "Yes"
+            )
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+            braille_control = page.get_by_test_id("stSelectbox").filter(
+                has_text="Braille present"
+            )
+            playwright_api.expect(
+                braille_control.get_by_role("combobox")
+            ).to_have_attribute("aria-label", "Selected Yes. Braille present")
         finally:
             browser.close()
 

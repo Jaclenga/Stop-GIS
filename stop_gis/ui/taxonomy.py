@@ -27,6 +27,13 @@ from stop_gis.assessment_modes import (
 
 CONCEPT_GROUPS = ("Shade", "Comfort", "Accessibility", "Safety", "Information", "Other")
 
+CUSTOM_RESPONSE_TYPES = {
+    "Categorical choices": "categorical",
+    "Yes / No": "boolean",
+    "Number": "number",
+    "Text": "text",
+}
+
 _CONCEPT_GROUP_BY_KEY = {
     "shade_coverage": "Shade",
     "shade_source": "Shade",
@@ -352,25 +359,52 @@ def _render_add_concept(modes: list[dict[str, Any]]) -> None:
     if not st.session_state.get(open_key, False):
         return
     with st.container(key="taxonomy_add_concept"):
-        st.subheader("Add dimension")
-        st.caption("Create one coding question and the responses researchers can choose.")
+        st.subheader("Add custom measure")
+        st.caption(
+            "Create a project-specific question, such as whether Braille is present."
+        )
+        response_label = st.selectbox(
+            "Response type",
+            list(CUSTOM_RESPONSE_TYPES),
+            help=(
+                "Use Yes / No for presence checks, categorical choices for a code list, "
+                "Number for measurements, or Text for notes."
+            ),
+            key=_widget_key("add_concept_response_type"),
+        )
+        value_type = CUSTOM_RESPONSE_TYPES[response_label]
         with st.form(_widget_key("add_concept_form"), border=False):
-            label = st.text_input("Name", placeholder="Tree canopy quality")
+            label = st.text_input(
+                "Measure name",
+                placeholder=(
+                    "Braille present"
+                    if value_type == "boolean"
+                    else "Tree canopy quality"
+                ),
+            )
             description = st.text_input(
                 "Description",
-                placeholder="Condition of tree canopy around the stop.",
+                placeholder=(
+                    "Whether Braille is available on passenger information or signage."
+                    if value_type == "boolean"
+                    else "Condition of tree canopy around the stop."
+                ),
             )
-            allowed_values = st.text_area(
-                "Values",
-                placeholder="Good\nFair\nPoor\nUnclear",
-                height=122,
-                help="Enter one short value per line.",
-            )
-            with st.expander("Advanced", expanded=False):
-                value_type = st.selectbox(
-                    "Response type", ["categorical", "boolean", "number", "text"],
-                    format_func=lambda value: value.capitalize(),
+            allowed_values = ""
+            if value_type == "categorical":
+                allowed_values = st.text_area(
+                    "Choices",
+                    placeholder="Good\nFair\nPoor\nUnclear",
+                    height=122,
+                    help="Enter one short choice per line.",
                 )
+            elif value_type == "boolean":
+                st.caption("Reviewers will choose Yes, No, or Not assessed.")
+            elif value_type == "number":
+                st.caption("Reviewers will enter a number or leave the measure unassessed.")
+            else:
+                st.caption("Reviewers will enter a short text response.")
+            with st.expander("Advanced", expanded=False):
                 operational_definition = st.text_area(
                     "Reviewer guidance",
                     placeholder="Add precise instructions only when the short description is not enough.",
@@ -383,7 +417,7 @@ def _render_add_concept(modes: list[dict[str, Any]]) -> None:
             cancel_col, submit_col = st.columns([0.68, 0.32])
             cancelled = cancel_col.form_submit_button("Cancel", width="stretch")
             submitted = submit_col.form_submit_button(
-                "Add dimension", type="primary", width="stretch"
+                "Add custom measure", type="primary", width="stretch"
             )
         if cancelled:
             st.session_state[open_key] = False
@@ -835,7 +869,7 @@ def render_taxonomy_editor(
     add_key = taxonomy_edit_mode_key("add_concept")
     with action_col.container(key="taxonomy_add_dimension_action"):
         st.button(
-            "+ Add dimension", type="primary", width="stretch",
+            "+ Add custom measure", type="primary", width="stretch",
             key=_widget_key("add_concept_button"),
             on_click=_toggle_state, args=(add_key,),
         )

@@ -420,7 +420,7 @@ def test_taxonomy_has_a_dedicated_data_menu_page():
     assert 'with st.container(key="taxonomy_workspace")' in source
     assert '"Search dimensions"' in components
     assert '"Search terminology"' in components
-    assert '"+ Add dimension"' in components
+    assert '"+ Add custom measure"' in components
     assert '["Dimensions", "Terminology"]' in components
     assert '"Disable" if mode["enabled"] else "Enable"' in components
     assert "_render_group_header" in components
