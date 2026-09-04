@@ -68,7 +68,7 @@ def render_scoring_builder(profiles: list[dict[str, Any]]) -> list[dict[str, Any
 
 def categorical_control_kind(mode: dict[str, Any]) -> str:
     """Choose a compact generic control from the configured value count."""
-    value_count = len(mode.get("allowed_values", []))
+    value_count = len(mode.get("input_values", mode.get("allowed_values", [])))
     if mode.get("multiple"):
         return "pills" if value_count <= 8 else "multiselect"
     if value_count <= 4:
@@ -82,7 +82,7 @@ def render_dimension_value_control(
     mode: dict[str, Any], *, label: str, default: Any, key: str, help_text: str | None
 ) -> Any:
     """Render one researcher-defined dimension without field-specific UI code."""
-    options = list(mode["allowed_values"])
+    options = list(mode.get("input_values", mode["allowed_values"]))
 
     def format_value(value: Any) -> str:
         return mode_value_label(mode, value)

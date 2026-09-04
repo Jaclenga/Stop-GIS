@@ -465,6 +465,7 @@ def assessment_mode_record(project_id: str, mode: dict[str, Any]) -> tuple[Any, 
         mode["operational_definition"],
         mode["value_type"],
         json.dumps(mode["allowed_values"], ensure_ascii=True),
+        json.dumps(mode["input_values"], ensure_ascii=True),
         json.dumps(mode["ordering"], ensure_ascii=True),
         int(mode["multiple"]),
         int(mode["allow_comment"]),
@@ -506,11 +507,11 @@ def migrate_legacy_projects_to_assessment_modes(conn: sqlite3.Connection) -> Non
             """
             INSERT INTO assessment_modes (
                 project_id, mode_key, label, description, operational_definition,
-                value_type, allowed_values_json, ordering_json, multiple,
+                value_type, allowed_values_json, input_values_json, ordering_json, multiple,
                 allow_comment, collect_confidence, enabled, required, sort_order,
                 measurement_level, scoring_json, value_labels_json,
                 value_definitions_json, display_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [assessment_mode_record(project_id, mode) for mode in legacy_shade_modes(taxonomy)],
         )
@@ -551,6 +552,13 @@ def init_database(path: Path | None = None) -> Path:
         if "value_labels_json" not in assessment_mode_columns:
             conn.execute(
                 "ALTER TABLE assessment_modes ADD COLUMN value_labels_json TEXT NOT NULL DEFAULT '{}'"
+            )
+        if "input_values_json" not in assessment_mode_columns:
+            conn.execute(
+                "ALTER TABLE assessment_modes ADD COLUMN input_values_json TEXT NOT NULL DEFAULT '[]'"
+            )
+            conn.execute(
+                "UPDATE assessment_modes SET input_values_json = allowed_values_json"
             )
         if "value_definitions_json" not in assessment_mode_columns:
             conn.execute(
@@ -1029,6 +1037,7 @@ def _assessment_mode_from_row(row: sqlite3.Row) -> dict[str, Any]:
         "operational_definition": row["operational_definition"],
         "value_type": row["value_type"],
         "allowed_values": json.loads(row["allowed_values_json"] or "[]"),
+        "input_values": json.loads(row["input_values_json"] or "[]"),
         "ordering": json.loads(row["ordering_json"] or "[]"),
         "multiple": bool(row["multiple"]),
         "allow_comment": bool(row["allow_comment"]),
@@ -1118,11 +1127,11 @@ def save_assessment_modes(
             """
             INSERT INTO assessment_modes (
                 project_id, mode_key, label, description, operational_definition,
-                value_type, allowed_values_json, ordering_json, multiple,
+                value_type, allowed_values_json, input_values_json, ordering_json, multiple,
                 allow_comment, collect_confidence, enabled, required, sort_order,
                 measurement_level, scoring_json, value_labels_json,
                 value_definitions_json, display_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [assessment_mode_record(project_id, mode) for mode in normalized],
         )
@@ -1932,6 +1941,7 @@ CREATE TABLE IF NOT EXISTS assessment_modes (
     operational_definition TEXT NOT NULL DEFAULT '',
     value_type TEXT NOT NULL,
     allowed_values_json TEXT NOT NULL DEFAULT '[]',
+    input_values_json TEXT NOT NULL DEFAULT '[]',
     ordering_json TEXT NOT NULL DEFAULT '[]',
     multiple INTEGER NOT NULL DEFAULT 0,
     allow_comment INTEGER NOT NULL DEFAULT 1,

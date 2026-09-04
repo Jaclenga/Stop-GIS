@@ -30,6 +30,7 @@ from stop_gis.assessment_components import (
 from stop_gis.assessment_modes import (
     AssessmentValidationError,
     assessment_codebook,
+    builtin_modes,
     normalize_modes,
     validate_assessment_values,
 )
@@ -165,7 +166,11 @@ def test_dynamic_labeling_chooses_controls_from_researcher_value_count(monkeypat
     assert payload["assessment_values"] == {
         "perceived_waiting_area_obstruction": "major"
     }
-    many_values = {**dimension, "allowed_values": [str(index) for index in range(9)]}
+    many_values = {
+        **dimension,
+        "allowed_values": [str(index) for index in range(9)],
+        "input_values": [str(index) for index in range(9)],
+    }
     assert categorical_control_kind(many_values) == "selectbox"
     assert categorical_control_kind({**many_values, "multiple": True}) == "multiselect"
 
@@ -295,6 +300,72 @@ def test_disabling_collection_does_not_drop_historical_dimension_from_export():
     )
 
     assert exported.loc[0, dimension["key"]] == "minor"
+
+
+def test_disabled_shade_placeholder_columns_are_not_exported_without_observations():
+    shade = next(
+        mode for mode in builtin_modes() if mode["key"] == "shade_coverage"
+    )
+    shade["enabled"] = False
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "shading": "Needs Review",
+                "shade_coverage": "Needs Review",
+                "assessment_values": {},
+            }
+        ]
+    )
+
+    exported, _ = published_app.assessment_export_frames(stops, None, [shade])
+
+    assert "shading" not in exported.columns
+    assert "shade_coverage" not in exported.columns
+
+
+def test_disabled_shade_with_historical_observation_remains_exportable():
+    shade = next(
+        mode for mode in builtin_modes() if mode["key"] == "shade_coverage"
+    )
+    shade["enabled"] = False
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "shading": "No Shade",
+                "assessment_values": {"shade_coverage": "none"},
+            }
+        ]
+    )
+
+    exported, _ = published_app.assessment_export_frames(stops, None, [shade])
+
+    assert exported.loc[0, "shading"] == "No Shade"
+    assert exported.loc[0, "shade_coverage"] == "none"
+
+
+def test_bench_only_mode_list_drops_omitted_shade_placeholders_from_export():
+    bench = next(mode for mode in builtin_modes() if mode["key"] == "bench")
+    bench["enabled"] = True
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1001",
+                "bench": "present",
+                "shading": "Needs Review",
+                "shade_coverage": "Needs Review",
+                "shade_sources": "",
+            }
+        ]
+    )
+
+    exported, _ = published_app.assessment_export_frames(stops, None, [bench])
+
+    assert "bench" in exported.columns
+    assert "shading" not in exported.columns
+    assert "shade_coverage" not in exported.columns
+    assert "shade_sources" not in exported.columns
 
 
 def test_observed_dimension_cannot_be_deleted_renamed_or_retyped_without_migration(

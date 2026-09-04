@@ -13,6 +13,7 @@ from stop_gis.persistence.store import (
     list_assessment_modes,
     list_assessments,
     load_project_bundle,
+    save_assessment_modes,
 )
 from stop_gis.assessment_modes import (
     AssessmentValidationError,
@@ -58,6 +59,55 @@ def test_disabled_and_invalid_categorical_values_are_rejected():
         validate_assessment_values(modes, {"cleanliness": "good"})
     with pytest.raises(AssessmentValidationError, match="Invalid value"):
         validate_assessment_values(modes, {"bench": "luxurious"})
+
+
+def test_mode_can_disable_an_input_choice_without_deleting_schema_value():
+    bench = next(
+        mode for mode in modes_for_template("basic_stop_amenities")
+        if mode["key"] == "bench"
+    )
+    bench["input_values"] = ["none", "present", "unclear"]
+    normalized = normalize_mode_definition(bench)
+
+    assert "damaged" in normalized["allowed_values"]
+    assert "damaged" not in normalized["input_values"]
+    assert validate_assessment_values([normalized], {"bench": "present"}) == {
+        "bench": "present"
+    }
+    with pytest.raises(AssessmentValidationError, match="Invalid value"):
+        validate_assessment_values([normalized], {"bench": "damaged"})
+
+
+def test_input_choice_selection_round_trips_and_can_change_after_observations(
+    db_path, project, taxonomy, methodology, visualization, minimal_stops
+):
+    modes = modes_for_template("basic_stop_amenities")
+    project_id = create_project(
+        project,
+        taxonomy,
+        methodology,
+        visualization,
+        minimal_stops,
+        [],
+        db_path,
+        assessment_modes=modes,
+    )
+    add_assessment(
+        project_id,
+        {"stop_id": "1001", "assessment_values": {"bench": "damaged"}},
+        db_path,
+    )
+    bench = next(mode for mode in modes if mode["key"] == "bench")
+    bench["input_values"] = ["none", "present", "unclear"]
+
+    save_assessment_modes(project_id, modes, db_path)
+    stored = next(
+        mode for mode in list_assessment_modes(project_id, db_path)
+        if mode["key"] == "bench"
+    )
+
+    assert "damaged" in stored["allowed_values"]
+    assert "damaged" not in stored["input_values"]
 
 
 def test_custom_mode_definition_is_generic():

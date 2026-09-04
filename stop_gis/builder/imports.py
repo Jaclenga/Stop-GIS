@@ -45,7 +45,12 @@ REQUIRED_STOP_FIELDS = ["stop_id", "stop_name", "stop_lat", "stop_lon"]
 OPTIONAL_FIELDS = [
     "agency",
     "routes",
+    "direction",
     "municipality",
+    "bench",
+    "shelter",
+    "lighting",
+    "trash_can",
     "shading",
     "shade_coverage",
     "shade_sources",
@@ -61,7 +66,13 @@ FIELD_ALIASES = {
     "stop_lon": ["stop_lon", "stoplon", "longitude", "lon", "lng", "long", "x"],
     "agency": ["agency", "agency_name", "operator"],
     "routes": ["routes", "route", "route_short_name", "route_ids"],
+    "direction": ["direction", "stop_direction", "travel_direction", "bearing"],
     "municipality": ["municipality", "city", "jurisdiction", "neighborhood"],
+    "bench": ["bench", "bench_presence", "has_bench", "seating"],
+    "bench_presence": ["bench_presence", "bench", "has_bench"],
+    "shelter": ["shelter", "shelter_status", "has_shelter"],
+    "lighting": ["lighting", "light", "has_lighting", "lit"],
+    "trash_can": ["trash_can", "trashcan", "waste_basket", "waste_bin", "bin"],
     "shading": ["shading", "shade", "shade_category", "shade_label"],
     "shade_coverage": ["shade_coverage", "coverage"],
     "shade_sources": ["shade_sources", "shade_source", "source"],
@@ -70,6 +81,89 @@ FIELD_ALIASES = {
     "ridership": ["ridership", "boardings", "ons", "passengers"],
     "nearby_destinations": ["nearby_destinations", "destinations", "destination", "nearby_places", "places"],
 }
+PRIMARY_FIELD_MAPPING_GROUPS = (
+    (
+        "Stop location",
+        (
+            ("stop_lat", "Latitude", True),
+            ("stop_lon", "Longitude", True),
+            ("stop_id", "Stop ID", True),
+            ("stop_name", "Stop name", True),
+        ),
+    ),
+    (
+        "Amenities",
+        (
+            ("bench", "Bench", False),
+            ("shelter", "Shelter", False),
+            ("lighting", "Lighting", False),
+            ("trash_can", "Trash can", False),
+        ),
+    ),
+    (
+        "Transit",
+        (
+            ("routes", "Route", False),
+            ("direction", "Direction", False),
+        ),
+    ),
+)
+PRIMARY_MAPPING_FIELDS = {
+    field
+    for _group, fields in PRIMARY_FIELD_MAPPING_GROUPS
+    for field, _label, _required in fields
+}
+AMENITY_MAPPING_FIELDS = {
+    "bench",
+    "bench_presence",
+    "shelter",
+    "lighting",
+    "trash_can",
+}
+ADVANCED_MAPPING_FIELDS = [
+    field
+    for field in REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS
+    if field not in PRIMARY_MAPPING_FIELDS
+]
+
+
+def project_field_mapping_groups(
+    assessment_modes: list[dict[str, Any]] | None,
+) -> tuple[tuple[str, tuple[tuple[str, str, bool], ...]], ...]:
+    """Map amenity source columns directly into active project dimensions."""
+    active_mode_keys = {
+        str(mode.get("key", ""))
+        for mode in assessment_modes or []
+        if mode.get("enabled", False)
+    }
+    bench_target = next(
+        (
+            candidate
+            for candidate in ("bench_presence", "bench")
+            if candidate in active_mode_keys
+        ),
+        "bench",
+    )
+    groups = []
+    for group, fields in PRIMARY_FIELD_MAPPING_GROUPS:
+        configured_fields = tuple(
+            (bench_target if field == "bench" else field, label, required)
+            for field, label, required in fields
+        )
+        groups.append((group, configured_fields))
+    return tuple(groups)
+
+
+def project_advanced_mapping_fields(
+    assessment_modes: list[dict[str, Any]] | None,
+    primary_fields: set[str],
+) -> list[str]:
+    fields = list(ADVANCED_MAPPING_FIELDS)
+    for mode in assessment_modes or []:
+        key = str(mode.get("key", ""))
+        if mode.get("enabled", False) and key and key not in primary_fields and key not in fields:
+            fields.append(key)
+    return fields
 
 
 def timestamp_with_timezone() -> str:
@@ -973,6 +1067,7 @@ def render_mapped_import_controls(
     import_format: str,
     project: dict[str, Any],
     taxonomy: list[dict[str, Any]],
+    assessment_modes: list[dict[str, Any]] | None = None,
     metadata: dict[str, Any] | None = None,
     key_prefix: str,
     button_label: str,
@@ -986,21 +1081,66 @@ def render_mapped_import_controls(
         st.caption(f"Geometry validation: {len(raw):,} records from {metadata.get('geometry_types', 'spatial')} geometries.")
 
     choices = [""] + list(raw.columns)
-    st.markdown("#### Field Mapping")
+    st.markdown("#### Configure your dataset")
     mapping: dict[str, str] = {}
-    fields = REQUIRED_STOP_FIELDS + OPTIONAL_FIELDS
-    grid = st.columns(4)
-    for index, field in enumerate(fields):
-        suggested = suggest_source_column(field, list(raw.columns))
+    source_columns = list(raw.columns)
+    mapping_groups = project_field_mapping_groups(assessment_modes)
+    primary_fields = {
+        field
+        for _group, fields in mapping_groups
+        for field, _label, _required in fields
+    }
+    advanced_fields = project_advanced_mapping_fields(
+        assessment_modes, primary_fields
+    )
+
+    def render_mapping_row(field: str, label: str, required: bool) -> None:
+        suggested = suggest_source_column(field, source_columns)
         default_index = choices.index(suggested) if suggested in choices else 0
-        with grid[index % 4]:
-            mapping[field] = st.selectbox(
-                field,
+        row = st.columns([1.05, 2.25, 0.8], vertical_alignment="center")
+        row[0].markdown(f"**{label}**")
+        mapping[field] = row[1].selectbox(
+            f"{label} source column",
+            choices,
+            index=default_index,
+            key=f"{key_prefix}_map_{field}",
+            label_visibility="collapsed",
+            format_func=lambda value: value if value else "— Not mapped —",
+        )
+        if mapping[field] and required:
+            row[2].markdown("✓")
+        elif mapping[field] and field in AMENITY_MAPPING_FIELDS:
+            row[2].markdown("✓ detected" if mapping[field] == suggested else "✓")
+        elif required:
+            row[2].markdown("**Required**")
+
+    for group, fields in mapping_groups:
+        st.markdown(f"##### {group}")
+        for field, label, required in fields:
+            render_mapping_row(field, label, required)
+
+    with st.expander("Advanced fields", expanded=False):
+        advanced_columns = st.columns(2)
+        for index, field in enumerate(advanced_fields):
+            suggested = suggest_source_column(field, source_columns)
+            default_index = choices.index(suggested) if suggested in choices else 0
+            mapping[field] = advanced_columns[index % 2].selectbox(
+                field.replace("_", " ").title(),
                 choices,
                 index=default_index,
                 key=f"{key_prefix}_map_{field}",
+                format_func=lambda value: value if value else "— Not mapped —",
             )
-    if st.button(button_label, type="primary", key=f"{key_prefix}_use"):
+
+    missing_required = [field for field in REQUIRED_STOP_FIELDS if not mapping[field]]
+    if missing_required:
+        st.caption("Map all four stop-location fields before importing this dataset.")
+    if st.button(
+        button_label,
+        type="primary",
+        key=f"{key_prefix}_use",
+        disabled=bool(missing_required),
+    ):
         prepared = import_stop_dataset(
             raw,
             mapping,

@@ -54,6 +54,113 @@ def test_csv_import_maps_fields_deduplicates_and_logs(project, taxonomy):
     assert builder_app.st.session_state["import_log"][0]["source"] == "stops_minimal.csv"
 
 
+def test_primary_mapping_groups_match_location_amenity_and_transit_workflow():
+    assert builder_imports.PRIMARY_FIELD_MAPPING_GROUPS == (
+        (
+            "Stop location",
+            (
+                ("stop_lat", "Latitude", True),
+                ("stop_lon", "Longitude", True),
+                ("stop_id", "Stop ID", True),
+                ("stop_name", "Stop name", True),
+            ),
+        ),
+        (
+            "Amenities",
+            (
+                ("bench", "Bench", False),
+                ("shelter", "Shelter", False),
+                ("lighting", "Lighting", False),
+                ("trash_can", "Trash can", False),
+            ),
+        ),
+        (
+            "Transit",
+            (("routes", "Route", False), ("direction", "Direction", False)),
+        ),
+    )
+    assert "municipality" in builder_imports.ADVANCED_MAPPING_FIELDS
+    assert "shade_coverage" in builder_imports.ADVANCED_MAPPING_FIELDS
+
+
+def test_pittsburgh_bench_source_maps_to_bench_presence_mode():
+    groups = builder_imports.project_field_mapping_groups(
+        [
+            {
+                "key": "bench_presence",
+                "label": "Bench presence",
+                "enabled": True,
+            }
+        ]
+    )
+    amenity_fields = dict(
+        (label, field)
+        for group, fields in groups
+        if group == "Amenities"
+        for field, label, _required in fields
+    )
+
+    assert amenity_fields["Bench"] == "bench_presence"
+    assert builder_imports.suggest_source_column("bench_presence", ["bench"]) == "bench"
+
+
+def test_amenity_mapping_detects_assessment_columns_but_not_provisional_evidence():
+    columns = [
+        "stop_id",
+        "latitude",
+        "longitude",
+        "bench_presence",
+        "has_shelter",
+        "lit",
+        "waste_bin",
+        "osm_bench_tag",
+        "prt_shelter_listed",
+    ]
+
+    assert builder_imports.suggest_source_column("bench", columns) == "bench_presence"
+    assert builder_imports.suggest_source_column("shelter", columns) == "has_shelter"
+    assert builder_imports.suggest_source_column("lighting", columns) == "lit"
+    assert builder_imports.suggest_source_column("trash_can", columns) == "waste_bin"
+    assert builder_imports.suggest_source_column(
+        "bench", ["osm_bench_tag"]
+    ) == ""
+    assert builder_imports.suggest_source_column(
+        "shelter", ["prt_shelter_listed"]
+    ) == ""
+
+
+def test_field_mapping_preserves_grouped_amenities_and_direction():
+    raw = pd.DataFrame(
+        [
+            {
+                "id": "1",
+                "name": "Main",
+                "lat": 40.4,
+                "lon": -80.0,
+                "bench_col": "present",
+                "shelter_col": "full",
+                "direction_col": "outbound",
+            }
+        ]
+    )
+    mapped = builder_imports.apply_field_mapping(
+        raw,
+        {
+            "stop_id": "id",
+            "stop_name": "name",
+            "stop_lat": "lat",
+            "stop_lon": "lon",
+            "bench": "bench_col",
+            "shelter": "shelter_col",
+            "direction": "direction_col",
+        },
+    )
+
+    assert mapped.loc[0, "bench"] == "present"
+    assert mapped.loc[0, "shelter"] == "full"
+    assert mapped.loc[0, "direction"] == "outbound"
+
+
 def test_prepare_stop_dataset_rejects_nonfinite_and_out_of_range_coordinates(project, taxonomy):
     raw = pd.DataFrame(
         [

@@ -32,14 +32,21 @@ def test_repository_root_contains_only_repository_metadata():
         assert not Path(retired_directory).exists()
 
 
-def test_demo_inputs_have_one_canonical_home():
+def test_default_pittsburgh_inputs_have_one_canonical_home():
     import stop_gis.builder.app as builder_app
 
-    demo_dir = Path("data/demo").resolve()
-    assert builder_app.DATA_PATH == demo_dir / "stops.txt"
-    assert builder_app.SHADE_DATA_PATH == demo_dir / "shading_data.csv"
+    seed_dir = Path("data/pittsburgh_bench_inventory").resolve()
+    assert builder_app.DEFAULT_DATA_DIR == seed_dir
+    assert (
+        builder_app.DATA_PATH
+        == seed_dir / "pittsburgh_bus_stops_stop_gis_import.csv"
+    )
+    assert builder_app.SEED_SUMMARY_PATH == seed_dir / "build_summary.json"
     assert builder_app.DATA_PATH.is_file()
-    assert builder_app.SHADE_DATA_PATH.is_file()
+    assert builder_app.SEED_SUMMARY_PATH.is_file()
+    assert (seed_dir / "CITATION.md").is_file()
+    assert (seed_dir / "CITATION.cff").is_file()
+    assert (seed_dir / "DATA_LICENSE.md").is_file()
     assert not Path("stops.txt").exists()
     assert not Path("shading_data.csv").exists()
 

@@ -1,0 +1,115 @@
+{
+  "built_at_utc": "2026-09-04T08:00:45Z",
+  "scope": {
+    "mode": "BUS",
+    "municipality": "Pittsburgh city (Allegheny, PA)"
+  },
+  "counts": {
+    "prt_scoped_bus_stops": 2626,
+    "prt_filtered_shelter_records_systemwide": 600,
+    "pittsburgh_stops_with_prt_shelter_listing": 282,
+    "osm_elements_returned_before_deduplication": 1286,
+    "osm_elements_after_type_id_deduplication": 1286,
+    "osm_exact_stop_code_matches_within_50m": 860,
+    "osm_exact_stop_code_matches_over_50m_through_250m": 9,
+    "osm_exact_code_candidates_rejected_over_250m": 0,
+    "osm_unmatched_prt_stops": 1757,
+    "matched_records_with_osm_bench_yes": 112,
+    "matched_records_with_osm_bench_no": 517,
+    "bench_mode_prefill_present": 112,
+    "bench_mode_prefill_absent": 517,
+    "prt_shelter_matches_by_stop_id": 282,
+    "prt_shelter_matches_by_stop_code_fallback": 0
+  },
+  "sources": {
+    "prt_stops": {
+      "url": "https://services3.arcgis.com/544gNI3xxlFIWuTc/arcgis/rest/services/Transit_Stops_%28system%29/FeatureServer/0",
+      "item_url": "https://www.arcgis.com/home/item.html?id=a29f37608eb34c3895332ff99eea9b17",
+      "accessed_utc": "2026-09-04T08:00:45Z",
+      "governing_terms_url": "https://www.rideprt.org/business-center/developer-resources/developer-license-agreement/",
+      "citation": "Pittsburgh Regional Transit. (2026). PRT Stops - Current (full system) [Feature layer].",
+      "where": "mode = 'BUS' AND muni = 'Pittsburgh city (Allegheny, PA)'",
+      "name": "PRT_current_stops_system",
+      "service_item_id": "a29f37608eb34c3895332ff99eea9b17",
+      "title": "PRT Stops - Current (full system)",
+      "license_info": "CC0",
+      "modified_epoch_ms": 1784904293000,
+      "max_record_count": 2000
+    },
+    "prt_amenities": {
+      "url": "https://services3.arcgis.com/544gNI3xxlFIWuTc/arcgis/rest/services/PRT_Current_Shelter_Locations/FeatureServer/0",
+      "item_url": "https://www.arcgis.com/home/item.html?id=73d1faab8d3441babcd3463ef6987559",
+      "accessed_utc": "2026-09-04T08:00:45Z",
+      "governing_terms_url": "https://www.rideprt.org/business-center/developer-resources/developer-license-agreement/",
+      "citation": "Pittsburgh Regional Transit. (2026). PRT Stop Amenities - Current [Feature layer].",
+      "where": "amenity_type = 'shelter' AND mode IN ('BUS', 'BUS, RAIL')",
+      "name": "prt_stop_amenities",
+      "service_item_id": "73d1faab8d3441babcd3463ef6987559",
+      "title": "PRT Stop Amenities - Current",
+      "license_info": "CC0",
+      "modified_epoch_ms": 1787670513000,
+      "max_record_count": 2000
+    },
+    "openstreetmap": {
+      "overpass_endpoint_used": "https://overpass-api.de/api/interpreter",
+      "query": "[out:json][timeout:60];\narea[\"name\"=\"Pittsburgh\"][\"boundary\"=\"administrative\"][\"admin_level\"=\"8\"]->.a;\n(\n  nwr[\"highway\"=\"bus_stop\"](area.a);\n  nwr[\"public_transport\"=\"platform\"][\"bus\"=\"yes\"](area.a);\n);\nout meta center tags;\n",
+      "copyright": "OpenStreetMap contributors",
+      "license": "ODbL 1.0",
+      "license_url": "https://opendatacommons.org/licenses/odbl/1-0/",
+      "attribution_url": "https://www.openstreetmap.org/copyright",
+      "accessed_utc": "2026-09-04T08:00:45Z",
+      "citation": "OpenStreetMap contributors. (2026). OpenStreetMap [Database]. OpenStreetMap Foundation."
+    }
+  },
+  "citation": {
+    "preferred": "Stop-GIS contributors. (2026). Pittsburgh bus-stop bench-inventory starter dataset (Version 0.1.0) [Data set]. Stop-GIS.",
+    "human_readable_file": "CITATION.md",
+    "machine_readable_file": "CITATION.cff",
+    "terms_and_attribution_file": "DATA_LICENSE.md"
+  },
+  "matching": {
+    "public_stop_code_normalization": "trim/casefold; remove whitespace; normalize numeric leading zeros",
+    "osm_ref_separators": [
+      "semicolon",
+      "comma"
+    ],
+    "candidate_selection": "closest exact public-stop-code match",
+    "large_offset_threshold_m": 50,
+    "rejection_threshold_m": 250,
+    "nearest_neighbor_without_code_agreement": false
+  },
+  "validation": {
+    "required_fields_populated": true,
+    "unique_stop_ids": true,
+    "coordinates_finite_and_in_pittsburgh_area": true,
+    "source_scope_mode_bus_and_pittsburgh_city": true,
+    "source_evidence_prefixes_preserved": true,
+    "no_shade_study_columns": true,
+    "all_assessments_unreviewed": true,
+    "bench_column_maps_to_bench_presence": true,
+    "stop_gis_csv_import_preparation": {
+      "passed": true,
+      "prepared_rows": 2626,
+      "required_fields_preserved": true
+    },
+    "zip_opens_and_contains_documented_files": true
+  },
+  "artifacts": {
+    "csv_sha256": "24d308f726ea97dd85d54cedec08070daade064161cc3e59452b846d865dfa4e",
+    "zip_members": [
+      "pittsburgh_bus_stops_stop_gis_import.csv",
+      "build_pittsburgh_bench_seed.py",
+      "build_summary.json",
+      "README.md",
+      "DATA_LICENSE.md",
+      "CITATION.md",
+      "CITATION.cff"
+    ]
+  },
+  "limitations": [
+    "This is an unreviewed starter dataset, not a verified bench census.",
+    "prt_shelter_listed=no means no matching record appeared in the public layer.",
+    "OSM tags are provisional, contributor-maintained evidence and may be incomplete or stale.",
+    "A shelter listing does not imply that a bench is present."
+  ]
+}

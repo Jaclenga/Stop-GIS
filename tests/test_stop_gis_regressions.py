@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from stop_gis import public_app
+
 from stop_gis.persistence.store import (
     ProjectConflictError,
     add_adjudication,
@@ -220,6 +222,119 @@ def test_map_and_export_flags_remove_hidden_mode_and_nested_value():
     shade_header = shade_catalog[0]["data"].decode().splitlines()[0]
     assert "shading" not in shade_header
     assert "shade_coverage" not in shade_header
+
+
+def test_disabled_shade_is_removed_from_runtime_map_and_stop_details(monkeypatch):
+    hidden_shade = normalize_mode_definition(
+        {
+            "key": "shade_coverage",
+            "label": "Shade coverage",
+            "value_type": "categorical",
+            "allowed_values": ["none", "limited", "significant", "unclear"],
+            "enabled": False,
+        }
+    )
+    enabled_bench = normalize_mode_definition(
+        {
+            "key": "bench_presence",
+            "label": "Bench presence",
+            "value_type": "categorical",
+            "allowed_values": ["present", "absent", "unclear"],
+            "enabled": True,
+        }
+    )
+    visualization = configure_assessment_display(
+        {
+            "color_by": "Shade coverage",
+            "display_columns": ["stop_id", "shade_coverage", "bench_presence"],
+            "metric_cards": ["Shade coverage", "Review status"],
+            "custom_charts": [
+                {"x": "shade_coverage", "y": "Record count"},
+                {"x": "bench_presence", "y": "Record count"},
+            ],
+            "priority_weights": {"ridership": 0.5, "low_shade": 0.5},
+            "voting": {"enabled": True},
+        },
+        [hidden_shade, enabled_bench],
+    )
+
+    assert visualization["color_by"] == "Review status"
+    assert visualization["display_columns"] == ["stop_id", "bench_presence"]
+    assert visualization["metric_cards"] == ["Review status"]
+    assert "Agreement metrics" not in public_app.selected_dashboard_sections(
+        pd.DataFrame({"review_status": ["Unlabeled"], "priority_score": [0]}),
+        visualization,
+    )
+    assert visualization["custom_charts"] == [
+        {"x": "bench_presence", "y": "Record count"}
+    ]
+    assert visualization["priority_weights"]["low_shade"] == 0
+    assert visualization["voting"]["enabled"] is False
+    assert public_app.should_show_taxonomy_legend(visualization) is False
+
+    class StreamlitStub:
+        def __init__(self):
+            self.session_state = {}
+            self.markdown_calls = []
+
+        def info(self, value):
+            self.markdown_calls.append(str(value))
+
+        def selectbox(self, _label, options, **_kwargs):
+            return list(options)[0]
+
+        def markdown(self, value, **_kwargs):
+            self.markdown_calls.append(str(value))
+
+    stub = StreamlitStub()
+    monkeypatch.setattr(public_app, "st", stub)
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1",
+                "stop_name": "Main Street",
+                "stop_lat": 40.44,
+                "stop_lon": -80.0,
+                "routes": "1",
+                "shading": "Needs Review",
+                "shade_coverage": "Needs Review",
+                "bench_presence": "unclear",
+                "review_status": "Unlabeled",
+                "priority_score": 0,
+            }
+        ]
+    )
+
+    public_app.render_stop_detail_workflow(stops, visualization, "bench_test")
+    rendered = "\n".join(stub.markdown_calls)
+    assert "Shade" not in rendered
+    assert "Bench presence" in rendered
+
+
+def test_bench_only_mode_list_treats_omitted_shade_dimensions_as_disabled():
+    bench = normalize_mode_definition(
+        {
+            "key": "bench",
+            "label": "Bench",
+            "value_type": "categorical",
+            "allowed_values": ["none", "present", "unclear"],
+            "enabled": True,
+        }
+    )
+
+    visualization = configure_assessment_display(
+        {
+            "color_by": "Shade coverage",
+            "display_columns": ["stop_id", "shading", "bench"],
+            "metric_cards": ["Shade coverage", "Agreement metrics", "Review status"],
+        },
+        [bench],
+    )
+
+    assert visualization["_shade_enabled"] is False
+    assert visualization["color_by"] == "Review status"
+    assert visualization["display_columns"] == ["stop_id", "bench"]
+    assert visualization["metric_cards"] == ["Review status"]
 
 
 def test_reliability_uses_krippendorff_unit_weighting_and_independent_rows_only():

@@ -73,6 +73,12 @@ LABEL_WORKFLOW_OPTIONS = [
     "Audit History",
 ]
 DEFAULT_LABEL_WORKFLOW = "Review Queue"
+ASSESSMENT_WORKFLOW_OPTIONS = [
+    "Submit Assessment",
+    "Adjudicate Assessment",
+    "Audit History",
+]
+DEFAULT_ASSESSMENT_WORKFLOW = "Submit Assessment"
 CONFIDENCE_LEVEL_SCORES = {"Low": 0.35, "Medium": 0.7, "High": 1.0}
 
 
@@ -221,16 +227,37 @@ def render_label_code_helper(
             st.dataframe(table, width="stretch", hide_index=True)
 
 
-def set_label_workflow(view: str) -> None:
-    st.session_state["label_workflow_mode"] = (
-        view if view in LABEL_WORKFLOW_OPTIONS else DEFAULT_LABEL_WORKFLOW
+def shade_workflows_enabled(modes: list[dict[str, Any]] | None) -> bool:
+    """Keep legacy shade labeling only when a shade dimension is active."""
+    if not modes:
+        return True
+    return any(
+        mode["enabled"] and mode["key"] in {"shade_coverage", "shade_source"}
+        for mode in normalize_modes(modes)
     )
 
 
-def render_label_workflow_navigation() -> str:
-    current = str(st.session_state.get("label_workflow_mode", DEFAULT_LABEL_WORKFLOW))
-    if current not in LABEL_WORKFLOW_OPTIONS:
-        current = DEFAULT_LABEL_WORKFLOW
+def label_workflow_options(
+    modes: list[dict[str, Any]] | None,
+) -> tuple[list[str], str]:
+    if shade_workflows_enabled(modes):
+        return list(LABEL_WORKFLOW_OPTIONS), DEFAULT_LABEL_WORKFLOW
+    return list(ASSESSMENT_WORKFLOW_OPTIONS), DEFAULT_ASSESSMENT_WORKFLOW
+
+
+def set_label_workflow(view: str, options: tuple[str, ...] | None = None) -> None:
+    allowed = list(options or LABEL_WORKFLOW_OPTIONS)
+    default = allowed[0] if allowed else DEFAULT_LABEL_WORKFLOW
+    st.session_state["label_workflow_mode"] = view if view in allowed else default
+
+
+def render_label_workflow_navigation(
+    modes: list[dict[str, Any]] | None = None,
+) -> str:
+    options, default = label_workflow_options(modes)
+    current = str(st.session_state.get("label_workflow_mode", default))
+    if current not in options:
+        current = default
         st.session_state["label_workflow_mode"] = current
     st.markdown(
         """
@@ -248,13 +275,14 @@ def render_label_workflow_navigation() -> str:
         """,
         unsafe_allow_html=True,
     )
-    actions = [
+    all_actions = [
         ("Review Queue", "Review Queue", "label_action_queue"),
         ("+ Submit Assessment", "Submit Assessment", "assessment_action_submit"),
         ("Adjudicate", "Adjudicate Assessment", "assessment_action_adjudicate"),
         ("+ Submit Label", "Submit Label", "label_action_submit"),
         ("Audit History", "Audit History", "label_action_history"),
     ]
+    actions = [action for action in all_actions if action[1] in options]
     with st.container(key="label_workflow_navigation"):
         st.caption("Choose a labeling task. The highlighted task is currently open.")
         action_columns = st.columns(len(actions))
@@ -265,7 +293,7 @@ def render_label_workflow_navigation() -> str:
                 width="stretch",
                 key=key,
                 on_click=set_label_workflow,
-                args=(view,),
+                args=(view, tuple(options)),
             )
     return current
 
@@ -1279,10 +1307,13 @@ def render_assessment_collection(project_id: str, stops: pd.DataFrame) -> None:
     evidence_method = reviewer_cols[2].selectbox(
         "Evidence method", LABEL_SOURCE_OPTIONS, key="assessment_evidence_method"
     )
+    assessment_modes = st.session_state.get("assessment_modes", [])
     payload = render_assessment_form(
-        st.session_state.get("assessment_modes", []),
+        assessment_modes,
         key_prefix=f"assessment:{stop_id}",
-        defaults=assessment_values_from_record(selected_stop.to_dict()),
+        defaults=assessment_values_from_record(
+            selected_stop.to_dict(), assessment_modes
+        ),
     )
     if payload is None:
         return
@@ -1374,8 +1405,10 @@ def render_labels_page() -> None:
         st.warning("Import a stop dataset before collecting labels.")
         return
 
-    labels = list_shade_labels(project_id)
-    workflow = render_label_workflow_navigation()
+    modes = st.session_state.get("assessment_modes", [])
+    shade_enabled = shade_workflows_enabled(modes)
+    labels = list_shade_labels(project_id) if shade_enabled else pd.DataFrame()
+    workflow = render_label_workflow_navigation(modes)
     if workflow == "Review Queue":
         render_review_label_section(project_id, stops, labels, taxonomy)
     elif workflow == "Submit Assessment":
@@ -1386,8 +1419,9 @@ def render_labels_page() -> None:
         render_raw_label_collection(project_id, stops, labels, taxonomy)
     else:
         st.subheader("Audit History")
-        st.caption("A read-only record of submitted labels and moderator decisions.")
-        render_raw_label_history(project_id)
+        st.caption("A read-only record of submitted assessments and decisions.")
+        if shade_enabled:
+            render_raw_label_history(project_id)
         assessments = list_assessments(project_id)
         if not assessments.empty:
             st.markdown("#### Generic assessment history")
@@ -1413,4 +1447,5 @@ def render_labels_page() -> None:
             if not reliability.empty:
                 st.markdown("#### Reliability by coding dimension")
                 st.dataframe(reliability, width="stretch", hide_index=True)
-        render_review_audit_history(project_id, None)
+        if shade_enabled:
+            render_review_audit_history(project_id, None)

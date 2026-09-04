@@ -171,6 +171,8 @@ FIELD_LABELS = {
     "agency": "Agency",
     "routes": "Routes",
     "municipality": "Municipality",
+    "bench": "Bench",
+    "bench_presence": "Bench presence",
     "shading": "Shade coverage",
     "shade_coverage": "Shade coverage",
     "shade_sources": "Shade sources",
@@ -206,7 +208,7 @@ METRIC_REQUIREMENTS = {
     "Stops without shade": ["shading"],
     "Stops requiring review": ["shading"],
     "Review status": ["review_status"],
-    "Agreement metrics": [],
+    "Agreement metrics": ["shading"],
     "Shade by route": ["routes", "shading"],
     "Shade by neighborhood": ["municipality", "shading"],
     "Shade vs ridership": ["ridership", "shading"],
@@ -316,8 +318,15 @@ SHADE_SOURCE_CHART_ALIASES = {
     "manmade shade": "Incidental",
     "natural shade": "Natural",
 }
-DECK_DEVICE_PIXEL_RATIO = 2
+DECK_DEVICE_PIXEL_RATIO = 3
 MARKER_ICON_SIZE = 128
+STOP_CLUSTER_THRESHOLD = 1000
+DENSE_GRID_CELL_SIZE_M = 180
+MAP_VIEWPORT_WIDTH = 820
+MAP_VIEWPORT_PADDING = 0.84
+LEGACY_DEFAULT_STUDY_SUMMARY = (
+    "Auditing bus-stop infrastructure, accessibility, amenities, shade, and passenger comfort."
+)
 SHADE_COVERAGE_CHART_CODES = {
     "no shade": "No Shade",
     "limited": "Limited Shade",
@@ -476,8 +485,11 @@ def load_study() -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
     )
     stops = materialize_assessment_columns(stops)
     stops = normalize_published_stop_dimensions(stops)
+    runtime_visualization = configure_assessment_display(
+        config.get("visualization", {}), config.get("assessment_modes", [])
+    )
     stops["priority_score"] = calculate_priority_scores(
-        stops, config.get("visualization", {}).get("priority_weights", {})
+        stops, runtime_visualization.get("priority_weights", {})
     )
     stops = add_composite_scores(
         stops,
@@ -501,6 +513,28 @@ def configure_assessment_display(
     FILTER_EXCLUDED_FIELDS.difference_update(ASSESSMENT_FILTER_FIELDS)
     ASSESSMENT_FILTER_FIELDS = set()
     normalized_modes = normalize_modes(modes) if modes else []
+    configured_mode_keys = {mode["key"] for mode in normalized_modes}
+    hidden_mode_fields = {
+        field
+        for mode in normalized_modes
+        if not mode["enabled"]
+        for field in MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
+    }
+    if modes:
+        for legacy_key in {"shade_coverage", "shade_source"} - configured_mode_keys:
+            hidden_mode_fields.update(MODE_COMPATIBILITY_FIELDS[legacy_key])
+    shade_coverage_modes = [
+        mode for mode in normalized_modes if mode["key"] == "shade_coverage"
+    ]
+    shade_source_modes = [
+        mode for mode in normalized_modes if mode["key"] == "shade_source"
+    ]
+    shade_coverage_enabled = (
+        any(mode["enabled"] for mode in shade_coverage_modes) if modes else True
+    )
+    shade_source_enabled = (
+        any(mode["enabled"] for mode in shade_source_modes) if modes else True
+    )
     mode_keys = {
         field
         for mode in normalized_modes
@@ -509,7 +543,7 @@ def configure_assessment_display(
     display_columns = [
         column
         for column in configured.get("display_columns", [])
-        if column not in mode_keys
+        if column not in mode_keys and column not in hidden_mode_fields
     ]
     for mode in normalized_modes:
         filter_fields = MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
@@ -526,7 +560,57 @@ def configure_assessment_display(
         if mode["display"]["map"] and mode["key"] not in display_columns:
             display_columns.append(mode["key"])
     configured["display_columns"] = display_columns
+    configured["_hidden_assessment_fields"] = sorted(hidden_mode_fields)
+    configured["_shade_coverage_enabled"] = shade_coverage_enabled
+    configured["_shade_source_enabled"] = shade_source_enabled
+    configured["_shade_enabled"] = shade_coverage_enabled or shade_source_enabled
+
+    color_by = configured.get("color_by", "Shade coverage")
+    color_field = COLOR_MODE_FIELDS.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
+        color_by
+    )
+    if color_field in hidden_mode_fields:
+        configured["color_by"] = "Review status"
+
+    configured["metric_cards"] = [
+        label
+        for label in (configured.get("metric_cards") or [])
+        if not hidden_mode_fields.intersection(METRIC_REQUIREMENTS.get(label, []))
+    ]
+    configured["custom_charts"] = [
+        chart
+        for chart in (configured.get("custom_charts") or [])
+        if isinstance(chart, dict)
+        and chart.get("x") not in hidden_mode_fields
+        and chart.get("y") not in hidden_mode_fields
+    ]
+    if not shade_coverage_enabled:
+        priority_weights = dict(configured.get("priority_weights") or {})
+        priority_weights["low_shade"] = 0
+        configured["priority_weights"] = priority_weights
+        voting = dict(configured.get("voting") or {})
+        voting["enabled"] = False
+        configured["voting"] = voting
     return configured
+
+
+def configured_study_summary(
+    methodology: dict[str, Any], modes: list[dict[str, Any]]
+) -> str:
+    summary = str(methodology.get("summary", "") or "").strip()
+    if summary != LEGACY_DEFAULT_STUDY_SUMMARY or not modes:
+        return summary
+    normalized_modes = normalize_modes(modes)
+    if any(
+        mode["enabled"] and mode["key"] in {"shade_coverage", "shade_source"}
+        for mode in normalized_modes
+    ):
+        return summary
+    enabled_labels = [mode["label"] for mode in normalized_modes if mode["enabled"]]
+    if not enabled_labels:
+        return "A reproducible bus-stop infrastructure audit."
+    focus = ", ".join(label.lower() for label in enabled_labels)
+    return f"Auditing bus-stop {focus}."
 
 
 def assessment_summary_tables(
@@ -780,13 +864,19 @@ def build_gis_overlay_layers(visualization: dict[str, Any]) -> list[pdk.Layer]:
 
 
 def build_tooltip_text(df: pd.DataFrame, visualization: dict[str, Any]) -> str:
-    columns = get_selected_display_columns(df, visualization)
-    color_options = get_color_options(df)
+    hidden_fields = set(visualization.get("_hidden_assessment_fields", []))
+    columns = [
+        column
+        for column in get_selected_display_columns(df, visualization)
+        if column not in hidden_fields
+    ]
     color_by = visualization.get("color_by", "Shade coverage")
-    category_field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
-        color_by
-    )
-    if category_field in df.columns and category_field not in columns:
+    category_field = resolve_color_field(df, color_by)
+    if (
+        category_field in df.columns
+        and category_field not in columns
+        and category_field not in hidden_fields
+    ):
         columns = [category_field, *columns]
     columns = columns[:8]
     return "\n".join(f"{display_label(column)}: {{{column}}}" for column in columns)
@@ -813,6 +903,22 @@ def get_color_options(df: pd.DataFrame) -> dict[str, str]:
     return options
 
 
+def resolve_color_field(
+    df: pd.DataFrame, color_by: str, default: str | None = None
+) -> str | None:
+    resolved = get_color_options(df).get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
+        color_by
+    )
+    if resolved:
+        return resolved
+    if color_by.startswith("Column: "):
+        requested_label = color_by.removeprefix("Column: ").strip().casefold()
+        for column in df.columns:
+            if FIELD_LABELS.get(column, column).casefold() == requested_label:
+                return column
+    return default
+
+
 def color_for_priority(value: Any, visualization: dict[str, Any]) -> list[int]:
     numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
     score = 0.0 if pd.isna(numeric) else max(0.0, min(100.0, float(numeric)))
@@ -834,11 +940,8 @@ def color_dataset(
     df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
 ) -> pd.DataFrame:
     colored = df.copy()
-    color_options = get_color_options(colored)
     color_by = visualization.get("color_by", "Shade coverage")
-    field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
-        color_by, "shading"
-    )
+    field = resolve_color_field(colored, color_by, "shading")
     if field == "review_status":
         review_colors = visualization.get("review_status_colors", {})
         colored["fill_color"] = colored["review_status"].map(
@@ -1076,10 +1179,26 @@ def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
         )
     lat = pd.to_numeric(df["stop_lat"], errors="coerce")
     lon = pd.to_numeric(df["stop_lon"], errors="coerce")
+    min_lat, max_lat = float(lat.min()), float(lat.max())
+    min_lon, max_lon = float(lon.min()), float(lon.max())
+
+    def mercator_y(latitude: float) -> float:
+        radians = math.radians(max(-85.051129, min(85.051129, latitude)))
+        return (1 - math.asinh(math.tan(radians)) / math.pi) / 2
+
+    longitude_span = max((max_lon - min_lon) / 360, 1e-9)
+    latitude_span = max(abs(mercator_y(max_lat) - mercator_y(min_lat)), 1e-9)
+    width_zoom = math.log2(
+        MAP_VIEWPORT_WIDTH * MAP_VIEWPORT_PADDING / (256 * longitude_span)
+    )
+    height_zoom = math.log2(
+        MAP_PANEL_HEIGHT * MAP_VIEWPORT_PADDING / (256 * latitude_span)
+    )
+    zoom = max(2.0, min(15.0, width_zoom, height_zoom))
     return pdk.ViewState(
-        latitude=float(lat.mean()),
-        longitude=float(lon.mean()),
-        zoom=10 if max(lat.max() - lat.min(), lon.max() - lon.min()) < 0.8 else 8,
+        latitude=(min_lat + max_lat) / 2,
+        longitude=(min_lon + max_lon) / 2,
+        zoom=zoom,
         min_zoom=2,
         max_zoom=18,
         pitch=0,
@@ -1103,6 +1222,23 @@ def build_deck_chart(
     marker_shape = visualization.get("marker_shape", "Circle")
     if marker_shape not in MARKER_SHAPES:
         marker_shape = "Circle"
+    dense_overview = len(map_df) >= STOP_CLUSTER_THRESHOLD
+    use_dense_aggregation = dense_overview and visualization.get(
+        "cluster_dense_stops", True
+    )
+    color_field = resolve_color_field(
+        map_df, visualization.get("color_by", "")
+    )
+    if color_field == "bench_presence":
+        bench_draw_order = {"": 0, "Unknown": 0, "unclear": 1, "absent": 2, "present": 3}
+        map_df["_bench_draw_order"] = (
+            map_df[color_field]
+            .fillna("")
+            .astype(str)
+            .map(bench_draw_order)
+            .fillna(0)
+        )
+        map_df = map_df.sort_values("_bench_draw_order", kind="stable")
     marker_layer_id = f"stops_layer_{marker_shape.lower().replace('-', '_')}"
     if marker_shape == "Circle":
         marker_size = max(4, min(48, int(visualization.get("marker_size", 7))))
@@ -1117,10 +1253,14 @@ def build_deck_chart(
             radius_units=pdk.types.String("pixels"),
             radius_min_pixels=4,
             radius_max_pixels=48,
-            opacity=max(
-                0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))
+            opacity=(
+                min(0.16, float(visualization.get("marker_opacity", 0.82)))
+                if use_dense_aggregation
+                else max(
+                    0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))
+                )
             ),
-            stroked=True,
+            stroked=not use_dense_aggregation,
             get_line_color=hex_to_rgb(
                 visualization.get("marker_stroke_color", "#141414")
             ),
@@ -1145,11 +1285,43 @@ def build_deck_chart(
             size_units=pdk.types.String("pixels"),
             size_min_pixels=4,
             size_max_pixels=48,
+            opacity=(
+                min(0.16, float(visualization.get("marker_opacity", 0.82)))
+                if use_dense_aggregation
+                else 1.0
+            ),
             pickable=True,
             auto_highlight=True,
         )
-    symbol_layer = build_semantic_symbol_layer(map_df, visualization)
-    layers = [*build_gis_overlay_layers(visualization), layer]
+    cluster_layer = None
+    if use_dense_aggregation:
+        cluster_layer = pdk.Layer(
+            "GridLayer",
+            data=map_df,
+            id="stop_clusters",
+            get_position="[stop_lon, stop_lat]",
+            cell_size=DENSE_GRID_CELL_SIZE_M,
+            coverage=0.82,
+            get_color_weight=1,
+            color_aggregation="SUM",
+            color_range=[
+                [219, 234, 254],
+                [147, 197, 253],
+                [59, 130, 246],
+                [29, 78, 216],
+                [30, 58, 138],
+            ],
+            extruded=False,
+            opacity=0.5,
+            pickable=False,
+        )
+    symbol_layer = (
+        None if use_dense_aggregation else build_semantic_symbol_layer(map_df, visualization)
+    )
+    layers = [*build_gis_overlay_layers(visualization)]
+    if cluster_layer is not None:
+        layers.append(cluster_layer)
+    layers.append(layer)
     if symbol_layer is not None:
         layers.append(symbol_layer)
     deck = pdk.Deck(
@@ -1165,10 +1337,19 @@ def build_deck_chart(
     return deck
 
 
-def filter_unlabeled_stops(df: pd.DataFrame, show_unlabeled: bool) -> pd.DataFrame:
-    if show_unlabeled or "shading" not in df.columns:
+def filter_unlabeled_stops(
+    df: pd.DataFrame,
+    show_unlabeled: bool,
+    visualization: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    if show_unlabeled:
         return df
-    return df[df["shading"] != "Needs Review"].copy()
+    if (visualization or {}).get("_shade_coverage_enabled", True) and "shading" in df:
+        return df[df["shading"] != "Needs Review"].copy()
+    if "review_status" in df:
+        status = df["review_status"].fillna("").astype(str).str.strip()
+        return df[~status.isin({"", "Unlabeled", "Needs Review", "Unknown"})].copy()
+    return df
 
 
 def split_route_values(value: Any) -> list[str]:
@@ -1573,26 +1754,30 @@ def render_stop_detail_workflow(
         pd.Series([selected_stop.get("priority_score")]), errors="coerce"
     ).iloc[0]
     summary_rows = [
-        ("Shade", str(selected_stop.get("shading", "Unknown") or "Unknown")),
         ("Review", str(selected_stop.get("review_status", "Unknown") or "Unknown")),
         ("Priority", "N/A" if pd.isna(priority) else f"{float(priority):.2f}"),
     ]
     for label, value in summary_rows:
         st.markdown(f"**{label}**  \n{value}")
 
+    hidden_fields = set(visualization.get("_hidden_assessment_fields", []))
+    summary_fields = {"review_status", "priority_score"}
     detail_columns = []
     for column in get_selected_display_columns(options, visualization) + [
-        "shade_coverage",
-        "shade_sources",
         "routes",
         "stop_lat",
         "stop_lon",
     ]:
-        if column in options.columns and column not in detail_columns:
+        if (
+            column in options.columns
+            and column not in detail_columns
+            and column not in hidden_fields
+            and column not in summary_fields
+        ):
             detail_columns.append(column)
     detail_rows = [
         {
-            "Field": column.replace("_", " ").title(),
+            "Field": display_label(column),
             "Value": selected_stop.get(column, ""),
         }
         for column in detail_columns
@@ -1603,8 +1788,13 @@ def render_stop_detail_workflow(
     return selected_stop
 
 
-def render_metric_cards(df: pd.DataFrame) -> None:
-    metrics = summary_metric_cards(df)
+def render_metric_cards(
+    df: pd.DataFrame, visualization: dict[str, Any] | None = None
+) -> None:
+    metrics = summary_metric_cards(
+        df,
+        include_shade=(visualization or {}).get("_shade_coverage_enabled", True),
+    )
     cols = st.columns(4)
     for col, metric in zip(cols, metrics):
         col.metric(
@@ -1664,7 +1854,9 @@ def format_summary_percent(numerator: int, denominator: int) -> str:
     return f"{(numerator / denominator) * 100:.1f}%"
 
 
-def summary_metric_cards(df: pd.DataFrame) -> list[dict[str, str]]:
+def summary_metric_cards(
+    df: pd.DataFrame, *, include_shade: bool = True
+) -> list[dict[str, str]]:
     total = len(df)
     if {"stop_lat", "stop_lon"}.issubset(df.columns):
         coordinates = df.loc[:, ["stop_lat", "stop_lon"]].apply(
@@ -1673,6 +1865,42 @@ def summary_metric_cards(df: pd.DataFrame) -> list[dict[str, str]]:
         mapped = int(coordinates.notna().all(axis=1).sum())
     else:
         mapped = 0
+
+    if not include_shade:
+        if "review_status" in df.columns:
+            status = df["review_status"].fillna("").astype(str).str.strip()
+            reviewed = int(
+                (~status.isin({"", "Unlabeled", "Needs Review", "Unknown"})).sum()
+            )
+        else:
+            reviewed = 0
+        backlog = max(total - reviewed, 0)
+        return [
+            {
+                "label": "Mapped stops",
+                "value": f"{mapped:,}",
+                "delta": f"{format_summary_percent(mapped, total)} with coordinates",
+                "help": "Stops in the current view with usable latitude and longitude.",
+            },
+            {
+                "label": "Stops in view",
+                "value": f"{total:,}",
+                "delta": "Current map and analytics filters",
+                "help": "Stops included by the current filters.",
+            },
+            {
+                "label": "Reviewed stops",
+                "value": f"{reviewed:,}",
+                "delta": f"{format_summary_percent(reviewed, total)} of current view",
+                "help": "Stops whose overall review status is beyond unlabeled or needs review.",
+            },
+            {
+                "label": "Review backlog",
+                "value": f"{backlog:,}",
+                "delta": f"{format_summary_percent(backlog, total)} remaining",
+                "help": "Stops that remain unlabeled, unknown, or in need of review.",
+            },
+        ]
 
     if "shading" in df.columns:
         shade = normalized_category_series(df, "shading")
@@ -1870,7 +2098,12 @@ def wide_chart_data(
 
 
 def render_custom_charts(df: pd.DataFrame, visualization: dict[str, Any]) -> None:
-    charts = visualization.get("custom_charts") or []
+    hidden_fields = set(visualization.get("_hidden_assessment_fields", []))
+    charts = [
+        chart
+        for chart in (visualization.get("custom_charts") or [])
+        if chart.get("x") not in hidden_fields and chart.get("y") not in hidden_fields
+    ]
     if not charts:
         return
     columns = st.columns(2)
@@ -1902,7 +2135,12 @@ def available_dashboard_sections(df: pd.DataFrame) -> list[str]:
 def selected_dashboard_sections(
     df: pd.DataFrame, visualization: dict[str, Any]
 ) -> list[str]:
-    available = available_dashboard_sections(df)
+    hidden_fields = set(visualization.get("_hidden_assessment_fields", []))
+    available = [
+        label
+        for label in available_dashboard_sections(df)
+        if not hidden_fields.intersection(METRIC_REQUIREMENTS.get(label, []))
+    ]
     metric_cards = visualization.get("metric_cards", [])
     if metric_cards == LEGACY_DEFAULT_METRIC_CARDS:
         metric_cards = DEFAULT_METRIC_CARDS
@@ -2127,7 +2365,7 @@ def render_issue_analytics_dashboard(
         return
 
     st.markdown("#### Summary Statistics")
-    render_metric_cards(df)
+    render_metric_cards(df, visualization)
 
     count_charts = [
         ("Shade sources", "Shade Sources", "shade_sources"),
@@ -2281,6 +2519,81 @@ def render_taxonomy_legend(taxonomy: list[dict[str, Any]]) -> None:
     st.markdown(taxonomy_legend_markup(taxonomy), unsafe_allow_html=True)
 
 
+BENCH_PRESENCE_LEGEND_LABELS = {
+    "present": "Bench",
+    "absent": "No bench",
+    "unclear": "Unclear",
+    "Unknown": "Not mapped",
+}
+
+
+def field_legend_markup(
+    df: pd.DataFrame, visualization: dict[str, Any], field: str
+) -> str:
+    color_map = ensure_field_color_map(visualization, df, field)
+    items = []
+    values = field_values_for_colors(df, field)
+    if field == "bench_presence":
+        preferred_order = ["present", "absent", "unclear", "Unknown"]
+        values = [value for value in preferred_order if value in values]
+    for value in values:
+        label = (
+            BENCH_PRESENCE_LEGEND_LABELS.get(value, value)
+            if field == "bench_presence"
+            else value.replace("_", " ").capitalize()
+        )
+        items.append(
+            "<span class='shade-legend-item'>"
+            f"<span class='shade-legend-swatch' style='background:{html.escape(color_map[value])}'></span>"
+            f"{html.escape(label)}</span>"
+        )
+    return (
+        "<style>"
+        ".shade-legend{display:flex;flex-wrap:wrap;gap:.55rem 1rem;margin:.35rem 0 1rem;}"
+        ".shade-legend-item{display:inline-flex;align-items:center;gap:.4rem;font-size:.9rem;}"
+        ".shade-legend-swatch{width:1rem;height:1rem;border-radius:50%;"
+        "border:1px solid rgba(0,0,0,.5);display:inline-flex;}"
+        "</style><div class='shade-legend'>" + "".join(items) + "</div>"
+    )
+
+
+def should_show_field_legend(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> bool:
+    if not visualization.get("show_legend", True):
+        return False
+    field = resolve_color_field(df, visualization.get("color_by", ""))
+    return bool(
+        field
+        and field in df.columns
+        and field not in {"shading", "review_status", "priority_score"}
+        and field_values_for_colors(df, field)
+    )
+
+
+def render_field_legend(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> None:
+    field = resolve_color_field(df, visualization.get("color_by", ""))
+    if not field:
+        return
+    st.markdown(f"#### {FIELD_LABELS.get(field, field.replace('_', ' ').title())} Legend")
+    st.markdown(
+        field_legend_markup(df, visualization, field), unsafe_allow_html=True
+    )
+
+
+def should_show_taxonomy_legend(visualization: dict[str, Any]) -> bool:
+    if not visualization.get("show_legend", True):
+        return False
+    if not visualization.get("_shade_coverage_enabled", True):
+        return False
+    color_by = visualization.get("color_by", "Shade coverage")
+    return (
+        COLOR_MODE_FIELDS.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(color_by)
+    ) == "shading"
+
+
 def render_methodology(config: dict[str, Any]) -> None:
     project = config.get("project", {})
     methodology = config.get("methodology", {})
@@ -2289,7 +2602,8 @@ def render_methodology(config: dict[str, Any]) -> None:
         or project.get("name")
         or "Bus Stop Infrastructure Audit"
     )
-    summary = str(methodology.get("summary", "") or "").strip()
+    modes = config.get("assessment_modes", [])
+    summary = configured_study_summary(methodology, modes)
     if summary:
         st.markdown(
             f'<p class="study-summary">{html.escape(summary)}</p>',
@@ -2299,10 +2613,18 @@ def render_methodology(config: dict[str, Any]) -> None:
         f"{project.get('agency', 'Transit agency')} | {project.get('region', 'Region')} | "
         f"dataset v{project.get('dataset_version', 'draft')} | methodology v{project.get('methodology_version', 'draft')}"
     )
+    shade_enabled = (
+        any(
+            mode["enabled"]
+            for mode in normalize_modes(modes)
+            if mode["key"] in {"shade_coverage", "shade_source"}
+        )
+        if modes
+        else True
+    )
     sections = [
         ("Rationale", methodology.get("purpose", "")),
         ("Assessment Method", methodology.get("assessment_method", "")),
-        ("Shade Assessment Method", methodology.get("shade_method", "")),
         ("Data Sources", methodology.get("data_sources", "")),
         ("Contributors", methodology.get("contributors", "")),
         ("Known Limitations", methodology.get("limitations", "")),
@@ -2310,11 +2632,14 @@ def render_methodology(config: dict[str, Any]) -> None:
         ("Release History", methodology.get("release_history", "")),
         ("Citation", methodology.get("citation", "")),
     ]
+    if shade_enabled:
+        sections.insert(
+            2, ("Shade Assessment Method", methodology.get("shade_method", ""))
+        )
     for title, body in sections:
         if str(body or "").strip():
             st.markdown(f"## {title}")
             st.markdown(body)
-    modes = config.get("assessment_modes", [])
     if modes:
         st.markdown("## Coding Dimensions")
         codebook = assessment_codebook(modes)
@@ -2346,18 +2671,33 @@ def render_methodology(config: dict[str, Any]) -> None:
         width="stretch",
         hide_index=True,
     )
-    st.markdown("## Shade Coverage Taxonomy")
-    st.dataframe(
-        coverage_schema_display_table(taxonomy, config.get("shade_coverage_taxonomy")),
-        width="stretch",
-        hide_index=True,
+    normalized_modes = normalize_modes(modes) if modes else []
+    coverage_enabled = (
+        any(mode["enabled"] for mode in normalized_modes if mode["key"] == "shade_coverage")
+        if modes
+        else True
     )
-    st.markdown("## Shade Source Taxonomy")
-    st.dataframe(
-        source_schema_display_table(config.get("shade_source_taxonomy")),
-        width="stretch",
-        hide_index=True,
+    source_enabled = (
+        any(mode["enabled"] for mode in normalized_modes if mode["key"] == "shade_source")
+        if modes
+        else True
     )
+    if coverage_enabled:
+        st.markdown("## Shade Coverage Taxonomy")
+        st.dataframe(
+            coverage_schema_display_table(
+                taxonomy, config.get("shade_coverage_taxonomy")
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    if source_enabled:
+        st.markdown("## Shade Source Taxonomy")
+        st.dataframe(
+            source_schema_display_table(config.get("shade_source_taxonomy")),
+            width="stretch",
+            hide_index=True,
+        )
 
 
 def json_safe_geojson_property(value: Any) -> Any:
@@ -2881,6 +3221,48 @@ def _mapping_cell(value: Any) -> dict[str, Any]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
+def _is_observed_mode_value(mode_key: str, value: Any) -> bool:
+    """Distinguish collected observations from import-time placeholder values."""
+    if value is None:
+        return False
+    if isinstance(value, (list, tuple, set, dict)):
+        return bool(value)
+    try:
+        if bool(pd.isna(value)):
+            return False
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if not text:
+        return False
+    if mode_key == "shade_coverage" and text.casefold() in {
+        "needs review",
+        "unknown",
+    }:
+        return False
+    return True
+
+
+def _mode_has_observations(
+    mode: dict[str, Any],
+    frames: tuple[pd.DataFrame | None, ...],
+) -> bool:
+    key = mode["key"]
+    compatible_fields = MODE_COMPATIBILITY_FIELDS.get(key, {key})
+    for frame in frames:
+        if frame is None or frame.empty:
+            continue
+        if "assessment_values" in frame.columns:
+            for value in frame["assessment_values"]:
+                mapped = _mapping_cell(value)
+                if key in mapped and _is_observed_mode_value(key, mapped[key]):
+                    return True
+        for field in compatible_fields.intersection(frame.columns):
+            if any(_is_observed_mode_value(key, value) for value in frame[field]):
+                return True
+    return False
+
+
 def assessment_export_frames(
     stops: pd.DataFrame,
     assessments: pd.DataFrame | None,
@@ -2897,15 +3279,23 @@ def assessment_export_frames(
     visible_keys = {
         mode["key"]
         for mode in normalized_modes
-        # Disabled dimensions stop future collection but remain exportable so
-        # historical observations are never silently dropped.
         if mode["display"]["export"]
+        and (
+            mode["enabled"]
+            or _mode_has_observations(mode, (stops, assessments))
+        )
     }
+    if modes:
+        missing_legacy_modes = {"shade_coverage", "shade_source"} - all_keys
+        all_keys.update(missing_legacy_modes)
+        for key in missing_legacy_modes:
+            pseudo_mode = {"key": key}
+            if _mode_has_observations(pseudo_mode, (stops, assessments)):
+                visible_keys.add(key)
     hidden_columns = {
         field
-        for mode in normalized_modes
-        if mode["key"] not in visible_keys
-        for field in MODE_COMPATIBILITY_FIELDS.get(mode["key"], {mode["key"]})
+        for key in all_keys - visible_keys
+        for field in MODE_COMPATIBILITY_FIELDS.get(key, {key})
     }
 
     exported_stops = materialize_assessment_columns(stops)
@@ -3141,7 +3531,7 @@ def main() -> None:
 
     st.set_page_config(page_title=project.get("name", "Stop Audit"), layout="wide")
     st.title(project.get("name", "Stop Audit"))
-    summary = str(methodology.get("summary", "") or "").strip()
+    summary = configured_study_summary(methodology, assessment_modes)
     if summary:
         st.markdown(
             f'<p class="study-summary">{html.escape(summary)}</p>',
@@ -3153,7 +3543,7 @@ def main() -> None:
 
     filters = current_map_filters(stops, "published")
     visible_stops = filter_map_stops(
-        filter_unlabeled_stops(stops, filters["show_unlabeled"]),
+        filter_unlabeled_stops(stops, filters["show_unlabeled"], visualization),
         filters["search_query"],
         filters["selected_routes"],
         filters,
@@ -3209,8 +3599,10 @@ def main() -> None:
             st.caption(
                 f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters."
             )
-            if visualization.get("show_legend", True) and taxonomy:
+            if should_show_taxonomy_legend(visualization) and taxonomy:
                 render_taxonomy_legend(taxonomy)
+            elif should_show_field_legend(visible_stops, visualization):
+                render_field_legend(visible_stops, visualization)
     elif tabs[1].open:
         with tabs[1]:
             render_assessment_summaries(visible_stops, assessment_modes)

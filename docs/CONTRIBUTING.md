@@ -54,8 +54,9 @@ pytest -q -m ui
   sync.
 - Preserve accessible names, keyboard focus, status announcements, recovery
   paths, and narrow-screen behavior for user-interface changes.
-- Keep the bundled Tampa files treated as starter data unless a change is
-  explicitly about refreshing them.
+- Keep the bundled Pittsburgh bench-inventory files treated as unreviewed
+  starter data unless a change explicitly refreshes them from their documented
+  sources. Do not convert prefixed PRT/OSM evidence into reviewed assessments.
 - Avoid introducing secrets, private URLs, or machine-specific paths into the
   repo.
 

@@ -20,12 +20,18 @@ DB_USER = os.environ.get("PGUSER", "postgres")
 DB_PASS = os.environ.get("PGPASSWORD", "postgres")
 
 HERE = Path(__file__).parent.parent
-STOPS_FILE = HERE / "data" / "demo" / "stops.txt"
+STOPS_FILE = (
+    HERE
+    / "data"
+    / "pittsburgh_bench_inventory"
+    / "pittsburgh_bus_stops_stop_gis_import.csv"
+)
 MIGRATIONS_DIR = HERE / "infrastructure" / "database" / "migrations"
+SCHEMA_PATH = HERE / "infrastructure" / "database" / "schema.sql"
 
 SCHEMA = "public"
 PROJECT_ID = os.environ.get("STOP_GIS_PROJECT_ID") or os.environ.get(
-    "SHADE_GIS_PROJECT_ID", "seed-tampa-stop-audit"
+    "SHADE_GIS_PROJECT_ID", "seed-pittsburgh-bench-inventory"
 )
 
 
@@ -38,6 +44,11 @@ def load_stops_csv(path: Path):
     with path.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for r in reader:
+            extra = {
+                key: value
+                for key, value in r.items()
+                if key not in {"stop_id", "stop_name", "stop_lat", "stop_lon"}
+            }
             rows.append(
                 (
                     PROJECT_ID,
@@ -45,8 +56,8 @@ def load_stops_csv(path: Path):
                     r.get("stop_name") or "Unnamed stop",
                     float(r.get("stop_lat")),
                     float(r.get("stop_lon")),
-                    "Hillsborough Area Regional Transit (HART)",
-                    json.dumps({"stop_code": r.get("stop_code")}),
+                    "Pittsburgh Regional Transit (PRT)",
+                    json.dumps(extra),
                 )
             )
     return rows
@@ -58,7 +69,7 @@ def main():
     with connect() as conn:
         with conn.cursor() as cur:
             # ensure schema (tables) exist; schema.sql is executed by docker init, but double-check
-            cur.execute((HERE / "sql" / "schema.sql").read_text(encoding="utf-8"))
+            cur.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
             for migration_path in sorted(MIGRATIONS_DIR.glob("*.sql")):
                 cur.execute(migration_path.read_text(encoding="utf-8"))
 
@@ -67,7 +78,7 @@ def main():
             if not rows:
                 conn.commit()
                 if STOPS_FILE.exists():
-                    print("No stops found in stops.txt; database schema is up to date.")
+                    print("No stops found in the Pittsburgh seed CSV; database schema is up to date.")
                 else:
                     print("stops.txt not found at", STOPS_FILE, "- database schema is up to date.")
                 return
@@ -97,17 +108,17 @@ def main():
                 """,
                 (
                     PROJECT_ID,
-                    "Tampa Bus Stop Infrastructure Audit",
-                    "Hillsborough Area Regional Transit (HART)",
-                    "Tampa, Florida",
-                    "Seed project for the reusable Stop-GIS platform.",
-                    "Open transit and climate research contributors",
+                    "Pittsburgh Bus Stop Bench Inventory",
+                    "Pittsburgh Regional Transit (PRT)",
+                    "Pittsburgh, Pennsylvania",
+                    "Unreviewed starter project for a reproducible bus-stop bench and seating inventory.",
+                    "Stop-GIS contributors and Pittsburgh bench-study reviewers",
                     "Public",
                     "0.1.0",
                     "0.1.0",
-                    "HART GTFS feed",
-                    "Agency GTFS terms",
-                    "",
+                    "PRT current stops with provisional OpenStreetMap evidence",
+                    "PRT Developer License Agreement; OpenStreetMap ODbL 1.0",
+                    "https://services3.arcgis.com/544gNI3xxlFIWuTc/arcgis/rest/services/Transit_Stops_%28system%29/FeatureServer/0",
                 ),
             )
 

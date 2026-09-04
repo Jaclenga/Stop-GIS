@@ -45,7 +45,7 @@ def render_preview_page() -> None:
     ).strip()
 
     st.title(project["name"])
-    summary = str(methodology.get("summary", "") or "").strip()
+    summary = published_app.configured_study_summary(methodology, assessment_modes)
     if summary:
         st.markdown(
             f'<p class="study-summary">{html.escape(summary)}</p>',
@@ -61,7 +61,9 @@ def render_preview_page() -> None:
 
     filters = published_app.current_map_filters(stops, "preview")
     visible_stops = published_app.filter_map_stops(
-        published_app.filter_unlabeled_stops(stops, filters["show_unlabeled"]),
+        published_app.filter_unlabeled_stops(
+            stops, filters["show_unlabeled"], visualization
+        ),
         filters["search_query"],
         filters["selected_routes"],
         filters,
@@ -124,8 +126,12 @@ def render_preview_page() -> None:
             st.caption(
                 f"{len(visible_stops):,} of {len(stops):,} stops match the active map filters."
             )
-            if visualization.get("show_legend", True):
+            if published_app.should_show_taxonomy_legend(visualization):
                 published_app.render_taxonomy_legend(taxonomy)
+            elif published_app.should_show_field_legend(
+                visible_stops, visualization
+            ):
+                published_app.render_field_legend(visible_stops, visualization)
     elif tabs[1].open:
         with tabs[1]:
             published_app.render_assessment_summaries(visible_stops, assessment_modes)

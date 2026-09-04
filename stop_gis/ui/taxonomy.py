@@ -131,7 +131,7 @@ def _dimension_value_labels(mode: Mapping[str, Any], *, limit: int = 6) -> list[
         return ["Number"]
     if value_type == "text":
         return ["Text response"]
-    values = list(mode.get("allowed_values", []))
+    values = list(mode.get("input_values", mode.get("allowed_values", [])))
     labels = [humanize_value(mode, value) for value in values[:limit]]
     if len(values) > limit:
         labels.append(f"+{len(values) - limit} more")
@@ -457,6 +457,24 @@ def _render_value_editor(
     labels = dict(mode.get("value_labels", {}))
     definitions = dict(mode.get("value_definitions", {}))
     scoring = dict(mode.get("scoring", {}))
+    current_inputs = list(mode.get("input_values", values))
+    selected_inputs = st.multiselect(
+        "Reviewer input choices",
+        values,
+        default=[value for value in values if value in current_inputs],
+        format_func=lambda value: humanize_value(mode, value),
+        key=_widget_key(f"input_values:{mode['key']}"),
+        help=(
+            "Choose which values reviewers can enter. Disabled choices remain in the "
+            "dataset schema so historical observations stay valid."
+        ),
+    )
+    if selected_inputs:
+        selected = set(selected_inputs)
+        mode["input_values"] = [value for value in values if value in selected]
+    else:
+        st.warning("Keep at least one reviewer input choice enabled.")
+        mode["input_values"] = current_inputs or list(values)
     if has_observations:
         st.info(
             "Stored observations use this dimension. Display labels and definitions "
@@ -509,6 +527,9 @@ def _render_value_editor(
             ),
         ):
             mode["allowed_values"] = [value for value in values if value != code]
+            mode["input_values"] = [
+                value for value in mode["input_values"] if value != code
+            ]
             mode["ordering"] = [value for value in mode["ordering"] if value != code]
             labels.pop(code, None)
             definitions.pop(code, None)
@@ -544,6 +565,7 @@ def _render_value_editor(
             code = f"{base}_{suffix}"
             suffix += 1
         mode["allowed_values"].append(code)
+        mode.setdefault("input_values", []).append(code)
         mode["value_labels"][code] = new_label.strip()
         if mode["measurement_level"] == "ordinal":
             mode["ordering"] = list(mode["allowed_values"])

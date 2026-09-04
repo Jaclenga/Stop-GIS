@@ -143,7 +143,8 @@ stop_gis/
   persistence/              Project storage adapters
   public_app.py             Shared published-study runtime
   public_voting.py          Shared public voting runtime
-data/demo/                  Versioned demonstration inputs
+data/pittsburgh_bench_inventory/  Versioned default bench-inventory inputs
+data/demo/                  Retained historical demonstration inputs
 scripts/                    Maintenance and data-preparation commands
 tests/                      Unit, integration, architecture, and UI tests
 docs/                       User and maintainer documentation
@@ -166,11 +167,17 @@ Key references include:
 - [Shade-GIS migration](docs/migrating-from-shade-gis.md)
 - [AI use statement](docs/project/AI_USE.md)
 
-## Demo data
+## Default data
 
-The bundled Tampa/HART inputs live in [`data/demo/`](data/demo/). This is a
-small workflow demonstration; its amenity observations are example data, not a
-complete or current HART inventory.
+Every fresh project store starts with the bundled [Pittsburgh bus-stop bench
+inventory](data/pittsburgh_bench_inventory/). It contains 2,626 current City of
+Pittsburgh PRT bus stops and provisional, clearly prefixed PRT/OSM evidence.
+All bench and seating assessments start unreviewed; the source evidence is not
+a verified bench census. The directory includes the reproducible builder,
+source notes, validation summary, import CSV, and standalone ZIP. Use the
+dataset-specific [citation guide](data/pittsburgh_bench_inventory/CITATION.md)
+and preserve its [source terms and attribution
+notice](data/pittsburgh_bench_inventory/DATA_LICENSE.md) when redistributing it.
 
 ## License
 
@@ -180,4 +187,6 @@ Stop-GIS is released under the [MIT License](LICENSE).
 
 Cite the software version and archive the study configuration, assessment
 definitions, raw observations, scoring profiles, and exported dataset used in
-an analysis. Citation metadata is available in [CITATION.cff](CITATION.cff).
+an analysis. Software citation metadata is available in
+[CITATION.cff](CITATION.cff); the Pittsburgh dataset has separate
+[machine-readable citation metadata](data/pittsburgh_bench_inventory/CITATION.cff).

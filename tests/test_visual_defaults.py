@@ -472,7 +472,34 @@ def test_published_map_matches_visuals_map_renderer():
     )
 
     assert published_deck == visuals_deck
-    assert visuals_deck["useDevicePixels"] == 2
+    assert visuals_deck["useDevicePixels"] == 3
+
+
+def test_citywide_map_uses_bounds_aware_detail_zoom():
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "northwest",
+                "stop_lat": 40.50,
+                "stop_lon": -80.10,
+                "shading": "Needs Review",
+            },
+            {
+                "stop_id": "southeast",
+                "stop_lat": 40.36,
+                "stop_lon": -79.86,
+                "shading": "Needs Review",
+            },
+        ]
+    )
+
+    for chart_builder in (build_deck_chart, published_app.build_deck_chart):
+        deck = json.loads(chart_builder(stops, [], copy.deepcopy(DEFAULT_VISUALIZATION)).to_json())
+        view = deck["initialViewState"]
+
+        assert view["zoom"] > 11
+        assert abs(view["latitude"] - 40.43) < 1e-9
+        assert abs(view["longitude"] - -79.98) < 1e-9
 
 
 def test_marker_slider_sizes_serialize_as_literal_pixels_and_scale_linearly():
@@ -580,6 +607,69 @@ def test_dense_overviews_honor_selected_marker_shape_and_size():
         assert layer["id"] == "stops_layer_square"
         assert layer["data"][0]["marker_size"] == 24
         assert layer["pickable"] is True
+
+
+def test_very_dense_overviews_add_aggregation_and_keep_stops_selectable():
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": str(index),
+                "stop_name": f"Stop {index}",
+                "stop_lat": 40.36 + (index % 40) * 0.003,
+                "stop_lon": -80.10 + (index // 40) * 0.003,
+                "shading": "Needs Review",
+                "review_status": "Unlabeled",
+                "priority_score": 0,
+            }
+            for index in range(1200)
+        ]
+    )
+
+    for chart_builder in (build_deck_chart, published_app.build_deck_chart):
+        deck = json.loads(
+            chart_builder(stops, [], copy.deepcopy(DEFAULT_VISUALIZATION)).to_json()
+        )
+        layers = {layer["id"]: layer for layer in deck["layers"]}
+
+        assert layers["stop_clusters"]["@@type"] == "GridLayer"
+        assert layers["stop_clusters"]["pickable"] is False
+        assert layers["stops_layer_circle"]["pickable"] is True
+        assert layers["stops_layer_circle"]["data"][0]["marker_size"] == 7
+        assert layers["stops_layer_circle"]["opacity"] == 0.16
+
+
+def test_pittsburgh_bench_map_keeps_presence_colors_visible_without_grid_overlay():
+    import stop_gis.builder.app as builder_app
+
+    stops = builder_app.load_seed_dataset(
+        builder_app.DEFAULT_TAXONOMY, builder_app.DEFAULT_PROJECT
+    )
+    visualization = copy.deepcopy(builder_app.DEFAULT_VISUALIZATION)
+    published_app.configure_assessment_display(
+        visualization, builder_app.DEFAULT_ASSESSMENT_MODES
+    )
+
+    for chart_builder in (build_deck_chart, published_app.build_deck_chart):
+        deck = json.loads(chart_builder(stops, [], visualization).to_json())
+        layers = {layer["id"]: layer for layer in deck["layers"]}
+        points = layers["stops_layer_circle"]["data"]
+        colors = {
+            row["bench_presence"]: row["fill_color"]
+            for row in points
+            if row["bench_presence"]
+        }
+
+        assert "stop_clusters" not in layers
+        assert layers["stops_layer_circle"]["opacity"] == 0.82
+        assert colors["present"] == [22, 128, 60]
+        assert colors["absent"] == [220, 38, 38]
+
+    legend = published_app.field_legend_markup(
+        stops, visualization, "bench_presence"
+    )
+    assert "Bench" in legend
+    assert "No bench" in legend
+    assert "Not mapped" in legend
 
 
 def test_each_marker_shape_gets_a_distinct_deck_layer_id():

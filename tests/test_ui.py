@@ -178,11 +178,10 @@ def navigate_workspace_page(page, page_name: str, heading: str) -> None:
     sections = {
         "Dataset Review": ("Labeling", "Dataset Review", "Dataset Review"),
         "Intercoder Review": ("Labeling", "Dataset Review", "Dataset Review"),
-        "Community Voting": ("Public Voting", "Community Voting", "Community Voting"),
-        "Docs": ("Publish", "Preview", "Tampa Bus Stop Infrastructure Demo"),
-        "Preview": ("Publish", "Preview", "Tampa Bus Stop Infrastructure Demo"),
+        "Docs": ("Publish", "Preview", "Pittsburgh Bus Stop Bench Inventory"),
+        "Preview": ("Publish", "Preview", "Pittsburgh Bus Stop Bench Inventory"),
         "Data Quality": ("Dataset", "Data", "Project Data"),
-        "Deploy": ("Publish", "Preview", "Tampa Bus Stop Infrastructure Demo"),
+        "Deploy": ("Publish", "Preview", "Pittsburgh Bus Stop Bench Inventory"),
     }
     section, default_page, default_heading = sections[page_name]
     page.get_by_role("button", name=section, exact=True).click(timeout=30_000)
@@ -342,12 +341,12 @@ def test_builder_header_home_and_grouped_menus(
             playwright_api.expect(
                 page.get_by_role("button", name="Use manual entries", exact=True)
             ).to_be_disabled(timeout=30_000)
-            for tab_name in ["Dataset", "Labeling", "Public Voting", "Publish"]:
+            for tab_name in ["Dataset", "Labeling", "Publish"]:
                 playwright_api.expect(
                     page.get_by_role("button", name=tab_name, exact=True)
                 ).to_be_visible(timeout=30_000)
             playwright_api.expect(
-                page.get_by_role("button", name="Tampa Bus Stop Infras...", exact=True)
+                page.get_by_role("button", name="Pittsburgh Bus Stop B...", exact=True)
             ).to_be_visible(timeout=30_000)
 
             page.get_by_role("button", name="Labeling", exact=True).click(
@@ -382,6 +381,63 @@ def test_builder_header_home_and_grouped_menus(
         finally:
             browser.close()
 
+
+def test_file_upload_uses_grouped_dataset_mapping(
+    playwright_api, streamlit_server: StreamlitServer
+):
+    with playwright_api.sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 1200})
+        try:
+            page.goto(streamlit_server.url, wait_until="domcontentloaded")
+            page.get_by_role("heading", name="Your Projects", exact=True).wait_for(
+                timeout=30_000
+            )
+            confirm_seed_project_open(page)
+
+            fixture = Path(__file__).parent / "fixtures" / "stops_with_amenities.csv"
+            page.locator('input[type="file"]').set_input_files(str(fixture))
+            page.get_by_role(
+                "heading", name="Configure your dataset", exact=True
+            ).wait_for(timeout=30_000)
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+
+            for group in ["Stop location", "Amenities", "Transit"]:
+                playwright_api.expect(
+                    page.get_by_role("heading", name=group, exact=True)
+                ).to_be_visible(timeout=30_000)
+
+            expected_mappings = {
+                "Latitude": "latitude",
+                "Longitude": "longitude",
+                "Stop ID": "stop_id",
+                "Stop name": "stop_name",
+                "Bench": "bench",
+                "Shelter": "shelter",
+                "Lighting": "— Not mapped —",
+                "Trash can": "— Not mapped —",
+                "Route": "routes",
+                "Direction": "direction",
+            }
+            for label, selected_value in expected_mappings.items():
+                playwright_api.expect(
+                    page.get_by_role("combobox", name=f"{label} source column")
+                ).to_have_attribute(
+                    "aria-label",
+                    f"Selected {selected_value}. {label} source column",
+                    timeout=30_000,
+                )
+
+            playwright_api.expect(
+                page.get_by_text("✓ detected", exact=True)
+            ).to_have_count(2)
+            playwright_api.expect(
+                page.get_by_text("Advanced fields", exact=True)
+            ).to_be_visible(timeout=30_000)
+        finally:
+            browser.close()
+
+
 def test_project_settings_can_edit_and_delete_a_project(
     playwright_api, streamlit_server: StreamlitServer
 ):
@@ -398,14 +454,14 @@ def test_project_settings_can_edit_and_delete_a_project(
                 timeout=30_000
             )
             page.get_by_label("Project name", exact=True).fill(
-                "  tampa   BUS stop infrastructure demo  "
+                "  pittsburgh   BUS stop bench inventory  "
             )
             page.get_by_role("button", name="Create project", exact=True).click(
                 timeout=30_000
             )
             playwright_api.expect(
                 page.get_by_text(
-                    'A project named "tampa BUS stop infrastructure demo" already exists. '
+                    'A project named "pittsburgh BUS stop bench inventory" already exists. '
                     "Choose a different project name.",
                     exact=True,
                 )
@@ -441,13 +497,13 @@ def test_project_settings_can_edit_and_delete_a_project(
             settings_dialog.wait_for(timeout=30_000)
             playwright_api.expect(settings_dialog).to_contain_text("Project settings")
             settings_dialog.get_by_label("Project name", exact=True).fill(
-                " TAMPA bus  stop infrastructure demo "
+                " PITTSBURGH bus  stop bench inventory "
             )
             settings_dialog.get_by_role(
                 "button", name="Save changes", exact=True
             ).click(timeout=30_000)
             playwright_api.expect(settings_dialog).to_contain_text(
-                'A project named "TAMPA bus stop infrastructure demo" already exists. '
+                'A project named "PITTSBURGH bus stop bench inventory" already exists. '
                 "Choose a different project name.",
                 timeout=30_000,
             )
@@ -518,9 +574,9 @@ def test_project_settings_can_edit_and_delete_a_project(
             ).click(timeout=30_000)
             delete_dialog = page.get_by_role("dialog")
             last_confirmation = delete_dialog.get_by_label(
-                'Type "Tampa Bus Stop Infrastructure Demo" to confirm', exact=True
+                'Type "Pittsburgh Bus Stop Bench Inventory" to confirm', exact=True
             )
-            last_confirmation.fill("Tampa Bus Stop Infrastructure Demo")
+            last_confirmation.fill("Pittsburgh Bus Stop Bench Inventory")
             last_confirmation.press("Tab")
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
             page.get_by_role("dialog").get_by_role(
@@ -552,9 +608,8 @@ def test_builder_navigation_pages_render(
     expected_pages = {
         "Dataset Review": "Dataset Review",
         "Intercoder Review": "Intercoder Review",
-        "Community Voting": "Community Voting",
         "Docs": "Project Documentation",
-        "Preview": "Tampa Bus Stop Infrastructure Demo",
+        "Preview": "Pittsburgh Bus Stop Bench Inventory",
         "Deploy": "Dataset Release",
     }
     with playwright_api.sync_playwright() as playwright:
@@ -649,32 +704,30 @@ def test_builder_navigation_pages_render(
                 timeout=30_000
             )
             playwright_api.expect(
-                page.locator(
-                    '.st-key-taxonomy_concept_shade_coverage [data-testid="stDataFrame"]'
-                )
+                page.locator(".st-key-taxonomy_concept_shade_coverage")
             ).to_have_count(0, timeout=30_000)
-            shade_coverage = page.locator(".st-key-taxonomy_concept_shade_coverage")
-            playwright_api.expect(shade_coverage).to_be_visible(timeout=30_000)
-            playwright_api.expect(shade_coverage).not_to_contain_text("Included")
-            playwright_api.expect(shade_coverage).to_contain_text("No Shade")
-            playwright_api.expect(shade_coverage).to_contain_text("Limited Shade")
-            playwright_api.expect(shade_coverage).to_contain_text("Significant Shade")
-            playwright_api.expect(shade_coverage).to_contain_text("Unknown")
+            bench_presence = page.locator(
+                ".st-key-taxonomy_concept_bench_presence"
+            )
+            playwright_api.expect(bench_presence).to_be_visible(timeout=30_000)
+            playwright_api.expect(bench_presence).to_contain_text("Present")
+            playwright_api.expect(bench_presence).to_contain_text("Absent")
+            playwright_api.expect(bench_presence).to_contain_text("Unclear")
             playwright_api.expect(
-                shade_coverage.get_by_role("button", name="Disable", exact=True)
+                bench_presence.get_by_role("button", name="Disable", exact=True)
             ).to_be_visible(timeout=30_000)
-            shade_coverage.get_by_role(
-                "button", name="Shade coverage", exact=False
+            bench_presence.get_by_role(
+                "button", name="Bench presence", exact=False
             ).click(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
             playwright_api.expect(
-                shade_coverage.get_by_text("Values", exact=True)
+                bench_presence.get_by_text("Values", exact=True)
             ).to_be_visible(timeout=30_000)
             playwright_api.expect(
-                shade_coverage.get_by_role("button", name="Edit dimension", exact=True)
+                bench_presence.get_by_role("button", name="Edit dimension", exact=True)
             ).to_be_visible(timeout=30_000)
             playwright_api.expect(
-                shade_coverage.get_by_text("Schema details", exact=True)
+                bench_presence.get_by_text("Schema details", exact=True)
             ).to_be_visible(timeout=30_000)
             playwright_api.expect(
                 page.get_by_role("button", name="Dataset", exact=True)
@@ -726,41 +779,28 @@ def test_builder_navigation_pages_render(
                         "Submit at least one independent assessment before adjudicating.",
                         exact=True,
                     ).wait_for(timeout=30_000)
-                    page.get_by_role("button", name="+ Submit Label", exact=True).click(
+                    playwright_api.expect(
+                        page.get_by_role("button", name="+ Submit Label", exact=True)
+                    ).to_have_count(0)
+                    page.get_by_role(
+                        "button", name="+ Submit Assessment", exact=True
+                    ).click(
                         timeout=30_000
                     )
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-
-                    coverage_control = page.get_by_test_id("stSelectbox").filter(
-                        has_text="Coverage"
-                    )
-                    choose_streamlit_selectbox_option(
-                        playwright_api,
-                        page,
-                        coverage_control,
-                        "No Shade",
-                    )
-                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                    natural_source = (
-                        page.get_by_test_id("stCheckbox")
-                        .filter(has_text="Natural")
-                        .get_by_role("checkbox")
-                    )
-                    playwright_api.expect(natural_source).to_be_disabled(timeout=30_000)
-
-                    choose_streamlit_selectbox_option(
-                        playwright_api,
-                        page,
-                        coverage_control,
-                        "Limited Shade",
-                    )
-                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-                    natural_source = (
-                        page.get_by_test_id("stCheckbox")
-                        .filter(has_text="Natural")
-                        .get_by_role("checkbox")
-                    )
-                    playwright_api.expect(natural_source).to_be_enabled(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_role(
+                            "heading", name="Submit Stop Assessment", exact=True
+                        )
+                    ).to_be_visible(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_role(
+                            "button", name="Help for Bench presence", exact=True
+                        )
+                    ).to_be_visible(timeout=30_000)
+                    playwright_api.expect(
+                        page.get_by_text("Shade coverage", exact=True)
+                    ).to_have_count(0)
                 elif nav_label == "Intercoder Review":
                     for section_heading in [
                         "Study Setup",
@@ -786,34 +826,6 @@ def test_builder_navigation_pages_render(
                     playwright_api.expect(
                         page.get_by_role("button", name="Add Review Image", exact=True)
                     ).to_have_count(0)
-                elif nav_label == "Community Voting":
-                    playwright_api.expect(
-                        page.get_by_role("heading", name="Configuration", exact=True)
-                    ).to_be_visible(timeout=30_000)
-                    playwright_api.expect(
-                        page.get_by_role("heading", name="Live Preview", exact=True)
-                    ).to_be_visible(timeout=30_000)
-                    voting_toggle_container = page.get_by_test_id("stCheckbox").filter(
-                        has_text="Enable visitor voting"
-                    )
-                    voting_toggle = voting_toggle_container.get_by_role("checkbox")
-                    if not voting_toggle.is_checked():
-                        playwright_api.expect(
-                            page.get_by_text("Visitor Experience", exact=True)
-                        ).to_have_count(0, timeout=30_000)
-                    if not voting_toggle.is_checked():
-                        voting_toggle_container.click()
-                    playwright_api.expect(voting_toggle).to_be_checked(timeout=30_000)
-                    playwright_api.expect(
-                        page.get_by_text("Visitor Experience", exact=True)
-                    ).to_be_visible(timeout=30_000)
-                    playwright_api.expect(
-                        page.get_by_text(
-                            "Community voting is currently hidden in the deployed app. Enable it to publish this interface.",
-                            exact=True,
-                        )
-                    ).to_have_count(0, timeout=60_000)
-                    wait_for_streamlit_idle(playwright_api, page, streamlit_server)
                 elif nav_label == "Preview":
                     map_tab = page.get_by_role("tab", name="Map", exact=True)
                     playwright_api.expect(map_tab).to_have_attribute(
@@ -826,6 +838,14 @@ def test_builder_navigation_pages_render(
                         stop_details_tab.click()
                     playwright_api.expect(
                         page.get_by_role("heading", name="Stop Details", exact=True)
+                    ).to_be_visible(timeout=60_000)
+                    playwright_api.expect(
+                        page.get_by_role(
+                            "heading", name="Bench presence Legend", exact=True
+                        )
+                    ).to_be_visible(timeout=60_000)
+                    playwright_api.expect(
+                        page.get_by_text("No bench", exact=True)
                     ).to_be_visible(timeout=60_000)
                     analytics_tab = page.get_by_role(
                         "tab", name="Analytics", exact=True
@@ -874,6 +894,10 @@ def test_builder_navigation_pages_render(
                     repository_input = page.get_by_label(
                         "Destination repository", exact=True
                     )
+                    public_confirmation = page.get_by_label(
+                        "I understand this may publish study data and raw label history to a public repository",
+                        exact=True,
+                    )
                     playwright_api.expect(username_input).to_have_value("")
                     playwright_api.expect(repository_input).to_have_value("")
                     playwright_api.expect(
@@ -882,6 +906,13 @@ def test_builder_navigation_pages_render(
                     playwright_api.expect(
                         page.get_by_label("Commit message", exact=True)
                     ).to_have_value("Publish website update")
+                    if not public_confirmation.is_checked():
+                        page.get_by_test_id("stCheckbox").filter(
+                            has_text="I understand this may publish study data and raw label history"
+                        ).click()
+                        wait_for_streamlit_idle(
+                            playwright_api, page, streamlit_server
+                        )
                     username_input.fill("example-owner")
                     username_input.press("Tab")
                     wait_for_streamlit_idle(playwright_api, page, streamlit_server)
@@ -969,25 +1000,14 @@ def test_builder_navigation_pages_render(
             browser.close()
 
 
-def test_all_builtin_data_modes_and_custom_measure_render_in_ui(
+def test_default_bench_modes_and_custom_measure_render_in_ui(
     playwright_api, streamlit_server: StreamlitServer
 ):
     expected_modes = {
-        "shade_coverage": ("Shade coverage", "Significant Shade"),
-        "shade_source": ("Shade source", "Purpose-built"),
-        "bench": ("Bench", "Damaged"),
-        "shelter": ("Shelter", "Partial"),
-        "trash_can": ("Trash can", "Yes"),
-        "lighting": ("Lighting", "Dedicated"),
-        "passenger_information": ("Passenger information", "Real-time information"),
-        "sidewalk_connection": ("Sidewalk connection", "Adequate"),
-        "boarding_pad": ("Boarding pad", "Inadequate"),
-        "wheelchair_accessibility": ("Wheelchair accessibility", "Yes"),
-        "curb_ramp": ("Curb ramp", "Not applicable"),
-        "crosswalk": ("Crosswalk", "Yes"),
-        "bike_rack": ("Bike rack", "Yes"),
-        "cleanliness": ("Cleanliness", "Good"),
-        "traffic_exposure": ("Traffic exposure", "High"),
+        "bench_presence": ("Bench presence", "Present"),
+        "bench_condition": ("Bench condition", "Damaged"),
+        "seating_form": ("Seating form", "Traditional bench"),
+        "informal_seating": ("Informal/DIY seating", "Present"),
     }
 
     with playwright_api.sync_playwright() as playwright:
@@ -1006,14 +1026,6 @@ def test_all_builtin_data_modes_and_custom_measure_render_in_ui(
                 timeout=30_000
             )
 
-            # The less frequently used groups start collapsed. Expand them so this
-            # browser test verifies every built-in mode card and its value vocabulary.
-            for group in ["accessibility", "safety", "information"]:
-                page.locator(f".st-key-taxonomy_group_{group} button").first.click(
-                    timeout=30_000
-                )
-                wait_for_streamlit_idle(playwright_api, page, streamlit_server)
-
             for key, (label, representative_value) in expected_modes.items():
                 card = page.locator(f".st-key-taxonomy_concept_{key}")
                 playwright_api.expect(card).to_be_visible(timeout=30_000)
@@ -1024,6 +1036,26 @@ def test_all_builtin_data_modes_and_custom_measure_render_in_ui(
                 ).first
                 playwright_api.expect(state_button).to_be_visible()
                 assert state_button.inner_text() in {"Enable", "Disable"}
+
+            bench_condition = page.locator(
+                ".st-key-taxonomy_concept_bench_condition"
+            )
+            bench_condition.get_by_role(
+                "button", name="Bench condition", exact=False
+            ).click(timeout=30_000)
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+            bench_condition.get_by_role(
+                "button", name="Edit dimension", exact=True
+            ).click(timeout=30_000)
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
+            input_choices = bench_condition.get_by_test_id("stMultiSelect")
+            playwright_api.expect(input_choices).to_be_visible(timeout=30_000)
+            damaged_tag = input_choices.locator('[data-baseweb="tag"]').filter(
+                has_text="Damaged"
+            )
+            playwright_api.expect(damaged_tag).to_have_count(1)
+            damaged_tag.locator("svg").click(timeout=30_000)
+            wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
             page.get_by_role(
                 "button", name="+ Add custom measure", exact=True
@@ -1061,6 +1093,9 @@ def test_all_builtin_data_modes_and_custom_measure_render_in_ui(
             page.get_by_role(
                 "heading", name="Submit Stop Assessment", exact=True
             ).wait_for(timeout=30_000)
+            playwright_api.expect(
+                page.get_by_text("Damaged", exact=True)
+            ).to_have_count(0)
             braille_control = page.get_by_test_id("stSelectbox").filter(
                 has_text="Braille present"
             )
@@ -1110,7 +1145,7 @@ def test_mobile_workspace_navigation_wraps_without_page_overflow(
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
             playwright_api.expect(
-                page.locator(".st-key-label_action_queue button")
+                page.locator(".st-key-assessment_action_submit button")
             ).to_have_attribute("kind", "primary", timeout=30_000)
             has_page_overflow = page.evaluate(
                 "document.documentElement.scrollWidth > window.innerWidth + 2"

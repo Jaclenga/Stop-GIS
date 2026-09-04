@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: >-
+  If you use this dataset, cite it and its source datasets, and retain the
+  notices in DATA_LICENSE.md.
+title: "Pittsburgh bus-stop bench-inventory starter dataset"
+type: dataset
+authors:
+  - name: "Stop-GIS contributors"
+version: 0.1.0
+date-released: 2026-09-04
+abstract: >-
+  An unreviewed starter inventory for assessing passenger benches and other
+  seating at City of Pittsburgh bus stops. It combines Pittsburgh Regional
+  Transit stop and shelter records with provisional OpenStreetMap evidence.
+keywords:
+  - bus stops
+  - benches
+  - Pittsburgh
+  - public transit
+  - accessibility
+references:
+  - type: dataset
+    title: "PRT Stops - Current (full system)"
+    authors:
+      - name: "Pittsburgh Regional Transit"
+    url: "https://www.arcgis.com/home/item.html?id=a29f37608eb34c3895332ff99eea9b17"
+  - type: dataset
+    title: "PRT Stop Amenities - Current"
+    authors:
+      - name: "Pittsburgh Regional Transit"
+    url: "https://www.arcgis.com/home/item.html?id=73d1faab8d3441babcd3463ef6987559"
+  - type: dataset
+    title: "OpenStreetMap"
+    authors:
+      - name: "OpenStreetMap contributors"
+    url: "https://www.openstreetmap.org/copyright"

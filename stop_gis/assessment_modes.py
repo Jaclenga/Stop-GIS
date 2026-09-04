@@ -43,6 +43,7 @@ def _mode(
         "operational_definition": operational_definition,
         "value_type": "categorical",
         "allowed_values": allowed,
+        "input_values": allowed,
         "ordering": allowed if ordinal else [],
         "multiple": multiple,
         "allow_comment": True,
@@ -221,6 +222,22 @@ def normalize_mode_definition(mode: Mapping[str, Any], *, sort_order: int = 1) -
         raise AssessmentValidationError(f"Mode {key} contains duplicate allowed values.")
     if value_type == "categorical" and not allowed_values:
         raise AssessmentValidationError(f"Categorical mode {key} needs at least one allowed value.")
+    configured_input_values = mode.get("input_values")
+    if configured_input_values is None:
+        input_values = list(allowed_values)
+    else:
+        requested_input_values = {
+            str(value).strip()
+            for value in configured_input_values
+            if str(value).strip()
+        }
+        input_values = [
+            value for value in allowed_values if value in requested_input_values
+        ]
+    if value_type == "categorical" and not input_values:
+        raise AssessmentValidationError(
+            f"Categorical mode {key} needs at least one reviewer input choice."
+        )
     ordering = [str(value).strip() for value in mode.get("ordering", []) if str(value).strip()]
     if any(value not in allowed_values for value in ordering):
         raise AssessmentValidationError(f"Mode {key} ordering contains a value outside allowed_values.")
@@ -244,6 +261,7 @@ def normalize_mode_definition(mode: Mapping[str, Any], *, sort_order: int = 1) -
         "operational_definition": str(mode.get("operational_definition") or "").strip(),
         "value_type": value_type,
         "allowed_values": allowed_values,
+        "input_values": input_values,
         "ordering": ordering,
         "multiple": bool(mode.get("multiple", False)),
         "allow_comment": bool(mode.get("allow_comment", True)),
@@ -373,6 +391,7 @@ def assessment_codebook(modes: Iterable[Mapping[str, Any]] | None) -> dict[str, 
                 "operational_definition": mode["operational_definition"],
                 "value_type": mode["value_type"],
                 "allowed_values": values,
+                "input_values": list(mode["input_values"]),
                 "missing_values": missing_values,
                 "multiple": mode["multiple"],
                 "required": mode["required"],
@@ -445,7 +464,7 @@ def validate_mode_value(mode: Mapping[str, Any], value: Any) -> Any:
         clean = []
         for item in values:
             item = str(item).strip()
-            if definition["allowed_values"] and item not in definition["allowed_values"]:
+            if definition["input_values"] and item not in definition["input_values"]:
                 raise AssessmentValidationError(f"Invalid value for {key}: {item}")
             if item not in clean:
                 clean.append(item)
@@ -453,7 +472,7 @@ def validate_mode_value(mode: Mapping[str, Any], value: Any) -> Any:
     value_type = definition["value_type"]
     if value_type == "categorical":
         clean_value = str(value).strip()
-        if clean_value not in definition["allowed_values"]:
+        if clean_value not in definition["input_values"]:
             raise AssessmentValidationError(f"Invalid value for {key}: {clean_value}")
         return clean_value
     if value_type == "boolean":
@@ -513,7 +532,10 @@ LEGACY_SHADE_SOURCE_TO_MODE = {
 }
 
 
-def assessment_values_from_record(record: Mapping[str, Any]) -> dict[str, Any]:
+def assessment_values_from_record(
+    record: Mapping[str, Any],
+    modes: Iterable[Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
     raw = record.get("assessment_values")
     if isinstance(raw, str) and raw.strip():
         try:
@@ -536,6 +558,11 @@ def assessment_values_from_record(record: Mapping[str, Any]) -> dict[str, Any]:
             LEGACY_SHADE_SOURCE_TO_MODE.get(str(item).strip().lower(), str(item).strip())
             for item in pieces if str(item).strip()
         ]
+    for mode in modes or []:
+        key = str(mode.get("key", ""))
+        direct_value = record.get(key)
+        if key and key not in values and not _is_missing(direct_value):
+            values[key] = direct_value
     return values
 
 

@@ -138,8 +138,14 @@ def test_ui_seed_limit_is_test_only(monkeypatch, taxonomy, project):
     monkeypatch.setattr(
         builder_app,
         "create_project",
-        lambda project, taxonomy, methodology, visualization, stops, import_log: (
-            captured.update({"stops": stops, "rows": import_log[0]["rows"]})
+        lambda project, taxonomy, methodology, visualization, stops, import_log, **kwargs: (
+            captured.update(
+                {
+                    "stops": stops,
+                    "rows": import_log[0]["rows"],
+                    "assessment_modes": kwargs.get("assessment_modes"),
+                }
+            )
             or "ui-seed"
         ),
     )
@@ -147,6 +153,101 @@ def test_ui_seed_limit_is_test_only(monkeypatch, taxonomy, project):
     assert builder_app.create_seed_project() == "ui-seed"
     assert len(captured["stops"]) == 25
     assert captured["rows"] == 25
+    assert captured["assessment_modes"] == builder_app.DEFAULT_ASSESSMENT_MODES
+
+
+def test_default_seed_is_unreviewed_pittsburgh_bench_inventory():
+    import stop_gis.builder.app as builder_app
+
+    stops = builder_app.load_seed_dataset(
+        builder_app.DEFAULT_TAXONOMY, builder_app.DEFAULT_PROJECT
+    )
+    enabled_keys = {
+        mode["key"]
+        for mode in builder_app.DEFAULT_ASSESSMENT_MODES
+        if mode["enabled"]
+    }
+
+    assert builder_app.DEFAULT_PROJECT["name"] == "Pittsburgh Bus Stop Bench Inventory"
+    assert len(stops) == 2626
+    assert enabled_keys == {
+        "bench_presence",
+        "bench_condition",
+        "seating_form",
+        "informal_seating",
+    }
+    assert all(not values for values in stops["assessment_values"])
+    assert stops["review_status"].eq("Unlabeled").all()
+    assert "osm_bench_tag" in stops.columns
+    assert "bench" in stops.columns
+    assert stops["bench_presence"].value_counts().to_dict() == {
+        "": 1997,
+        "absent": 517,
+        "present": 112,
+    }
+
+
+def test_existing_pittsburgh_rows_receive_non_destructive_bench_prefills():
+    import stop_gis.builder.app as builder_app
+
+    upgraded = builder_app.add_pittsburgh_bench_prefills(
+        pd.DataFrame(
+            [
+                {"stop_id": "1", "osm_bench_tag": "yes"},
+                {"stop_id": "2", "osm_bench_tag": "no"},
+                {
+                    "stop_id": "3",
+                    "osm_bench_tag": "no",
+                    "bench": "present",
+                    "bench_presence": "unclear",
+                },
+            ]
+        )
+    ).set_index("stop_id")
+
+    assert upgraded.loc["1", "bench_presence"] == "present"
+    assert upgraded.loc["2", "bench_presence"] == "absent"
+    assert upgraded.loc["3", "bench"] == "present"
+    assert upgraded.loc["3", "bench_presence"] == "unclear"
+
+
+def test_existing_pittsburgh_map_is_upgraded_once_without_overriding_later_choices():
+    import stop_gis.builder.app as builder_app
+
+    project = {"name": "Pittsburgh Bus Stop Bench Inventory"}
+    upgraded = builder_app.apply_pittsburgh_bench_map_defaults(
+        {"color_by": "Review status", "field_color_maps": {}}, project
+    )
+
+    assert upgraded["color_by"] == "Column: Bench presence"
+    assert upgraded["cluster_dense_stops"] is False
+    assert upgraded["field_color_maps"]["bench_presence"]["present"] == "#16803c"
+
+    upgraded["color_by"] = "Review status"
+    assert builder_app.apply_pittsburgh_bench_map_defaults(
+        upgraded, project
+    )["color_by"] == "Review status"
+
+
+def test_fresh_project_store_persists_pittsburgh_seed_and_bench_modes(db_path):
+    import stop_gis.builder.app as builder_app
+    from stop_gis.persistence.store import load_project_bundle
+
+    project_id = builder_app.create_seed_project()
+    bundle = load_project_bundle(project_id, db_path)
+    enabled_keys = {
+        mode["key"] for mode in bundle["assessment_modes"] if mode["enabled"]
+    }
+
+    assert bundle["project"]["name"] == "Pittsburgh Bus Stop Bench Inventory"
+    assert len(bundle["stops"]) == 2626
+    assert enabled_keys == {
+        "bench_presence",
+        "bench_condition",
+        "seating_form",
+        "informal_seating",
+    }
+    assert bundle["import_log"][0]["source"].startswith("Stop-GIS Pittsburgh")
 
 
 def test_project_label_progress_preserves_small_nonzero_values():
@@ -165,17 +266,15 @@ def test_summary_metrics_only_render_in_analytics():
     published_source = Path("stop_gis/public_app.py").read_text(encoding="utf-8")
     preview_source = Path("stop_gis/pages/preview_page.py").read_text(encoding="utf-8")
 
-    assert published_source.count("render_metric_cards(df)") == 1
+    assert published_source.count("render_metric_cards(df, visualization)") == 1
     assert "published_app.render_metric_cards(visible_stops)" not in preview_source
 
 
 def test_public_taxonomy_table_does_not_expose_sort_order():
     source = Path("stop_gis/public_app.py").read_text(encoding="utf-8")
 
-    assert (
-        'coverage_schema_display_table(taxonomy, config.get("shade_coverage_taxonomy"))'
-        in source
-    )
+    assert "coverage_schema_display_table(" in source
+    assert 'config.get("shade_coverage_taxonomy")' in source
     assert 'source_schema_display_table(config.get("shade_source_taxonomy"))' in source
     assert 'drop(columns=["sort_order"]' in source
 

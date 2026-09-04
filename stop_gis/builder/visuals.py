@@ -2,6 +2,7 @@ import base64
 import colorsys
 import io
 import json
+import math
 import re
 from functools import lru_cache
 from typing import Any
@@ -207,6 +208,8 @@ FIELD_LABELS = {
     "agency": "Agency",
     "routes": "Routes",
     "municipality": "Municipality",
+    "bench": "Bench",
+    "bench_presence": "Bench presence",
     "shading": "Shade coverage",
     "shade_coverage": "Shade coverage",
     "shade_sources": "Shade sources",
@@ -232,7 +235,7 @@ METRIC_REQUIREMENTS = {
     "Stops without shade": ["shading"],
     "Stops requiring review": ["shading"],
     "Review status": ["review_status"],
-    "Agreement metrics": [],
+    "Agreement metrics": ["shading"],
     "Shade by route": ["routes", "shading"],
     "Shade by neighborhood": ["municipality", "shading"],
     "Shade vs ridership": ["ridership", "shading"],
@@ -261,8 +264,13 @@ SHADE_SOURCE_CHART_ALIASES = {
     "manmade shade": "Incidental",
     "natural shade": "Natural",
 }
-DECK_DEVICE_PIXEL_RATIO = 2
+DECK_DEVICE_PIXEL_RATIO = 3
 MARKER_ICON_SIZE = 128
+STOP_CLUSTER_THRESHOLD = published_app.STOP_CLUSTER_THRESHOLD
+DENSE_GRID_CELL_SIZE_M = published_app.DENSE_GRID_CELL_SIZE_M
+MAP_PANEL_HEIGHT = published_app.MAP_PANEL_HEIGHT
+MAP_VIEWPORT_WIDTH = published_app.MAP_VIEWPORT_WIDTH
+MAP_VIEWPORT_PADDING = published_app.MAP_VIEWPORT_PADDING
 SHADE_COVERAGE_CHART_CODES = {
     "no shade": "No Shade",
     "limited": "Limited Shade",
@@ -436,6 +444,22 @@ def get_color_options(df: pd.DataFrame) -> dict[str, str]:
     return options
 
 
+def resolve_color_field(
+    df: pd.DataFrame, color_by: str, default: str | None = None
+) -> str | None:
+    resolved = get_color_options(df).get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
+        color_by
+    )
+    if resolved:
+        return resolved
+    if color_by.startswith("Column: "):
+        requested_label = color_by.removeprefix("Column: ").strip().casefold()
+        for column in df.columns:
+            if FIELD_LABELS.get(column, column).casefold() == requested_label:
+                return column
+    return default
+
+
 def display_label(column: str) -> str:
     return FIELD_LABELS.get(column, column.replace("_", " ").title())
 
@@ -475,11 +499,8 @@ def get_selected_display_columns(
 
 def build_tooltip_text(df: pd.DataFrame, visualization: dict[str, Any]) -> str:
     columns = get_selected_display_columns(df, visualization)
-    color_options = get_color_options(df)
     color_by = visualization.get("color_by", "Shade coverage")
-    category_field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
-        color_by
-    )
+    category_field = resolve_color_field(df, color_by)
     if category_field in df.columns and category_field not in columns:
         columns = [category_field, *columns]
     columns = columns[:8]
@@ -839,11 +860,8 @@ def color_dataset(
     df: pd.DataFrame, taxonomy: list[dict[str, Any]], visualization: dict[str, Any]
 ) -> pd.DataFrame:
     colored = df.copy()
-    color_options = get_color_options(colored)
     color_by = visualization.get("color_by", "Shade coverage")
-    field = color_options.get(color_by) or LEGACY_COLOR_MODE_FIELDS.get(
-        color_by, "shading"
-    )
+    field = resolve_color_field(colored, color_by, "shading")
     if field == "review_status":
         review_colors = visualization.get("review_status_colors", {})
         colored["fill_color"] = colored["review_status"].map(
@@ -1079,10 +1097,26 @@ def calculate_view_state(df: pd.DataFrame) -> pdk.ViewState:
         )
     lat = pd.to_numeric(df["stop_lat"], errors="coerce")
     lon = pd.to_numeric(df["stop_lon"], errors="coerce")
+    min_lat, max_lat = float(lat.min()), float(lat.max())
+    min_lon, max_lon = float(lon.min()), float(lon.max())
+
+    def mercator_y(latitude: float) -> float:
+        radians = math.radians(max(-85.051129, min(85.051129, latitude)))
+        return (1 - math.asinh(math.tan(radians)) / math.pi) / 2
+
+    longitude_span = max((max_lon - min_lon) / 360, 1e-9)
+    latitude_span = max(abs(mercator_y(max_lat) - mercator_y(min_lat)), 1e-9)
+    width_zoom = math.log2(
+        MAP_VIEWPORT_WIDTH * MAP_VIEWPORT_PADDING / (256 * longitude_span)
+    )
+    height_zoom = math.log2(
+        MAP_PANEL_HEIGHT * MAP_VIEWPORT_PADDING / (256 * latitude_span)
+    )
+    zoom = max(2.0, min(15.0, width_zoom, height_zoom))
     return pdk.ViewState(
-        latitude=float(lat.mean()),
-        longitude=float(lon.mean()),
-        zoom=10 if max(lat.max() - lat.min(), lon.max() - lon.min()) < 0.8 else 8,
+        latitude=(min_lat + max_lat) / 2,
+        longitude=(min_lon + max_lon) / 2,
+        zoom=zoom,
         min_zoom=2,
         max_zoom=18,
         pitch=0,
@@ -1100,6 +1134,23 @@ def build_deck_chart(
     marker_shape = visualization.get("marker_shape", "Circle")
     if marker_shape not in MARKER_SHAPES:
         marker_shape = "Circle"
+    dense_overview = len(map_df) >= STOP_CLUSTER_THRESHOLD
+    use_dense_aggregation = dense_overview and visualization.get(
+        "cluster_dense_stops", True
+    )
+    color_field = resolve_color_field(
+        map_df, visualization.get("color_by", "")
+    )
+    if color_field == "bench_presence":
+        bench_draw_order = {"": 0, "Unknown": 0, "unclear": 1, "absent": 2, "present": 3}
+        map_df["_bench_draw_order"] = (
+            map_df[color_field]
+            .fillna("")
+            .astype(str)
+            .map(bench_draw_order)
+            .fillna(0)
+        )
+        map_df = map_df.sort_values("_bench_draw_order", kind="stable")
     marker_layer_id = f"stops_layer_{marker_shape.lower().replace('-', '_')}"
     if marker_shape == "Circle":
         marker_size = max(4, min(48, int(visualization.get("marker_size", 7))))
@@ -1114,10 +1165,14 @@ def build_deck_chart(
             radius_units=pdk.types.String("pixels"),
             radius_min_pixels=4,
             radius_max_pixels=48,
-            opacity=max(
-                0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))
+            opacity=(
+                min(0.16, float(visualization.get("marker_opacity", 0.82)))
+                if use_dense_aggregation
+                else max(
+                    0.1, min(1.0, float(visualization.get("marker_opacity", 0.82)))
+                )
             ),
-            stroked=True,
+            stroked=not use_dense_aggregation,
             get_line_color=hex_to_rgb(
                 visualization.get("marker_stroke_color", "#141414")
             ),
@@ -1142,11 +1197,43 @@ def build_deck_chart(
             size_units=pdk.types.String("pixels"),
             size_min_pixels=4,
             size_max_pixels=48,
+            opacity=(
+                min(0.16, float(visualization.get("marker_opacity", 0.82)))
+                if use_dense_aggregation
+                else 1.0
+            ),
             pickable=True,
             auto_highlight=True,
         )
-    symbol_layer = build_semantic_symbol_layer(map_df, visualization)
-    layers = [*build_gis_overlay_layers(visualization), layer]
+    cluster_layer = None
+    if use_dense_aggregation:
+        cluster_layer = pdk.Layer(
+            "GridLayer",
+            data=map_df,
+            id="stop_clusters",
+            get_position="[stop_lon, stop_lat]",
+            cell_size=DENSE_GRID_CELL_SIZE_M,
+            coverage=0.82,
+            get_color_weight=1,
+            color_aggregation="SUM",
+            color_range=[
+                [219, 234, 254],
+                [147, 197, 253],
+                [59, 130, 246],
+                [29, 78, 216],
+                [30, 58, 138],
+            ],
+            extruded=False,
+            opacity=0.5,
+            pickable=False,
+        )
+    symbol_layer = (
+        None if use_dense_aggregation else build_semantic_symbol_layer(map_df, visualization)
+    )
+    layers = [*build_gis_overlay_layers(visualization)]
+    if cluster_layer is not None:
+        layers.append(cluster_layer)
+    layers.append(layer)
     if symbol_layer is not None:
         layers.append(symbol_layer)
     deck = pdk.Deck(

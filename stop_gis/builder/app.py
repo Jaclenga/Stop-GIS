@@ -102,7 +102,7 @@ from stop_gis.builder.visuals import (
     COLOR_PALETTE,
     DEFAULT_CUSTOM_CHART,
     DEFAULT_DISPLAY_COLUMNS,
-    DEFAULT_VISUALIZATION,
+    DEFAULT_VISUALIZATION as BASE_DEFAULT_VISUALIZATION,
     DESTINATION_FILTER_COLUMNS,
     FIELD_LABELS,
     GIS_OVERLAY_CATEGORIES,
@@ -177,17 +177,15 @@ from stop_gis.domain.shade_dimensions import (
     normalize_terminology,
 )
 from stop_gis.assessment_modes import (
-    DEFAULT_SCORING_PROFILES,
     assessment_codebook,
-    modes_for_template,
     normalize_modes,
 )
 
 
 APP_DIR = Path(__file__).resolve().parents[2]
-DEMO_DATA_DIR = APP_DIR / "data" / "demo"
-DATA_PATH = DEMO_DATA_DIR / "stops.txt"
-SHADE_DATA_PATH = DEMO_DATA_DIR / "shading_data.csv"
+DEFAULT_DATA_DIR = APP_DIR / "data" / "pittsburgh_bench_inventory"
+DATA_PATH = DEFAULT_DATA_DIR / "pittsburgh_bus_stops_stop_gis_import.csv"
+SEED_SUMMARY_PATH = DEFAULT_DATA_DIR / "build_summary.json"
 APP_TITLE = "Stop-GIS Builder"
 VISUAL_MAP_HEIGHT = 500
 AUTOSAVE_STATUS_KEY = "workspace_autosave_status"
@@ -200,20 +198,23 @@ API_FETCH_TIMEOUT_SECONDS = 30
 
 
 DEFAULT_PROJECT = {
-    "name": "Tampa Bus Stop Infrastructure Demo",
-    "agency": "Hillsborough Area Regional Transit (HART)",
-    "region": "Tampa, Florida",
+    "name": "Pittsburgh Bus Stop Bench Inventory",
+    "agency": "Pittsburgh Regional Transit (PRT)",
+    "region": "Pittsburgh, Pennsylvania",
     "description": (
-        "An example Stop-GIS audit seeded with Tampa-area GTFS stops and clearly "
-        "labeled demonstration observations for amenities, access, and shade."
+        "An unreviewed starter inventory for assessing passenger benches and "
+        "other seating at City of Pittsburgh bus stops."
     ),
-    "owners": "Open transit and climate research contributors",
+    "owners": "Stop-GIS contributors and Pittsburgh bench-study reviewers",
     "visibility": "Public",
     "dataset_version": "0.1.0",
     "methodology_version": "0.1.0",
-    "source_name": "HART GTFS feed",
-    "source_license": "Agency GTFS terms",
-    "source_url": "",
+    "source_name": "PRT current stops with provisional OpenStreetMap evidence",
+    "source_license": "PRT Developer License Agreement; OpenStreetMap ODbL 1.0",
+    "source_url": (
+        "https://services3.arcgis.com/544gNI3xxlFIWuTc/arcgis/rest/services/"
+        "Transit_Stops_%28system%29/FeatureServer/0"
+    ),
 }
 
 DEFAULT_TAXONOMY = [dict(item) for item in DEFAULT_COVERAGE_TAXONOMY]
@@ -222,77 +223,174 @@ SHADE_SOURCE_TAXONOMY = [dict(item) for item in CORE_SHADE_SOURCE_TAXONOMY]
 SHADE_COVERAGE_TAXONOMY = [dict(item) for item in CORE_SHADE_COVERAGE_TAXONOMY]
 
 DEFAULT_METHODOLOGY = {
-    "title": "Bus Stop Infrastructure Audit",
-    "summary": "Auditing bus-stop infrastructure, accessibility, amenities, shade, and passenger comfort.",
+    "title": "Pittsburgh Bus Stop Bench Inventory",
+    "summary": "Auditing passenger bench and seating availability at City of Pittsburgh bus stops.",
     "purpose": (
-        "This demonstration shows how a transit agency or research team can create a reproducible inventory "
-        "of stop amenities, pedestrian connections, accessibility, and passenger-comfort conditions. The "
-        "bundled Tampa/HART data combines official GTFS stop locations with a small set of clearly marked "
-        "example observations. It is intended to demonstrate the Stop-GIS workflow, not to claim a complete "
-        "or current inventory of HART facilities.\n\n"
-        "Administrators choose the modes relevant to their research question and define how reviewers should "
-        "apply each value. Raw independent observations remain available after review and adjudication."
+        "This starter project supports a reproducible inventory of passenger benches and seating at current "
+        "Pittsburgh Regional Transit bus stops within the City of Pittsburgh. Official PRT stop and shelter "
+        "records establish the stop frame, while OpenStreetMap tags provide provisional review leads. None of "
+        "those source fields is treated as a verified bench assessment."
     ),
     "assessment_method": (
-        "Reviewers assess one stop at a time using only the modes enabled for this project. "
-        "Each value follows its displayed operational definition; optional mode-level comments and "
-        "confidence are stored with reviewer identity, evidence method, and timestamp. Independent "
+        "Reviewers assess one stop at a time and record bench presence, bench condition, seating form, and "
+        "informal seating. Count only furniture clearly intended to serve the passenger waiting area. Use "
+        "unclear when imagery or field evidence is missing, obstructed, stale, or ambiguous. Independent "
         "submissions remain immutable when an administrator later adjudicates a current value."
     ),
-    "shade_method": (
-        "Classifications should describe visible shade reaching the passenger waiting area, not merely nearby "
-        "trees or structures. The waiting area is the designated location where passengers would reasonably "
-        "stand or sit while waiting to board the bus, including any bus stop pad, sidewalk immediately adjacent "
-        "to the bus stop sign, or seating within a bus shelter. Grass, landscaping, roadway, bicycle lanes, and "
-        "areas not reasonably intended for waiting are excluded. Code what visibly shades the waiting area, not "
-        "what might shade it at another time.\n\n"
-        "Manual review records separate fields for `shade_coverage` and `shade_sources`. The derived "
-        "`shading` field mirrors the coverage code for coloring, filtering, summaries, and public display.\n\n"
-        "Shade coverage definitions: `No Shade` means no shade visibly reaches the waiting area; `Limited Shade` "
-        "means shade visibly reaches part of the waiting area, but does not cover most of it; `Significant Shade` "
-        "means shade visibly covers most of the waiting area or seating area.\n\n"
-        "Shade source definitions: `Natural` means trees, palms, hedges, or other vegetation visibly shade "
-        "the waiting area; `Purpose-built` means a designated bus shelter, awning, canopy, "
-        "overhang, or similar passenger shelter visibly shades the waiting area; `Incidental` means a nearby "
-        "building or other non-shelter built feature visibly shades the waiting area.\n\n"
-        "Trees, utility poles, signs, and nearby buildings should not be classified as `Purpose-built` unless "
-        "they are clearly intended to provide passenger shade or weather protection. Nearby buildings that "
-        "visibly shade the waiting area should be coded as `Incidental`. Store raw labels and consensus labels "
-        "so future reviewers can reproduce decisions."
-    ),
+    "shade_method": "",
     "data_sources": (
-        "- Hillsborough Area Regional Transit (HART) GTFS stops and routes\n"
-        "- Small example amenity, accessibility, and passenger-comfort observations\n"
-        "- Expert, field-audit, imported, or community-submitted assessments\n"
-        "- Optional project-specific attributes and GIS overlays"
+        "- Pittsburgh Regional Transit current stops: authoritative stop frame and service attributes\n"
+        "- Pittsburgh Regional Transit current shelter locations: provisional shelter evidence\n"
+        "- OpenStreetMap bus-stop tags: provisional, contributor-maintained bench and seating evidence\n"
+        "- Independent field, imagery, or expert assessments collected in Stop-GIS"
     ),
     "contributors": "Project team, reviewers, and community contributors",
     "citation": (
         "Dataset release:\n"
-        "    Stop-GIS contributors. (2026). Tampa/HART stop-audit demonstration (Version 0.1.0) [Data set]. Stop-GIS.\n"
-        "    Author or Organization. (Year). Title of local stop-audit release (Version number) [Data set]. Publisher. URL"
+        "    Stop-GIS contributors. (2026). Pittsburgh bus-stop bench-inventory starter dataset "
+        "(Version 0.1.0) [Data set]. Stop-GIS.\n\n"
+        "Preserve the packaged DATA_LICENSE.md notice when redistributing the source data."
     ),
     "bibliography": (
         "Works referenced:\n"
-        "    Hillsborough Area Regional Transit. (Year). General Transit Feed Specification (GTFS) data feed [Data set]. Retrieved June 17, 2026, from the HART GTFS feed.\n"
-        "    Lanza, K., & Durand, C. P. (2021). Heat-moderating effects of bus stop shelters and tree shade on public transport ridership. International Journal of Environmental Research and Public Health, 18(2), 463. https://doi.org/10.3390/ijerph18020463\n"
-        "    Briant, S., Cushing, D. F., Washington, T., Pham, K., Pemasiri Hewa Thondilege, A. S., White, K. M., ... & Fookes, C. (2026). Thermal comfort at bus stops in a subtropical context: Investigating perceptions and satisfaction levels while waiting for the bus. In Human-Building Interaction: The Nexus of Architecture, Building Science and Interaction Design (pp. 119-145). Springer Nature Switzerland.\n"
-        "    Author, A. A., & Author, B. B. (Year). Title of article. Title of Journal, volume(issue), page range. https://doi.org/xxxxx"
+        "    Pittsburgh Regional Transit. (2026). PRT Stops - Current (full system) "
+        "[Feature layer; item a29f37608eb34c3895332ff99eea9b17]. Accessed 2026-09-04. "
+        "https://www.arcgis.com/home/item.html?id=a29f37608eb34c3895332ff99eea9b17\n"
+        "    Pittsburgh Regional Transit. (2026). PRT Stop Amenities - Current "
+        "[Feature layer; item 73d1faab8d3441babcd3463ef6987559]. Accessed 2026-09-04. "
+        "https://www.arcgis.com/home/item.html?id=73d1faab8d3441babcd3463ef6987559\n"
+        "    OpenStreetMap contributors. (2026). OpenStreetMap [Database]. "
+        "OpenStreetMap Foundation. ODbL 1.0. Accessed 2026-09-04. "
+        "https://www.openstreetmap.org/copyright\n\n"
+        "Terms: https://www.rideprt.org/business-center/developer-resources/"
+        "developer-license-agreement/"
     ),
     "limitations": (
-        "The bundled starter data is example data, not a complete or current infrastructure inventory. "
-        "Collection date, season, time of day, temporary conditions, source completeness, and reviewer "
-        "uncertainty can affect assessments. Published releases should document these limitations and "
-        "perform a project-specific review before use."
+        "This is an unreviewed starter dataset, not a verified bench census. PRT has no bench field, a shelter "
+        "listing does not imply bench presence, and OpenStreetMap tags may be incomplete or stale. Every stop "
+        "requires human review before its bench or seating status is treated as an observation."
     ),
-    "release_history": "- 0.1.0: Draft Stop-GIS configuration with Tampa/HART stops and a small set of example observations",
-    "terminology": [dict(item) for item in DEFAULT_TERMINOLOGY],
+    "release_history": "- 0.1.0: Unreviewed Pittsburgh bench-inventory starter project",
+    "terminology": [
+        {
+            "term": "Passenger waiting area",
+            "operational_definition": "The immediate area at the stop where passengers reasonably wait or sit before boarding.",
+        },
+        {
+            "term": "Bench",
+            "operational_definition": "Fixed or purpose-placed seating clearly intended to serve waiting transit passengers.",
+        },
+    ],
     "shade_source_taxonomy": [dict(item) for item in SHADE_SOURCE_TAXONOMY],
     "shade_coverage_taxonomy": [dict(item) for item in SHADE_COVERAGE_TAXONOMY],
 }
 
-DEFAULT_ASSESSMENT_MODES = modes_for_template("passenger_comfort")
-DEFAULT_SCORING = json.loads(json.dumps(DEFAULT_SCORING_PROFILES))
+DEFAULT_ASSESSMENT_MODES = normalize_modes(
+    [
+        {
+            "key": "bench_presence",
+            "label": "Bench presence",
+            "description": "Whether a passenger bench is present at the stop.",
+            "operational_definition": "Count only a bench clearly intended to serve the passenger waiting area.",
+            "value_type": "categorical",
+            "allowed_values": ["present", "absent", "unclear"],
+            "ordering": [],
+            "measurement_level": "nominal",
+            "enabled": True,
+            "sort_order": 1,
+        },
+        {
+            "key": "bench_condition",
+            "label": "Bench condition",
+            "description": "Observed usability of a passenger bench.",
+            "operational_definition": "Assess condition only when a qualifying passenger bench is present.",
+            "value_type": "categorical",
+            "allowed_values": ["usable", "damaged", "unusable", "unclear", "not_applicable"],
+            "ordering": [],
+            "measurement_level": "nominal",
+            "enabled": True,
+            "sort_order": 2,
+        },
+        {
+            "key": "seating_form",
+            "label": "Seating form",
+            "description": "The primary form of passenger seating at the stop.",
+            "operational_definition": "Distinguish traditional or shelter-integrated benches from other formal seating types.",
+            "value_type": "categorical",
+            "allowed_values": ["traditional_bench", "shelter_integrated_bench", "simme_seat", "individual_seat", "lean_rail", "other", "unclear"],
+            "ordering": [],
+            "measurement_level": "nominal",
+            "enabled": True,
+            "sort_order": 3,
+        },
+        {
+            "key": "informal_seating",
+            "label": "Informal/DIY seating",
+            "description": "Whether loose or improvised passenger seating is present.",
+            "operational_definition": "Record chairs, crates, or other improvised objects apparently used by waiting passengers.",
+            "value_type": "categorical",
+            "allowed_values": ["present", "absent", "unclear"],
+            "ordering": [],
+            "measurement_level": "nominal",
+            "enabled": True,
+            "sort_order": 4,
+        },
+    ]
+)
+DEFAULT_VISUALIZATION = json.loads(json.dumps(BASE_DEFAULT_VISUALIZATION))
+DEFAULT_VISUALIZATION.update(
+    {
+        "color_by": "Column: Bench presence",
+        "display_columns": [
+            "stop_id",
+            "stop_name",
+            "routes",
+            "bench_presence",
+            "bench_condition",
+            "seating_form",
+            "informal_seating",
+            "review_status",
+        ],
+        "metric_cards": ["Review status"],
+        "priority_weights": {"ridership": 0.0, "low_shade": 0.0},
+        "show_legend": True,
+        "cluster_dense_stops": False,
+        "pittsburgh_bench_map_version": 1,
+        "field_color_maps": {
+            "bench_presence": {
+                "present": "#16803c",
+                "absent": "#dc2626",
+                "Unknown": "#94a3b8",
+                "unclear": "#f59e0b",
+            }
+        },
+        "custom_charts": [
+            {
+                "title": "Bench Presence",
+                "x": "bench_presence",
+                "y": RECORD_COUNT_FIELD,
+                "aggregation": "Count",
+                "chart_type": "Bar",
+            },
+            {
+                "title": "Bench Condition",
+                "x": "bench_condition",
+                "y": RECORD_COUNT_FIELD,
+                "aggregation": "Count",
+                "chart_type": "Bar",
+            },
+            {
+                "title": "Seating Form",
+                "x": "seating_form",
+                "y": RECORD_COUNT_FIELD,
+                "aggregation": "Count",
+                "chart_type": "Bar",
+            },
+        ],
+    }
+)
+DEFAULT_VISUALIZATION["voting"]["enabled"] = False
+DEFAULT_SCORING: list[dict[str, Any]] = []
 
 REVIEW_STATUS_COLORS = {
     "Unlabeled": [148, 163, 184],
@@ -355,58 +453,50 @@ def load_seed_dataset(
 ) -> pd.DataFrame:
     if not DATA_PATH.exists():
         return pd.DataFrame(columns=REQUIRED_STOP_FIELDS)
-    stops = pd.read_csv(DATA_PATH, dtype={"stop_id": str})
-    if SHADE_DATA_PATH.exists():
-        shade = pd.read_csv(SHADE_DATA_PATH, dtype={"stop_id": str})
-        keep_cols = [column for column in shade.columns if column != "stop_name"]
-        stops = stops.merge(shade.loc[:, keep_cols], on="stop_id", how="left")
+    stops = pd.read_csv(DATA_PATH, dtype=str, keep_default_na=False)
     stops = prepare_stop_dataset(stops, project, taxonomy)
-    demo_values = [
-        {
-            "bench": "present",
-            "shelter": "full",
-            "trash_can": "yes",
-            "lighting": "dedicated",
-            "sidewalk_connection": "adequate",
-        },
-        {
-            "bench": "none",
-            "shelter": "none",
-            "trash_can": "no",
-            "lighting": "nearby",
-            "sidewalk_connection": "poor",
-        },
-        {
-            "bench": "damaged",
-            "shelter": "partial",
-            "trash_can": "no",
-            "lighting": "none",
-            "sidewalk_connection": "adequate",
-        },
-    ]
-    for column in ["bench", "shelter", "trash_can", "lighting", "sidewalk_connection"]:
-        if column not in stops.columns:
-            stops[column] = ""
+    stops = add_pittsburgh_bench_prefills(stops)
     stops["assessment_values"] = [{} for _ in range(len(stops))]
-    stops["example_data_notice"] = ""
-    for position in range(min(12, len(stops))):
-        values = dict(demo_values[position % len(demo_values)])
-        coverage = str(stops.iloc[position].get("shade_coverage", "") or "")
-        coverage_key = {
-            "No Shade": "none",
-            "Limited Shade": "limited",
-            "Significant Shade": "significant",
-            "Needs Review": "unclear",
-        }.get(coverage, "unclear")
-        values["shade_coverage"] = coverage_key
-        stops.at[stops.index[position], "assessment_values"] = values
-        for key, value in values.items():
-            if key != "shade_coverage":
-                stops.at[stops.index[position], key] = value
-        stops.at[stops.index[position], "example_data_notice"] = (
-            "Example data only; not a complete or current infrastructure inventory."
-        )
+    stops["source_evidence_notice"] = (
+        "Unreviewed source evidence only; verify bench and seating conditions before use."
+    )
     return stops
+
+
+def add_pittsburgh_bench_prefills(stops: pd.DataFrame) -> pd.DataFrame:
+    """Populate editable bench-mode inputs without changing review status."""
+    prepared = stops.copy()
+    derived = pd.Series("", index=prepared.index, dtype=object)
+    if "osm_bench_tag" in prepared.columns:
+        osm_tags = (
+            prepared["osm_bench_tag"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+        derived = osm_tags.map({"yes": "present", "no": "absent"}).fillna("")
+    source_bench = (
+        prepared["bench"].fillna("").astype(str).str.strip().str.lower()
+        if "bench" in prepared.columns
+        else derived.copy()
+    )
+    source_bench = source_bench.where(
+        source_bench.isin({"present", "absent", "unclear"}), ""
+    )
+    prepared["bench"] = source_bench.where(source_bench != "", derived)
+    existing_presence = (
+        prepared["bench_presence"].fillna("").astype(str).str.strip().str.lower()
+        if "bench_presence" in prepared.columns
+        else pd.Series("", index=prepared.index, dtype=object)
+    )
+    valid_presence = existing_presence.where(
+        existing_presence.isin({"present", "absent", "unclear"}), ""
+    )
+    prepared["bench_presence"] = valid_presence.where(
+        valid_presence != "", prepared["bench"]
+    )
+    return prepared
 
 
 def empty_stop_dataset() -> pd.DataFrame:
@@ -474,9 +564,38 @@ def normalized_visualization_values(
     return visualization
 
 
+def apply_pittsburgh_bench_map_defaults(
+    visualization: dict[str, Any], project: dict[str, Any]
+) -> dict[str, Any]:
+    if (
+        project.get("name") != "Pittsburgh Bus Stop Bench Inventory"
+        or "pittsburgh_bench_map_version" in visualization
+    ):
+        return visualization
+    visualization.update(
+        {
+            "color_by": "Column: Bench presence",
+            "show_legend": True,
+            "cluster_dense_stops": False,
+            "pittsburgh_bench_map_version": 1,
+        }
+    )
+    visualization.setdefault("field_color_maps", {})["bench_presence"] = {
+        "present": "#16803c",
+        "absent": "#dc2626",
+        "Unknown": "#94a3b8",
+        "unclear": "#f59e0b",
+    }
+    return visualization
+
+
 def ensure_visualization_defaults() -> None:
+    current = st.session_state["visualization"]
+    current = apply_pittsburgh_bench_map_defaults(
+        current, st.session_state.get("project", {})
+    )
     st.session_state["visualization"] = normalized_visualization_values(
-        st.session_state["visualization"],
+        current,
         st.session_state.get("taxonomy", []),
     )
 
@@ -500,14 +619,23 @@ def create_seed_project() -> str:
         stops = stops.head(limit).copy()
     import_log = [
         {
-            "source": "Stop-GIS Tampa/HART demonstration data",
+            "source": "Stop-GIS Pittsburgh bench-inventory starter dataset",
             "format": "CSV",
             "rows": len(stops),
             "imported_at": timestamp_with_timezone(),
+            "source_url": DEFAULT_PROJECT["source_url"],
+            "source_license": DEFAULT_PROJECT["source_license"],
         }
     ]
     return create_project(
-        project, taxonomy, methodology, visualization, stops, import_log
+        project,
+        taxonomy,
+        methodology,
+        visualization,
+        stops,
+        import_log,
+        assessment_modes=DEFAULT_ASSESSMENT_MODES,
+        scoring=DEFAULT_SCORING,
     )
 
 
@@ -516,12 +644,17 @@ def load_project_into_session(project_id: str) -> None:
     project = with_default_project_values(bundle["project"])
     taxonomy = normalize_coverage_taxonomy(bundle["taxonomy"] or DEFAULT_TAXONOMY)
     methodology = with_default_methodology_values(bundle["methodology"])
-    visualization = normalized_visualization_values(bundle["visualization"], taxonomy)
+    stored_visualization = apply_pittsburgh_bench_map_defaults(
+        dict(bundle["visualization"] or {}), project
+    )
+    visualization = normalized_visualization_values(stored_visualization, taxonomy)
     stops = bundle["stops"]
     if stops.empty:
         stops = empty_stop_dataset()
     else:
         stops = prepare_stop_dataset(stops, project, taxonomy)
+        if project.get("name") == "Pittsburgh Bus Stop Bench Inventory":
+            stops = add_pittsburgh_bench_prefills(stops)
 
     for key in list(st.session_state):
         if key.startswith("api_import_") or key.startswith("manual_entry_"):
@@ -648,6 +781,8 @@ def create_blank_project(name: str) -> str:
         json.loads(json.dumps(DEFAULT_VISUALIZATION)),
         empty_stop_dataset(),
         [],
+        assessment_modes=DEFAULT_ASSESSMENT_MODES,
+        scoring=DEFAULT_SCORING,
     )
 
 
@@ -972,7 +1107,7 @@ def render_project_settings() -> None:
             "Location",
             value=str(project.get("region") or ""),
             help=(
-                "A descriptive geographic label, such as 'Tampa, Florida.' It appears in project "
+                "A descriptive geographic label, such as 'Pittsburgh, Pennsylvania.' It appears in project "
                 "and public-study labels; it does not move the map, filter data, or set a boundary."
             ),
         )
@@ -1430,12 +1565,23 @@ def render_home_page() -> None:
 
 
 def render_header() -> str:
+    configured_modes = st.session_state.get("assessment_modes", [])
+    shade_enabled = (
+        any(
+            mode["enabled"]
+            and mode["key"] in {"shade_coverage", "shade_source"}
+            for mode in normalize_modes(configured_modes)
+        )
+        if configured_modes
+        else True
+    )
     primary_navigation = [
         ("Dataset", "Data"),
         ("Labeling", "Labels"),
-        ("Public Voting", "Voting"),
         ("Publish", "Preview"),
     ]
+    if shade_enabled:
+        primary_navigation.insert(2, ("Public Voting", "Voting"))
     secondary_navigation = {
         "Dataset": [
             ("Overview", "Data"),
@@ -1458,11 +1604,12 @@ def render_header() -> str:
         "Taxonomy": "Dataset",
         "Labels": "Labeling",
         "Blind Coding": "Labeling",
-        "Voting": "Public Voting",
         "Docs": "Publish",
         "Preview": "Publish",
         "Deploy": "Publish",
     }
+    if shade_enabled:
+        page_sections["Voting"] = "Public Voting"
     pages = ["Home", *page_sections]
     if st.session_state.get("page") not in pages:
         st.session_state["page"] = "Home"

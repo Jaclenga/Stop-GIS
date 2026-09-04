@@ -28,6 +28,54 @@ from stop_gis.builder.app import (
     review_queue_table,
 )
 from stop_gis.pages import labels_page
+from stop_gis.assessment_modes import normalize_mode_definition
+
+
+def test_bench_only_projects_hide_legacy_shade_label_workflows():
+    bench = normalize_mode_definition(
+        {
+            "key": "bench",
+            "label": "Bench",
+            "value_type": "categorical",
+            "allowed_values": ["none", "present", "unclear"],
+            "enabled": True,
+        }
+    )
+    disabled_shade = normalize_mode_definition(
+        {
+            "key": "shade_coverage",
+            "label": "Shade coverage",
+            "value_type": "categorical",
+            "allowed_values": ["none", "limited", "significant", "unclear"],
+            "enabled": False,
+        }
+    )
+
+    options, default = labels_page.label_workflow_options([disabled_shade, bench])
+
+    assert options == [
+        "Submit Assessment",
+        "Adjudicate Assessment",
+        "Audit History",
+    ]
+    assert default == "Submit Assessment"
+
+
+def test_enabled_shade_projects_keep_legacy_label_workflows():
+    shade = normalize_mode_definition(
+        {
+            "key": "shade_coverage",
+            "label": "Shade coverage",
+            "value_type": "categorical",
+            "allowed_values": ["none", "limited", "significant", "unclear"],
+            "enabled": True,
+        }
+    )
+
+    options, default = labels_page.label_workflow_options([shade])
+
+    assert options == labels_page.LABEL_WORKFLOW_OPTIONS
+    assert default == labels_page.DEFAULT_LABEL_WORKFLOW
 
 
 def disagreement_fixture() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -617,6 +665,7 @@ def test_stop_reference_map_datasets_include_all_points_and_selected_point(minim
 
 
 def test_stop_reference_deck_uses_visuals_styling_for_selected_marker(minimal_stops, taxonomy, visualization):
+    visualization["color_by"] = "Shade coverage"
     visualization["marker_size"] = 24
     deck = labels_page.build_stop_reference_deck(minimal_stops, "1001", taxonomy, visualization)
 
