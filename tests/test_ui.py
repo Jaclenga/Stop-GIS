@@ -420,12 +420,14 @@ def test_file_upload_uses_grouped_dataset_mapping(
                 "Direction": "direction",
             }
             for label, selected_value in expected_mappings.items():
-                playwright_api.expect(
-                    page.get_by_role("combobox", name=f"{label} source column")
-                ).to_have_attribute(
-                    "aria-label",
-                    f"Selected {selected_value}. {label} source column",
-                    timeout=30_000,
+                combobox = page.get_by_role(
+                    "combobox", name=f"{label} source column"
+                )
+                playwright_api.expect(combobox).to_be_visible(timeout=30_000)
+                assert (
+                    combobox.input_value() == selected_value
+                    or combobox.get_attribute("aria-label")
+                    == f"Selected {selected_value}. {label} source column"
                 )
 
             playwright_api.expect(
@@ -1053,11 +1055,17 @@ def test_default_bench_modes_and_custom_measure_render_in_ui(
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
             input_choices = bench_condition.get_by_test_id("stMultiSelect")
             playwright_api.expect(input_choices).to_be_visible(timeout=30_000)
-            damaged_tag = input_choices.locator('[data-baseweb="tag"]').filter(
-                has_text="Damaged"
+            accessible_remove = input_choices.get_by_role(
+                "button", name="Remove Damaged", exact=True
             )
-            playwright_api.expect(damaged_tag).to_have_count(1)
-            damaged_tag.locator("svg").click(timeout=30_000)
+            legacy_remove = (
+                input_choices.locator('[data-baseweb="tag"]')
+                .filter(has_text="Damaged")
+                .locator("svg")
+            )
+            remove_damaged = accessible_remove.or_(legacy_remove)
+            playwright_api.expect(remove_damaged).to_have_count(1)
+            remove_damaged.click(timeout=30_000)
             wait_for_streamlit_idle(playwright_api, page, streamlit_server)
 
             page.get_by_role(
