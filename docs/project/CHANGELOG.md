@@ -8,12 +8,18 @@ pre-release phase while the reusable platform stabilizes.
 ## [Unreleased]
 
 ### Changed
+- Made the Pittsburgh bench inventory the reproducible cold-start default,
+  including bench/no-bench source prefills, bench-presence map colors, and
+  repair of renamed Pittsburgh starter projects.
 - Focused the MVP repository on dataset releases, public voting, and collaborative coding: removed
   the dormant Android/photo client, orphan builder pages, and disconnected Tampa heat scripts;
   removed active model-assisted choices and stale photo language; and made the versioned dataset
   release download the primary release action ahead of optional website publishing.
 
 ### Added
+- Import support for documented CSV dataset ZIPs and a portable Pittsburgh
+  project manifest containing field mappings, bench modes, source-prefill
+  rules, map defaults, and citation pointers.
 - Fully researcher-defined coding dimensions with generated stable keys,
   arbitrary values and value definitions, dynamic labeling controls, JSON-backed
   observations, analysis-ready column exports, machine-readable codebooks, and

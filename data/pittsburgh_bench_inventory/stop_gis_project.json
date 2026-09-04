@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "preset": "pittsburgh_bench_inventory",
+  "dataset_file": "pittsburgh_bus_stops_stop_gis_import.csv",
+  "default_on_fresh_install": true,
+  "project": {
+    "name": "Pittsburgh Bus Stop Bench Inventory",
+    "agency": "Pittsburgh Regional Transit (PRT)",
+    "region": "Pittsburgh, Pennsylvania",
+    "dataset_version": "0.1.0",
+    "methodology_version": "0.1.0"
+  },
+  "field_mapping": {
+    "stop_id": "stop_id",
+    "stop_name": "stop_name",
+    "stop_lat": "stop_lat",
+    "stop_lon": "stop_lon",
+    "routes": "routes",
+    "municipality": "municipality",
+    "bench_presence": "bench"
+  },
+  "assessment_modes": [
+    {
+      "key": "bench_presence",
+      "label": "Bench presence",
+      "allowed_values": ["present", "absent", "unclear"],
+      "input_values": ["present", "absent", "unclear"],
+      "enabled": true
+    },
+    {
+      "key": "bench_condition",
+      "label": "Bench condition",
+      "allowed_values": ["usable", "damaged", "unusable", "unclear", "not_applicable"],
+      "input_values": ["usable", "damaged", "unusable", "unclear", "not_applicable"],
+      "enabled": true
+    },
+    {
+      "key": "seating_form",
+      "label": "Seating form",
+      "allowed_values": ["traditional_bench", "shelter_integrated_bench", "simme_seat", "individual_seat", "lean_rail", "other", "unclear"],
+      "input_values": ["traditional_bench", "shelter_integrated_bench", "simme_seat", "individual_seat", "lean_rail", "other", "unclear"],
+      "enabled": true
+    },
+    {
+      "key": "informal_seating",
+      "label": "Informal/DIY seating",
+      "allowed_values": ["present", "absent", "unclear"],
+      "input_values": ["present", "absent", "unclear"],
+      "enabled": true
+    }
+  ],
+  "visualization": {
+    "color_by": "Column: Bench presence",
+    "cluster_dense_stops": false,
+    "show_legend": true,
+    "pittsburgh_bench_map_version": 3,
+    "field_palettes": {
+      "bench_presence": "Colorblind friendly"
+    },
+    "field_color_maps": {
+      "bench_presence": {
+        "present": "#0072b2",
+        "absent": "#d55e00",
+        "unclear": "#e69f00",
+        "Unknown": "#949494"
+      }
+    }
+  },
+  "source_prefill": {
+    "target": "bench_presence",
+    "primary_column": "bench",
+    "fallback_column": "osm_bench_tag",
+    "fallback_values": {
+      "yes": "present",
+      "no": "absent"
+    },
+    "review_status": "unreviewed"
+  },
+  "citation_file": "CITATION.cff",
+  "terms_and_attribution_file": "DATA_LICENSE.md"
+}

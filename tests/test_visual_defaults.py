@@ -661,8 +661,8 @@ def test_pittsburgh_bench_map_keeps_presence_colors_visible_without_grid_overlay
 
         assert "stop_clusters" not in layers
         assert layers["stops_layer_circle"]["opacity"] == 0.82
-        assert colors["present"] == [22, 128, 60]
-        assert colors["absent"] == [220, 38, 38]
+        assert colors["present"] == [0, 114, 178]
+        assert colors["absent"] == [213, 94, 0]
 
     legend = published_app.field_legend_markup(
         stops, visualization, "bench_presence"
@@ -670,6 +670,10 @@ def test_pittsburgh_bench_map_keeps_presence_colors_visible_without_grid_overlay
     assert "Bench" in legend
     assert "No bench" in legend
     assert "Not mapped" in legend
+    assert published_app.bench_evidence_summary(stops, visualization) == (
+        "Bench leads: 112 · No-bench leads: 517 · Not mapped: 1,997. "
+        "All source evidence is unreviewed."
+    )
 
 
 def test_each_marker_shape_gets_a_distinct_deck_layer_id():

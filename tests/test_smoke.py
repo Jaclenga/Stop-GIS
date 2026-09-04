@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -187,6 +189,28 @@ def test_default_seed_is_unreviewed_pittsburgh_bench_inventory():
     }
 
 
+def test_portable_pittsburgh_manifest_matches_cold_start_defaults():
+    import stop_gis.builder.app as builder_app
+
+    manifest = json.loads(
+        (
+            builder_app.DEFAULT_DATA_DIR / "stop_gis_project.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert manifest["default_on_fresh_install"] is True
+    assert manifest["project"]["name"] == builder_app.DEFAULT_PROJECT["name"]
+    assert manifest["visualization"]["color_by"] == (
+        builder_app.DEFAULT_VISUALIZATION["color_by"]
+    )
+    assert manifest["visualization"]["field_color_maps"]["bench_presence"] == (
+        builder_app.DEFAULT_VISUALIZATION["field_color_maps"]["bench_presence"]
+    )
+    assert [mode["key"] for mode in manifest["assessment_modes"]] == [
+        mode["key"] for mode in builder_app.DEFAULT_ASSESSMENT_MODES
+    ]
+
+
 def test_existing_pittsburgh_rows_receive_non_destructive_bench_prefills():
     import stop_gis.builder.app as builder_app
 
@@ -214,19 +238,129 @@ def test_existing_pittsburgh_rows_receive_non_destructive_bench_prefills():
 def test_existing_pittsburgh_map_is_upgraded_once_without_overriding_later_choices():
     import stop_gis.builder.app as builder_app
 
-    project = {"name": "Pittsburgh Bus Stop Bench Inventory"}
+    project = {
+        "name": "Pitt Benches",
+        "source_name": "pittsburgh_bus_stops_stop_gis_import.csv",
+    }
     upgraded = builder_app.apply_pittsburgh_bench_map_defaults(
-        {"color_by": "Review status", "field_color_maps": {}}, project
+        {
+            "color_by": "Review status",
+            "field_color_maps": {},
+            "pittsburgh_bench_map_version": 1,
+        },
+        project,
     )
 
     assert upgraded["color_by"] == "Column: Bench presence"
     assert upgraded["cluster_dense_stops"] is False
-    assert upgraded["field_color_maps"]["bench_presence"]["present"] == "#16803c"
+    assert upgraded["field_color_maps"]["bench_presence"]["present"] == "#0072b2"
+    assert upgraded["field_color_maps"]["bench_presence"]["absent"] == "#d55e00"
+    assert upgraded["field_palettes"]["bench_presence"] == "Colorblind friendly"
+    assert upgraded["pittsburgh_bench_map_version"] == 3
 
     upgraded["color_by"] = "Review status"
     assert builder_app.apply_pittsburgh_bench_map_defaults(
         upgraded, project
     )["color_by"] == "Review status"
+
+
+def test_pittsburgh_bench_project_detection_survives_rename():
+    import stop_gis.builder.app as builder_app
+
+    assert builder_app.is_pittsburgh_bench_project(
+        {
+            "name": "My renamed study",
+            "source_name": "pittsburgh_bus_stops_stop_gis_import.csv",
+        }
+    )
+    assert not builder_app.is_pittsburgh_bench_project(
+        {"name": "Another city", "source_name": "stops.csv"}
+    )
+
+
+def test_renamed_existing_pittsburgh_project_recovers_map_and_bench_prefills():
+    import stop_gis.builder.app as builder_app
+    from stop_gis.persistence.store import create_project
+
+    project = copy.deepcopy(builder_app.DEFAULT_PROJECT)
+    project.update(
+        {
+            "name": "Pitt Benches",
+            "source_name": "pittsburgh_bus_stops_stop_gis_import.csv",
+        }
+    )
+    visualization = copy.deepcopy(builder_app.DEFAULT_VISUALIZATION)
+    visualization.update(
+        {
+            "color_by": "Review status",
+            "pittsburgh_bench_map_version": 1,
+        }
+    )
+    stops = pd.DataFrame(
+        [
+            {
+                "stop_id": "1",
+                "stop_name": "Bench lead",
+                "stop_lat": 40.44,
+                "stop_lon": -80.0,
+                "osm_bench_tag": "yes",
+            },
+            {
+                "stop_id": "2",
+                "stop_name": "No-bench lead",
+                "stop_lat": 40.45,
+                "stop_lon": -80.01,
+                "osm_bench_tag": "no",
+            },
+        ]
+    )
+    project_id = create_project(
+        project,
+        builder_app.DEFAULT_TAXONOMY,
+        builder_app.DEFAULT_METHODOLOGY,
+        visualization,
+        stops,
+        [],
+        assessment_modes=builder_app.DEFAULT_ASSESSMENT_MODES,
+        scoring=[],
+    )
+
+    builder_app.st.session_state.clear()
+    builder_app.load_project_into_session(project_id)
+
+    assert builder_app.st.session_state["visualization"]["color_by"] == (
+        "Column: Bench presence"
+    )
+    assert builder_app.st.session_state["stops"]["bench_presence"].tolist() == [
+        "present",
+        "absent",
+    ]
+
+
+def test_loaded_pittsburgh_session_is_repaired_without_project_reload():
+    import stop_gis.builder.app as builder_app
+
+    builder_app.st.session_state.clear()
+    builder_app.st.session_state["project"] = {
+        "name": "Pitt Benches",
+        "source_name": "pittsburgh_bus_stops_stop_gis_import.csv",
+    }
+    builder_app.st.session_state["visualization"] = {
+        "color_by": "Review status",
+        "pittsburgh_bench_map_version": 1,
+    }
+    builder_app.st.session_state["stops"] = pd.DataFrame(
+        [{"stop_id": "1", "osm_bench_tag": "yes", "bench": ""}]
+    )
+
+    builder_app.ensure_visualization_defaults()
+
+    assert builder_app.st.session_state["visualization"]["color_by"] == (
+        "Column: Bench presence"
+    )
+    assert builder_app.st.session_state["stops"].iloc[0]["bench_presence"] == (
+        "present"
+    )
 
 
 def test_fresh_project_store_persists_pittsburgh_seed_and_bench_modes(db_path):

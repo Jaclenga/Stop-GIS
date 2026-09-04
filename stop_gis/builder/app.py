@@ -57,6 +57,7 @@ from stop_gis.builder.imports import (
     normalize_hex_color,
     normalize_review_status,
     parse_api_response,
+    parse_csv_zip,
     parse_geojson_bytes,
     parse_geojson_overlay_bytes,
     parse_gtfs_zip,
@@ -195,6 +196,13 @@ DEFAULT_MAX_ZIP_MEMBERS = 256
 DEFAULT_MAX_ZIP_MEMBER_BYTES = 80 * 1024 * 1024
 DEFAULT_MAX_ZIP_UNCOMPRESSED_BYTES = 150 * 1024 * 1024
 API_FETCH_TIMEOUT_SECONDS = 30
+PITTSBURGH_BENCH_MAP_VERSION = 3
+PITTSBURGH_BENCH_COLOR_MAP = {
+    "present": "#0072b2",
+    "absent": "#d55e00",
+    "unclear": "#e69f00",
+    "Unknown": "#949494",
+}
 
 
 DEFAULT_PROJECT = {
@@ -355,15 +363,11 @@ DEFAULT_VISUALIZATION.update(
         "priority_weights": {"ridership": 0.0, "low_shade": 0.0},
         "show_legend": True,
         "cluster_dense_stops": False,
-        "pittsburgh_bench_map_version": 1,
+        "pittsburgh_bench_map_version": PITTSBURGH_BENCH_MAP_VERSION,
         "field_color_maps": {
-            "bench_presence": {
-                "present": "#16803c",
-                "absent": "#dc2626",
-                "Unknown": "#94a3b8",
-                "unclear": "#f59e0b",
-            }
+            "bench_presence": dict(PITTSBURGH_BENCH_COLOR_MAP)
         },
+        "field_palettes": {"bench_presence": "Colorblind friendly"},
         "custom_charts": [
             {
                 "title": "Bench Presence",
@@ -564,35 +568,62 @@ def normalized_visualization_values(
     return visualization
 
 
+def is_pittsburgh_bench_project(project: dict[str, Any]) -> bool:
+    """Recognize the bundled dataset even after a user renames its project."""
+    source_name = str(project.get("source_name") or "").strip().casefold()
+    source_url = str(project.get("source_url") or "").strip().casefold()
+    region = str(project.get("region") or "").strip().casefold()
+    return bool(
+        project.get("name") == "Pittsburgh Bus Stop Bench Inventory"
+        or "pittsburgh_bus_stops_stop_gis_import" in source_name
+        or "pittsburgh_stop_gis_bench_starter" in source_name
+        or (
+            "pittsburgh" in region
+            and "transit_stops_%28system%29/featureserver/0" in source_url
+        )
+    )
+
+
 def apply_pittsburgh_bench_map_defaults(
     visualization: dict[str, Any], project: dict[str, Any]
 ) -> dict[str, Any]:
-    if (
-        project.get("name") != "Pittsburgh Bus Stop Bench Inventory"
-        or "pittsburgh_bench_map_version" in visualization
-    ):
+    if not is_pittsburgh_bench_project(project):
+        return visualization
+    try:
+        applied_version = int(visualization.get("pittsburgh_bench_map_version", 0))
+    except (TypeError, ValueError):
+        applied_version = 0
+    if applied_version >= PITTSBURGH_BENCH_MAP_VERSION:
         return visualization
     visualization.update(
         {
             "color_by": "Column: Bench presence",
             "show_legend": True,
             "cluster_dense_stops": False,
-            "pittsburgh_bench_map_version": 1,
+            "pittsburgh_bench_map_version": PITTSBURGH_BENCH_MAP_VERSION,
         }
     )
-    visualization.setdefault("field_color_maps", {})["bench_presence"] = {
-        "present": "#16803c",
-        "absent": "#dc2626",
-        "Unknown": "#94a3b8",
-        "unclear": "#f59e0b",
+    field_color_maps = visualization.setdefault("field_color_maps", {})
+    field_color_maps["bench_presence"] = dict(PITTSBURGH_BENCH_COLOR_MAP)
+    field_color_maps["bench"] = {
+        **PITTSBURGH_BENCH_COLOR_MAP,
+        "none": PITTSBURGH_BENCH_COLOR_MAP["absent"],
     }
+    field_palettes = visualization.setdefault("field_palettes", {})
+    field_palettes["bench_presence"] = "Colorblind friendly"
+    field_palettes["bench"] = "Colorblind friendly"
     return visualization
 
 
 def ensure_visualization_defaults() -> None:
+    project = st.session_state.get("project", {})
+    if is_pittsburgh_bench_project(project) and "stops" in st.session_state:
+        st.session_state["stops"] = add_pittsburgh_bench_prefills(
+            st.session_state["stops"]
+        )
     current = st.session_state["visualization"]
     current = apply_pittsburgh_bench_map_defaults(
-        current, st.session_state.get("project", {})
+        current, project
     )
     st.session_state["visualization"] = normalized_visualization_values(
         current,
@@ -653,7 +684,7 @@ def load_project_into_session(project_id: str) -> None:
         stops = empty_stop_dataset()
     else:
         stops = prepare_stop_dataset(stops, project, taxonomy)
-        if project.get("name") == "Pittsburgh Bus Stop Bench Inventory":
+        if is_pittsburgh_bench_project(project):
             stops = add_pittsburgh_bench_prefills(stops)
 
     for key in list(st.session_state):

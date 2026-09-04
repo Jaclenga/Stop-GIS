@@ -178,6 +178,8 @@ source notes, validation summary, import CSV, and standalone ZIP. Use the
 dataset-specific [citation guide](data/pittsburgh_bench_inventory/CITATION.md)
 and preserve its [source terms and attribution
 notice](data/pittsburgh_bench_inventory/DATA_LICENSE.md) when redistributing it.
+The standalone ZIP includes portable project defaults and can be uploaded
+directly as a Stop-GIS CSV dataset package.
 
 ## License
 

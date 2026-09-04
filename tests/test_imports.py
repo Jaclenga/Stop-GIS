@@ -14,6 +14,7 @@ from stop_gis.builder.app import (
     parse_geojson_bytes,
     parse_geojson_overlay_bytes,
     parse_api_response,
+    parse_csv_zip,
     parse_gtfs_zip,
     prepare_stop_dataset,
     read_csv_bytes,
@@ -474,3 +475,23 @@ def test_zip_guard_limits_members_and_expanded_size(monkeypatch):
     monkeypatch.setenv("SHADE_GIS_MAX_ZIP_UNCOMPRESSED_BYTES", "8")
     with pytest.raises(ValueError, match="expands to"):
         validate_zip_bytes(buffer.getvalue(), "test ZIP")
+
+
+def test_documented_csv_dataset_zip_is_importable():
+    package_path = (
+        builder_app.APP_DIR
+        / "data"
+        / "pittsburgh_bench_inventory"
+        / "Pittsburgh_Stop_GIS_Bench_Starter.zip"
+    )
+
+    contents = package_path.read_bytes()
+    assert builder_imports.detect_zip_import_format(contents) == "CSV"
+    raw, metadata = parse_csv_zip(contents)
+
+    assert len(raw) == 2626
+    assert metadata["archive_member"] == "pittsburgh_bus_stops_stop_gis_import.csv"
+    assert metadata["stop_gis_preset"] == "pittsburgh_bench_inventory"
+    assert metadata["project_manifest"]["visualization"]["color_by"] == (
+        "Column: Bench presence"
+    )

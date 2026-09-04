@@ -30,6 +30,7 @@ def test_alternate_output_directory_receives_reproducibility_files(monkeypatch):
         "DATA_LICENSE.md",
         "CITATION.md",
         "CITATION.cff",
+        "stop_gis_project.json",
     }
 
 
@@ -47,7 +48,12 @@ def test_citation_and_required_attribution_are_packaged():
     assert "accessed 2026-09-04" in citation_text
     assert "type: dataset" in cff_text
     assert "DATA_LICENSE.md" in cff_text
-    assert {"DATA_LICENSE.md", "CITATION.md", "CITATION.cff"}.issubset(builder.ZIP_MEMBERS)
+    assert {
+        "DATA_LICENSE.md",
+        "CITATION.md",
+        "CITATION.cff",
+        "stop_gis_project.json",
+    }.issubset(builder.ZIP_MEMBERS)
 
 
 def test_source_evidence_prefix_validation_is_computed(monkeypatch):

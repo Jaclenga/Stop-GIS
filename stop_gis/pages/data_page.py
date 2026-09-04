@@ -29,6 +29,7 @@ from stop_gis.builder.imports import (
     max_zip_members,
     max_zip_uncompressed_bytes,
     parse_api_response,
+    parse_csv_zip,
     parse_geojson_bytes,
     parse_gtfs_zip,
     parse_shapefile_zip,
@@ -410,7 +411,7 @@ def render_data_page() -> None:
     file_tab, api_tab, manual_tab = st.tabs(["File Upload", "API URL", "Manual Entry"])
     with file_tab:
         uploaded = st.file_uploader(
-            "Upload GTFS, CSV, GeoJSON, or a zipped Shapefile",
+            "Upload GTFS, CSV, GeoJSON, a Stop-GIS dataset ZIP, or a zipped Shapefile",
             type=["zip", "txt", "csv", "geojson", "json"],
         )
         st.caption(
@@ -453,7 +454,7 @@ def render_data_page() -> None:
                                 metadata=metadata,
                             )
                             st.success(f"Imported {len(prepared):,} mapped stops.")
-                    else:
+                    elif zip_format == "Shapefile":
                         raw, metadata = parse_shapefile_zip(contents)
                         metadata.update({"original_filename": filename})
                         render_mapped_import_controls(
@@ -466,6 +467,20 @@ def render_data_page() -> None:
                             metadata=metadata,
                             key_prefix=key_prefix,
                             button_label="Use mapped Shapefile",
+                        )
+                    else:
+                        raw, metadata = parse_csv_zip(contents)
+                        metadata.update({"original_filename": filename})
+                        render_mapped_import_controls(
+                            raw,
+                            source_name=filename,
+                            import_format="CSV ZIP",
+                            project=project,
+                            taxonomy=taxonomy,
+                            assessment_modes=st.session_state.get("assessment_modes", []),
+                            metadata=metadata,
+                            key_prefix=key_prefix,
+                            button_label="Use mapped CSV",
                         )
                 elif filename.lower().endswith((".geojson", ".json")):
                     raw, metadata = parse_geojson_bytes(contents)

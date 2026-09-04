@@ -67,6 +67,12 @@
     "machine_readable_file": "CITATION.cff",
     "terms_and_attribution_file": "DATA_LICENSE.md"
   },
+  "project_defaults": {
+    "manifest": "stop_gis_project.json",
+    "map_version": 3,
+    "color_field": "bench_presence",
+    "palette": "Colorblind friendly"
+  },
   "matching": {
     "public_stop_code_normalization": "trim/casefold; remove whitespace; normalize numeric leading zeros",
     "osm_ref_separators": [
@@ -87,6 +93,7 @@
     "no_shade_study_columns": true,
     "all_assessments_unreviewed": true,
     "bench_column_maps_to_bench_presence": true,
+    "portable_project_defaults_included": true,
     "stop_gis_csv_import_preparation": {
       "passed": true,
       "prepared_rows": 2626,
@@ -103,7 +110,8 @@
       "README.md",
       "DATA_LICENSE.md",
       "CITATION.md",
-      "CITATION.cff"
+      "CITATION.cff",
+      "stop_gis_project.json"
     ]
   },
   "limitations": [

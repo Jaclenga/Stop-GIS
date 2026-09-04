@@ -2527,6 +2527,28 @@ BENCH_PRESENCE_LEGEND_LABELS = {
 }
 
 
+def bench_evidence_summary(
+    df: pd.DataFrame, visualization: dict[str, Any]
+) -> str:
+    """Summarize provisional bench/no-bench map evidence without implying review."""
+    field = resolve_color_field(df, visualization.get("color_by", ""))
+    if field not in {"bench", "bench_presence"} or field not in df.columns:
+        return ""
+    values = df[field].fillna("").astype(str).str.strip().str.casefold()
+    bench_count = int(values.eq("present").sum())
+    no_bench_count = int(values.isin({"absent", "none"}).sum())
+    unclear_count = int(values.eq("unclear").sum())
+    not_mapped_count = int(len(values) - bench_count - no_bench_count - unclear_count)
+    parts = [
+        f"Bench leads: {bench_count:,}",
+        f"No-bench leads: {no_bench_count:,}",
+    ]
+    if unclear_count:
+        parts.append(f"Unclear: {unclear_count:,}")
+    parts.append(f"Not mapped: {not_mapped_count:,}")
+    return " · ".join(parts) + ". All source evidence is unreviewed."
+
+
 def field_legend_markup(
     df: pd.DataFrame, visualization: dict[str, Any], field: str
 ) -> str:
@@ -3568,6 +3590,11 @@ def main() -> None:
                         args=(stops, "published"),
                     )
             else:
+                evidence_summary = bench_evidence_summary(
+                    visible_stops, visualization
+                )
+                if evidence_summary:
+                    st.markdown(f"**Map colors:** {evidence_summary}")
                 map_cols = st.columns([2, 1])
                 with map_cols[0]:
                     map_selection = st.pydeck_chart(

@@ -845,6 +845,9 @@ def test_builder_navigation_pages_render(
                         )
                     ).to_be_visible(timeout=60_000)
                     playwright_api.expect(
+                        page.get_by_text("Bench leads:", exact=False)
+                    ).to_be_visible(timeout=60_000)
+                    playwright_api.expect(
                         page.get_by_text("No bench", exact=True)
                     ).to_be_visible(timeout=60_000)
                     analytics_tab = page.get_by_role(

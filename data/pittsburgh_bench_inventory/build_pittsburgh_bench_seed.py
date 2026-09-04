@@ -156,6 +156,7 @@ ZIP_MEMBERS = (
     "DATA_LICENSE.md",
     "CITATION.md",
     "CITATION.cff",
+    "stop_gis_project.json",
 )
 USER_AGENT = "Stop-GIS Pittsburgh bench starter builder/1.0"
 
@@ -623,6 +624,7 @@ def copy_static_artifacts(output_dir: Path) -> None:
         "DATA_LICENSE.md",
         "CITATION.md",
         "CITATION.cff",
+        "stop_gis_project.json",
     ):
         source = source_dir / name
         destination = output_dir / name
@@ -752,6 +754,12 @@ def main() -> int:
             "machine_readable_file": "CITATION.cff",
             "terms_and_attribution_file": "DATA_LICENSE.md",
         },
+        "project_defaults": {
+            "manifest": "stop_gis_project.json",
+            "map_version": 3,
+            "color_field": "bench_presence",
+            "palette": "Colorblind friendly",
+        },
         "matching": {
             "public_stop_code_normalization": "trim/casefold; remove whitespace; normalize numeric leading zeros",
             "osm_ref_separators": ["semicolon", "comma"],
@@ -769,10 +777,17 @@ def main() -> int:
             "A shelter listing does not imply that a bench is present.",
         ],
     }
+    summary["validation"]["portable_project_defaults_included"] = True
     summary_path = output_dir / "build_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    for required_document in ("README.md", "DATA_LICENSE.md", "CITATION.md", "CITATION.cff"):
+    for required_document in (
+        "README.md",
+        "DATA_LICENSE.md",
+        "CITATION.md",
+        "CITATION.cff",
+        "stop_gis_project.json",
+    ):
         if not (output_dir / required_document).is_file():
             raise RuntimeError(f"Missing required documentation file: {output_dir / required_document}")
     zip_path, zip_members = create_zip(output_dir)

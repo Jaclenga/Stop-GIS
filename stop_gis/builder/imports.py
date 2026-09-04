@@ -763,7 +763,47 @@ def detect_zip_import_format(contents: bytes) -> str:
         return "GTFS"
     if any(name.endswith(".shp") for name in names) and any(name.endswith(".dbf") for name in names):
         return "Shapefile"
-    raise ValueError("ZIP upload must contain GTFS stops.txt or a zipped Shapefile with .shp and .dbf files")
+    if any(name.endswith(".csv") for name in names):
+        return "CSV"
+    raise ValueError(
+        "ZIP upload must contain a CSV, GTFS stops.txt, or a zipped Shapefile "
+        "with .shp and .dbf files"
+    )
+
+
+def parse_csv_zip(contents: bytes) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Read a documented dataset package containing exactly one CSV table."""
+    validate_zip_bytes(contents, "CSV ZIP upload")
+    with zipfile.ZipFile(io.BytesIO(contents)) as archive:
+        csv_members = [
+            member
+            for member in archive.infolist()
+            if not member.is_dir() and Path(member.filename).suffix.casefold() == ".csv"
+        ]
+        if len(csv_members) != 1:
+            raise ValueError(
+                "CSV ZIP upload must contain exactly one CSV data file; "
+                f"found {len(csv_members)}"
+            )
+        csv_member = csv_members[0]
+        raw = read_csv_bytes(
+            archive.read(csv_member),
+            limit=max_zip_member_bytes(),
+            label=f"CSV ZIP member {csv_member.filename!r}",
+        )
+        metadata: dict[str, Any] = {"archive_member": csv_member.filename}
+        manifest_members = [
+            member
+            for member in archive.infolist()
+            if Path(member.filename).name.casefold() == "stop_gis_project.json"
+        ]
+        if manifest_members:
+            manifest = json.loads(archive.read(manifest_members[0]).decode("utf-8-sig"))
+            if not isinstance(manifest, dict):
+                raise ValueError("stop_gis_project.json must contain a JSON object")
+            metadata["stop_gis_preset"] = str(manifest.get("preset") or "")
+            metadata["project_manifest"] = manifest
+    return raw, metadata
 
 
 def parse_shapefile_zip(contents: bytes) -> tuple[pd.DataFrame, dict[str, Any]]:

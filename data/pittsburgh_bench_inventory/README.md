@@ -41,8 +41,10 @@ the original `osm_bench_tag` and provenance fields remain alongside them.
 - `DATA_LICENSE.md` — source attribution and reuse obligations.
 - `CITATION.md` — ready-to-use citations, access dates, and attribution text.
 - `CITATION.cff` — machine-readable citation metadata for data repositories.
+- `stop_gis_project.json` — portable Pittsburgh bench-study defaults, field
+  mapping, input dimensions, source-prefill rules, and map colors.
 - `Pittsburgh_Stop_GIS_Bench_Starter.zip` — the CSV, builder, summary, README,
-  license/attribution notice, and both citation files.
+  license/attribution notice, citation files, and project-default manifest.
 
 ## Citation and attribution
 
@@ -52,6 +54,10 @@ Cite the derived dataset and all source datasets using `CITATION.md` (or import
 required by PRT's Developer License Agreement and the OpenStreetMap attribution.
 The ArcGIS metadata and the governing PRT terms are recorded separately so the
 catalog's `CC0` value is not mistaken for the only applicable condition.
+
+The complete ZIP can be uploaded directly in Stop-GIS as a CSV dataset
+package. A fresh Stop-GIS installation also creates this Pittsburgh project
+automatically; no upload is needed for that path.
 
 ## Rebuild
 
@@ -103,9 +109,10 @@ The default assessment configuration contains only these dimensions:
 | `seating_form` | Seating form | `traditional_bench`, `shelter_integrated_bench`, `simme_seat`, `individual_seat`, `lean_rail`, `other`, `unclear` |
 | `informal_seating` | Informal/DIY seating | `present`, `absent`, `unclear` |
 
-The default map is colored by `bench_presence`: green marks mapped bench
-locations, red marks mapped no-bench locations, amber marks `unclear`, and gray
-marks stops without mapped bench evidence. Reopening an older built-in
+The default map uses a colorblind-friendly palette for `bench_presence`: blue
+marks mapped bench locations, vermillion marks mapped no-bench locations,
+amber marks `unclear`, and gray marks stops without mapped bench evidence.
+Reopening an older built-in
 Pittsburgh project upgrades its saved map view and derives the same editable
 prefills from retained `osm_bench_tag` values.
 

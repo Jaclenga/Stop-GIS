@@ -90,6 +90,11 @@ def render_preview_page() -> None:
                         args=(stops, "preview"),
                     )
             else:
+                evidence_summary = published_app.bench_evidence_summary(
+                    visible_stops, visualization
+                )
+                if evidence_summary:
+                    st.markdown(f"**Map colors:** {evidence_summary}")
                 map_cols = st.columns([2, 1])
                 with map_cols[0]:
                     map_selection = st.pydeck_chart(
